@@ -43,6 +43,8 @@ app_runtime table public.user_identities SELECT
 app_runtime table public.users INSERT
 app_runtime table public.users SELECT
 app_runtime column public.users.email UPDATE
+# Issue #4: the login updates email and email_verified together (design 5.1.7, 7.1).
+app_runtime column public.users.email_verified UPDATE
 app_runtime column public.users.last_login_at UPDATE
 app_runtime column public.users.updated_at UPDATE
 

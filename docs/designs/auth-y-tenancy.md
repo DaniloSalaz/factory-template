@@ -57,7 +57,7 @@ Sin `tenant_id` ni RLS. Solo las consultas del módulo `identity` las tocan; un 
 
 - **users**: `id`, `email` (citext, único), `email_verified`, `display_name`, `last_login_at`, `disabled_at`. Un **usuario de sistema** reservado (UUID fijo `00000000-0000-7000-8000-000000000001`, sin identidades ni login) para los trabajos de sistema. Se crea deshabilitado, con `email = 'system@system.invalid'` (dominio reservado, RFC 2606) y `email_verified = false`: cualquier función que exija un usuario activo y verificado lo rechaza sin caso especial.
 - **user_identities**: `id`, `user_id`, `provider`, `subject`, `email_at_link`, `linked_at`. Único `(provider, subject)`.
-- **sessions**: `id`, `token_hash` (único), `user_id`, `auth_time`, `mfa_auth_time` (nullable), `last_seen_at`, `idle_expires_at`, `absolute_expires_at`, `ip_prefix`, `user_agent`, `revoked_at`.
+- **sessions**: `id`, `token_hash` (único), `user_id`, `auth_time`, `mfa_auth_time` (nullable), `last_seen_at`, `idle_expires_at`, `absolute_expires_at`, `ip_prefix`, `user_agent`, `provider_session_id` (nullable), `revoked_at`.
 
 ### 4.2 Tablas de plataforma bajo RLS
 
@@ -194,9 +194,9 @@ Comando de administración, con `app_admin`:
 
 - `app_owner`: dueño de las tablas; solo migraciones. Puede desactivar RLS como dueño y hacer `SET ROLE app_security` (`BYPASSRLS`), así que sus credenciales (`MIGRATIONS_DATABASE_URL`) equivalen a acceso total a los datos.
 - `app_runtime`: la aplicación; sin `BYPASSRLS` y sin ser dueño de nada. Nunca un `UPDATE` sin columnas: cada tabla lista las que la aplicación cambia. La lista completa está fijada en `runtime_privileges.golden` (sección 11). Permisos de tabla:
-  - `users`: `SELECT`, `INSERT` y `UPDATE (email, last_login_at, updated_at)`; sin `DELETE` (solo `app_admin`, sección 5.8). `email` cambia en el login si cambió en el proveedor (5.1.7). `email_verified` no cambia tras el alta (el login rechaza emails sin verificar) y `disabled_at` es de `app_admin`.
+  - `users`: `SELECT`, `INSERT` y `UPDATE (email, email_verified, last_login_at, updated_at)`; sin `DELETE` (solo `app_admin`, sección 5.8). `email` cambia en el login si cambió en el proveedor (5.1.7), y **en la misma sentencia** `email_verified` toma el valor del proveedor: nunca se conserva la verificación de otro email, porque `accept_invitation` se fía de ella (issue #4). `disabled_at` es de `app_admin`.
   - `user_identities`: `SELECT`, `INSERT`; ni `UPDATE` (una identidad vinculada es inmutable) ni `DELETE` (solo `app_admin`).
-  - `sessions`: `SELECT`, `INSERT`, `DELETE` y `UPDATE (last_seen_at, idle_expires_at, revoked_at, mfa_auth_time, token_hash, updated_at)`: el toque de cada petición (5.4.1), la revocación (5.1.8, 5.5) y el step-up (5.2.3). `auth_time`, `absolute_expires_at` y el usuario no cambian.
+  - `sessions`: `SELECT`, `INSERT`, `DELETE` y `UPDATE (last_seen_at, idle_expires_at, revoked_at, mfa_auth_time, token_hash, updated_at)`: el toque de cada petición (5.4.1) y la revocación (5.1.8, 5.5). `mfa_auth_time` y `token_hash` quedan reservados para un step-up futuro (5.2). `auth_time`, `absolute_expires_at`, `provider_session_id` (la sesión de AuthKit, para cerrarla en el logout) y el usuario no cambian.
   - `tenants`: `SELECT` y `UPDATE (name, updated_at)`, filtrados por RLS; sin `INSERT` (se crean con `create_tenant_with_owner`) ni `DELETE` (sección 12). El estado (`status`) solo lo cambia `app_admin`.
   - `memberships`: `SELECT`, `DELETE` y `UPDATE (role, updated_at)`, filtrados por RLS; sin `INSERT` (solo `create_tenant_with_owner` y `accept_invitation`). Sin `UPDATE` de `user_id`: pasar una membresía a otro usuario lo admitiría sin invitación.
   - `invitations`: `SELECT`, `INSERT`, `DELETE` y `UPDATE (token_hash, expires_at, revoked_at, updated_at)`, filtrados por RLS: reenviar rota el token y la caducidad (5.6.2) y revocar fija `revoked_at` (5.6.4). `accepted_at` solo lo fija `accept_invitation`; `email`, `role` e `invited_by` se fijan al crearla.

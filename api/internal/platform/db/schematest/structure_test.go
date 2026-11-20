@@ -432,7 +432,8 @@ func TestSchema_RuntimeWritePrivileges(t *testing.T) {
 
 		{"delete user", `DELETE FROM users WHERE id = $1`, []any{outsider.id}, denied},
 		{"update user disabled_at", `UPDATE users SET disabled_at = NULL WHERE id = $1`, []any{outsider.id}, denied},
-		{"update user email_verified", `UPDATE users SET email_verified = true WHERE id = $1`, []any{outsider.id}, denied},
+		// Issue #4: a new email always comes with the provider's verification of it.
+		{"update user email and email_verified", `UPDATE users SET email = email, email_verified = email_verified WHERE id = $1`, []any{outsider.id}, ""},
 		{"update user display_name", `UPDATE users SET display_name = 'x' WHERE id = $1`, []any{outsider.id}, denied},
 		{"update user email and last login", `UPDATE users SET email = email, last_login_at = now(), updated_at = now() WHERE id = $1`, []any{outsider.id}, ""},
 
@@ -443,6 +444,7 @@ func TestSchema_RuntimeWritePrivileges(t *testing.T) {
 		{"update session user", `UPDATE sessions SET user_id = user_id WHERE id = $1`, []any{session}, denied},
 		{"update session auth_time", `UPDATE sessions SET auth_time = now() WHERE id = $1`, []any{session}, denied},
 		{"update session absolute expiry", `UPDATE sessions SET absolute_expires_at = now() WHERE id = $1`, []any{session}, denied},
+		{"update session provider session", `UPDATE sessions SET provider_session_id = 'x' WHERE id = $1`, []any{session}, denied},
 		{"touch, step up and revoke session", `UPDATE sessions SET last_seen_at = now(), idle_expires_at = now(),
 			mfa_auth_time = now(), token_hash = sha256(uuidv7()::text::bytea), revoked_at = now(), updated_at = now()
 			WHERE id = $1`, []any{session}, ""},
