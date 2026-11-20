@@ -1,4 +1,5 @@
-// Package db provides the PostgreSQL connection pool.
+// Package db provides the PostgreSQL connection pool and the only transactions that set
+// the row-level security variables (WithTenantTx, WithUserTx and WithAnonTx).
 package db
 
 import (
