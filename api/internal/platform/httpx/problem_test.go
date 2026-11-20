@@ -62,6 +62,18 @@ func TestWriteProblem(t *testing.T) {
 			want:      httpx.Problem{Type: "about:blank", Title: "Too Many Requests", Status: 429, Detail: "Slow down.", Code: "too_many_requests", RequestID: "req-42"},
 		},
 		{
+			name: "bad request",
+			err:  apperr.BadRequest("malformed_json", "Body is not valid JSON."),
+			want: httpx.Problem{Type: "about:blank", Title: "Bad Request", Status: 400, Detail: "Body is not valid JSON.", Code: "malformed_json"},
+		},
+		{
+			name:    "unavailable is logged with its cause",
+			err:     apperr.Wrap(errors.New("dial tcp: connection refused"), apperr.KindUnavailable, "db_unavailable", "Database unavailable."),
+			want:    httpx.Problem{Type: "about:blank", Title: "Service Unavailable", Status: 503, Detail: "Database unavailable.", Code: "db_unavailable"},
+			wantLog: "connection refused",
+			leak:    "connection refused",
+		},
+		{
 			name:    "plain error is a generic 500",
 			err:     errors.New("boom"),
 			want:    httpx.Problem{Type: "about:blank", Title: "Internal Server Error", Status: 500, Detail: "An unexpected error occurred.", Code: "internal"},
@@ -139,10 +151,11 @@ func TestStrictErrorHandlers(t *testing.T) {
 		handler    func(*slog.Logger) func(http.ResponseWriter, *http.Request, error)
 		err        error
 		wantStatus int
+		wantCode   string
 		leak       string
 	}{
-		{"request decode error does not echo input", httpx.RequestErrorHandler, errors.New(`invalid value "s3cr3t" for id`), 422, "s3cr3t"},
-		{"response error is translated", httpx.ResponseErrorHandler, apperr.NotFound("x_not_found", "Not found."), 404, ""},
+		{"request decode error is 400 without echoing input", httpx.RequestErrorHandler, errors.New(`invalid value "s3cr3t" for id`), 400, "invalid_request", "s3cr3t"},
+		{"response error is translated", httpx.ResponseErrorHandler, apperr.NotFound("x_not_found", "Not found."), 404, "x_not_found", ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -157,6 +170,10 @@ func TestStrictErrorHandlers(t *testing.T) {
 			}
 			if tc.leak != "" && strings.Contains(rec.Body.String(), tc.leak) {
 				t.Fatalf("body leaks input: %s", rec.Body.String())
+			}
+			var p httpx.Problem
+			if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil || p.Code != tc.wantCode {
+				t.Fatalf("code = %q (err %v), want %q", p.Code, err, tc.wantCode)
 			}
 		})
 	}

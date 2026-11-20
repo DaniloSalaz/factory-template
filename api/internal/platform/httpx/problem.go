@@ -61,7 +61,7 @@ func WriteProblem(w http.ResponseWriter, r *http.Request, err error, logger *slo
 // error may echo client input, so it is not returned in the body.
 func RequestErrorHandler(logger *slog.Logger) func(http.ResponseWriter, *http.Request, error) {
 	return func(w http.ResponseWriter, r *http.Request, err error) {
-		WriteProblem(w, r, apperr.Wrap(err, apperr.KindValidation, "invalid_request",
+		WriteProblem(w, r, apperr.Wrap(err, apperr.KindBadRequest, "invalid_request",
 			"The request is malformed or has invalid parameters."), logger)
 	}
 }
@@ -112,9 +112,14 @@ func statusFor(kind apperr.Kind) int {
 		return http.StatusForbidden
 	case apperr.KindRateLimited:
 		return http.StatusTooManyRequests
+	case apperr.KindBadRequest:
+		return http.StatusBadRequest
+	case apperr.KindUnavailable:
+		return http.StatusServiceUnavailable
 	case apperr.KindInternal:
 		return http.StatusInternalServerError
-	default:
-		return http.StatusInternalServerError
 	}
+	// No default case, so the exhaustive linter flags any Kind added without a status.
+	// Unknown values (a converted integer) still fail closed.
+	return http.StatusInternalServerError
 }
