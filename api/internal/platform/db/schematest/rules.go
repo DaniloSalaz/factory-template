@@ -224,6 +224,64 @@ func writeForTenantScopeOnly(p policyInfo, cmd string) bool {
 	}
 }
 
+// foreignKeyInfo is a foreign key between two tables that both have tenant_id. Keys
+// towards tables without it (tenants, users) are not loaded: they cannot cross tenants.
+type foreignKeyInfo struct {
+	Name       string
+	Table      string
+	Columns    []string
+	RefTable   string
+	RefColumns []string
+}
+
+// loadTenantForeignKeys discovers, from pg_constraint, every foreign key from a table
+// with tenant_id to another table with tenant_id. Columns keep the key's order, so
+// Columns[i] references RefColumns[i].
+func loadTenantForeignKeys(ctx context.Context, q querier) ([]foreignKeyInfo, error) {
+	rows, err := q.Query(ctx, `
+		SELECT c.conname, src.relname,
+		       ARRAY(SELECT a.attname::text FROM unnest(c.conkey) WITH ORDINALITY k(attnum, i)
+		             JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+		             ORDER BY k.i),
+		       dst.relname,
+		       ARRAY(SELECT a.attname::text FROM unnest(c.confkey) WITH ORDINALITY k(attnum, i)
+		             JOIN pg_attribute a ON a.attrelid = c.confrelid AND a.attnum = k.attnum
+		             ORDER BY k.i)
+		FROM pg_constraint c
+		JOIN pg_class src ON src.oid = c.conrelid
+		JOIN pg_namespace sn ON sn.oid = src.relnamespace
+		JOIN pg_class dst ON dst.oid = c.confrelid
+		JOIN pg_namespace dn ON dn.oid = dst.relnamespace
+		WHERE c.contype = 'f' AND sn.nspname = 'public' AND dn.nspname = 'public'
+		  AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = src.oid
+		              AND a.attname = 'tenant_id' AND a.attnum > 0 AND NOT a.attisdropped)
+		  AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = dst.oid
+		              AND a.attname = 'tenant_id' AND a.attnum > 0 AND NOT a.attisdropped)
+		ORDER BY src.relname, c.conname`)
+	if err != nil {
+		return nil, fmt.Errorf("query foreign keys: %w", err)
+	}
+	fks, err := pgx.CollectRows(rows, pgx.RowToStructByPos[foreignKeyInfo])
+	if err != nil {
+		return nil, fmt.Errorf("collect foreign keys: %w", err)
+	}
+	return fks, nil
+}
+
+// foreignKeyViolation reports a key that does not pair tenant_id with tenant_id. RLS
+// filters what is read, but a key on the parent's id alone lets a row of one tenant
+// point at another tenant's row (design, 7.3; docs/patterns.md).
+func foreignKeyViolation(fk foreignKeyInfo) string {
+	i := slices.Index(fk.Columns, "tenant_id")
+	if len(fk.Columns) > 1 && i >= 0 && i < len(fk.RefColumns) && fk.RefColumns[i] == "tenant_id" {
+		return ""
+	}
+	return fmt.Sprintf("[rls] table %s: foreign key %s (%s) -> %s (%s) does not pair tenant_id with tenant_id, "+
+		"so a row can point at another tenant's row: use FOREIGN KEY (tenant_id, <parent>_id) REFERENCES %s (tenant_id, id) "+
+		"with UNIQUE (tenant_id, id) on %s (docs/patterns.md)",
+		fk.Table, fk.Name, strings.Join(fk.Columns, ", "), fk.RefTable, strings.Join(fk.RefColumns, ", "), fk.RefTable, fk.RefTable)
+}
+
 func schemaViolations(ctx context.Context, q querier) (map[string][]string, []tableInfo, error) {
 	tables, err := loadTenantTables(ctx, q)
 	if err != nil {
@@ -238,6 +296,15 @@ func schemaViolations(ctx context.Context, q querier) (map[string][]string, []ta
 	for _, t := range tables {
 		if v := tableViolations(t, policies, rules); len(v) > 0 {
 			out[t.Name] = v
+		}
+	}
+	fks, err := loadTenantForeignKeys(ctx, q)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, fk := range fks {
+		if v := foreignKeyViolation(fk); v != "" {
+			out[fk.Table] = append(out[fk.Table], v)
 		}
 	}
 	return out, tables, nil
