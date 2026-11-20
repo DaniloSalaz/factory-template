@@ -54,7 +54,7 @@ Claves primarias UUIDv7; todas las tablas con `created_at`, y las mutables con `
 
 Sin RLS. Solo las consultas del módulo `identity` las tocan; un test de arquitectura lo comprueba sobre sqlc (no detecta consultas escritas a mano con pgx: eso queda para la revisión de código).
 
-- **users**: `id`, `email` (citext, único), `email_verified`, `display_name`, `last_login_at`, `disabled_at`. Un **usuario de sistema** reservado (UUID fijo, sin identidades ni login) para los trabajos de sistema.
+- **users**: `id`, `email` (citext, único), `email_verified`, `display_name`, `last_login_at`, `disabled_at`. Un **usuario de sistema** reservado (UUID fijo `00000000-0000-7000-8000-000000000001`, sin identidades ni login) para los trabajos de sistema. Se crea deshabilitado, con `email = 'system@system.invalid'` (dominio reservado, RFC 2606) y `email_verified = false`: cualquier función que exija un usuario activo y verificado lo rechaza sin caso especial.
 - **user_identities**: `id`, `user_id`, `provider`, `subject`, `email_at_link`, `linked_at`. Único `(provider, subject)`.
 - **tenants**: `id`, `slug` (único), `name`, `status` (`active` | `suspended`).
 - **sessions**: `id`, `token_hash` (único), `user_id`, `auth_time`, `mfa_auth_time` (nullable), `last_seen_at`, `idle_expires_at`, `absolute_expires_at`, `ip_prefix`, `user_agent`, `revoked_at`.

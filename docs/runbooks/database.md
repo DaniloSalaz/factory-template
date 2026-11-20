@@ -42,3 +42,19 @@ El script es idempotente y recibe las contraseñas como variables de psql. Crea:
   ```
 
   Las contraseñas salen del gestor de secretos (SOPS), nunca de un fichero del repo.
+
+## Permisos en tablas nuevas
+
+No hay `ALTER DEFAULT PRIVILEGES` para tablas: una tabla nueva no es accesible hasta que
+su migración dice quién la usa y cómo. En la misma migración que crea la tabla:
+
+1. Si tiene `tenant_id`: `ENABLE` y `FORCE ROW LEVEL SECURITY`, la política
+   `tenant_isolation` y su alcance declarado (diseño, sección 7.3). El test de esquema
+   (`api/internal/platform/db/schematest`) falla si falta algo.
+2. `GRANT` a `app_runtime` solo de los privilegios que la aplicación necesita (por ejemplo,
+   sin `DELETE` en tablas de solo inserción).
+3. `GRANT` a `app_admin` si los comandos de administración la tocan.
+4. Si una función `SECURITY DEFINER` la usa, `GRANT` a `app_security` de lo justo.
+
+Las funciones sí tienen un default: `00001_init.sql` revoca el `EXECUTE` que Postgres
+concede a `PUBLIC` en cada función nueva. Cada función se concede explícitamente.
