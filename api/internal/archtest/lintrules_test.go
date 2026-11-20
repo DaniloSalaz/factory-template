@@ -59,7 +59,9 @@ func TestLintRules(t *testing.T) {
 		t.Run(tc.fixture, func(t *testing.T) {
 			t.Parallel()
 
-			cmd := exec.CommandContext(t.Context(), bin, "run", "--config", cfg, "./...")
+			// golangci-lint aborts when another instance holds its lock (these subtests, or a
+			// lint running in another terminal); waiting for the lock keeps the shared cache safe.
+			cmd := exec.CommandContext(t.Context(), bin, "run", "--allow-serial-runners", "--config", cfg, "./...")
 			cmd.Dir = filepath.Join("testdata", "lint", tc.fixture)
 			out, err := cmd.CombinedOutput()
 			output := string(out)
