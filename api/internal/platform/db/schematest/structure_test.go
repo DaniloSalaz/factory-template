@@ -20,7 +20,7 @@ type querier interface {
 }
 
 // ----------------------------------------------------------------------------------
-// Tables with tenant_id (design, section 7.3)
+// Tables with tenant_id, and tenants itself (design, section 7.3)
 // ----------------------------------------------------------------------------------
 
 type tableInfo struct {
@@ -28,6 +28,9 @@ type tableInfo struct {
 	RLS     bool
 	Force   bool
 	Comment string
+	// Column that tenant_isolation compares with app.tenant_id: tenant_id, or id in
+	// tenants, whose rows are the tenants themselves.
+	IsolationColumn string
 }
 
 type policyInfo struct {
@@ -48,18 +51,20 @@ var (
 )
 
 // loadTenantTables discovers every table of the public schema that has a tenant_id
-// column; nothing is listed by hand.
+// column, plus tenants; nothing else is listed by hand.
 func loadTenantTables(ctx context.Context, q querier) ([]tableInfo, error) {
 	rows, err := q.Query(ctx, `
 		SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity,
-		       coalesce(obj_description(c.oid, 'pg_class'), '')
+		       coalesce(obj_description(c.oid, 'pg_class'), ''),
+		       CASE WHEN c.relname = 'tenants' THEN 'id' ELSE 'tenant_id' END
 		FROM pg_class c
 		JOIN pg_namespace n ON n.oid = c.relnamespace
 		WHERE n.nspname = 'public'
 		  AND c.relkind IN ('r', 'p')
-		  AND EXISTS (SELECT 1 FROM pg_attribute a
-		              WHERE a.attrelid = c.oid AND a.attname = 'tenant_id'
-		                AND a.attnum > 0 AND NOT a.attisdropped)
+		  AND (c.relname = 'tenants'
+		       OR EXISTS (SELECT 1 FROM pg_attribute a
+		                  WHERE a.attrelid = c.oid AND a.attname = 'tenant_id'
+		                    AND a.attnum > 0 AND NOT a.attisdropped))
 		ORDER BY c.relname`)
 	if err != nil {
 		return nil, fmt.Errorf("query tenant tables: %w", err)
@@ -127,7 +132,7 @@ func tableViolations(t tableInfo, policies []policyInfo) []string {
 	}
 
 	if isolation == nil {
-		add("missing policy tenant_isolation: CREATE POLICY tenant_isolation ON %s FOR ALL USING (tenant_id = current_setting('app.tenant_id')::uuid) WITH CHECK (same)", t.Name)
+		add("missing policy tenant_isolation: CREATE POLICY tenant_isolation ON %s FOR ALL USING (%s = current_setting('app.tenant_id')::uuid) WITH CHECK (same)", t.Name, t.IsolationColumn)
 	} else {
 		if isolation.Permissive != "PERMISSIVE" {
 			add("tenant_isolation must be PERMISSIVE")
@@ -135,8 +140,12 @@ func tableViolations(t tableInfo, policies []policyInfo) []string {
 		if isolation.Cmd != "ALL" {
 			add("tenant_isolation must be FOR ALL, not FOR %s", isolation.Cmd)
 		}
-		if !strings.Contains(isolation.Qual, "app.tenant_id") || !strings.Contains(isolation.WithCheck, "app.tenant_id") {
-			add("tenant_isolation must compare tenant_id with current_setting('app.tenant_id') in both USING and WITH CHECK")
+		// Deparsed as "(<column> = (current_setting('app.tenant_id'::text))::uuid)".
+		compares := func(expr string) bool {
+			return strings.Contains(expr, "app.tenant_id") && strings.Contains(expr, "("+t.IsolationColumn+" = ")
+		}
+		if !compares(isolation.Qual) || !compares(isolation.WithCheck) {
+			add("tenant_isolation must compare %s with current_setting('app.tenant_id') in both USING and WITH CHECK", t.IsolationColumn)
 		}
 	}
 
@@ -186,13 +195,16 @@ func TestSchema_TenantTables(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(tables) == 0 {
-		t.Fatal("no table with tenant_id was discovered; the discovery query is broken")
+		t.Fatal("no tenant table was discovered; the discovery query is broken")
 	}
 	names := make([]string, 0, len(tables))
 	for _, tbl := range tables {
 		names = append(names, tbl.Name)
 	}
-	t.Logf("tables with tenant_id: %s", strings.Join(names, ", "))
+	if !slices.Contains(names, "tenants") {
+		t.Error("tenants was not discovered; the discovery query is broken")
+	}
+	t.Logf("tenant tables: %s", strings.Join(names, ", "))
 
 	for _, vs := range violations {
 		for _, v := range vs {
@@ -280,6 +292,51 @@ func TestSchema_DetectsMisbuiltTables(t *testing.T) {
 				}
 				return
 			}
+			if !slices.ContainsFunc(got, func(v string) bool { return strings.Contains(v, tc.want) }) {
+				t.Fatalf("want a violation containing %q, got %v", tc.want, got)
+			}
+		})
+	}
+}
+
+// tenants is checked by its id column. Its policy and RLS are broken inside a
+// transaction that is always rolled back. Not parallel: the DDL locks tenants
+// exclusively, and the parallel tests (which start only after the sequential ones)
+// would queue behind it, the concurrency test mistaking that wait for the one it expects.
+func TestSchema_DetectsMisbuiltTenants(t *testing.T) {
+
+	tests := []struct {
+		name string
+		ddl  []string
+		want string
+	}{
+		{"no isolation", []string{`DROP POLICY tenant_isolation ON tenants`}, "missing policy tenant_isolation: CREATE POLICY tenant_isolation ON tenants FOR ALL USING (id = "},
+		{"isolation on another column", []string{`DROP POLICY tenant_isolation ON tenants`,
+			`CREATE POLICY tenant_isolation ON tenants FOR ALL
+			 USING (slug = current_setting('app.tenant_id')) WITH CHECK (slug = current_setting('app.tenant_id'))`},
+			"tenant_isolation must compare id with current_setting('app.tenant_id')"},
+		{"not forced", []string{`ALTER TABLE tenants NO FORCE ROW LEVEL SECURITY`}, "not forced"},
+		{"no declared scope", []string{`COMMENT ON TABLE tenants IS NULL`}, "no declared scope"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			tx, err := connect(t, testDB.OwnerURL).Begin(ctx)
+			if err != nil {
+				t.Fatalf("begin: %v", err)
+			}
+			defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+			for _, stmt := range tc.ddl {
+				if _, err := tx.Exec(ctx, stmt); err != nil {
+					t.Fatalf("%s: %v", stmt, err)
+				}
+			}
+
+			violations, _, err := schemaViolations(ctx, tx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := violations["tenants"]
 			if !slices.ContainsFunc(got, func(v string) bool { return strings.Contains(v, tc.want) }) {
 				t.Fatalf("want a violation containing %q, got %v", tc.want, got)
 			}

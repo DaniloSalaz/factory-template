@@ -22,7 +22,7 @@ $$;
 
 ------------------------------------------------------------------------------------
 -- Identity tables (section 4.1). No tenant_id and no RLS: only the identity module
--- queries them.
+-- queries them. tenants is the exception: it is under RLS by its own id (below).
 ------------------------------------------------------------------------------------
 
 CREATE TABLE users (
@@ -165,6 +165,18 @@ CREATE INDEX audit_log_tenant_created_idx ON audit_log (tenant_id, created_at DE
 -- be ORed with it and open the rows of every tenant. With only USING, Postgres also
 -- applies it as the WITH CHECK of INSERT and UPDATE.
 ------------------------------------------------------------------------------------
+
+ALTER TABLE tenants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tenants FORCE ROW LEVEL SECURITY;
+
+-- In tenants the row's id is its tenant_id: the application reads and renames only the
+-- current tenant. Flows without a tenant (the tenant middleware, /me, POST /tenants,
+-- accepting an invitation, system jobs) go through the SECURITY DEFINER functions.
+CREATE POLICY tenant_isolation ON tenants AS PERMISSIVE FOR ALL
+  USING (id = current_setting('app.tenant_id')::uuid)
+  WITH CHECK (id = current_setting('app.tenant_id')::uuid);
+
+COMMENT ON TABLE tenants IS 'scope: tenant-shared';
 
 ALTER TABLE memberships ENABLE ROW LEVEL SECURITY;
 ALTER TABLE memberships FORCE ROW LEVEL SECURITY;

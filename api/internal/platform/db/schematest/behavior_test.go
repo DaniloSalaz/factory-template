@@ -167,7 +167,16 @@ func wantSQLState(t *testing.T, err error, want string) {
 	}
 }
 
-var rlsTables = []string{"memberships", "invitations", "audit_log"}
+var rlsTables = []string{"tenants", "memberships", "invitations", "audit_log"}
+
+// tenantColumn is the column RLS compares with app.tenant_id: a tenant's own id in
+// tenants, tenant_id everywhere else.
+func tenantColumn(table string) string {
+	if table == "tenants" {
+		return "id"
+	}
+	return "tenant_id"
+}
 
 // ----------------------------------------------------------------------------------
 // Row-level security
@@ -188,7 +197,7 @@ func TestRLS_FailsClosedWithoutTenant(t *testing.T) {
 		t.Helper()
 		var n int
 		err := inTx(t, conn, vars, func(tx pgx.Tx) error {
-			rows, err := tx.Query(t.Context(), `SELECT tenant_id FROM `+table)
+			rows, err := tx.Query(t.Context(), `SELECT `+tenantColumn(table)+` FROM `+table)
 			if err != nil {
 				return err
 			}
@@ -238,7 +247,7 @@ func TestRLS_SameConnectionSeesOnlyCurrentTenant(t *testing.T) {
 	for _, step := range []struct{ tenant, user string }{{s.a, s.ownerA.id}, {s.b, s.ownerB.id}, {s.a, s.ownerA.id}} {
 		for _, table := range rlsTables {
 			err := inTx(t, conn, tenantVars(step.tenant, step.user, "tenant"), func(tx pgx.Tx) error {
-				rows, err := tx.Query(t.Context(), `SELECT DISTINCT tenant_id::text FROM `+table)
+				rows, err := tx.Query(t.Context(), `SELECT DISTINCT `+tenantColumn(table)+`::text FROM `+table)
 				if err != nil {
 					return err
 				}
@@ -271,6 +280,8 @@ func TestRLS_CrossTenantAccessIsBlocked(t *testing.T) {
 		wantState string // SQLSTATE expected, or "" for success
 		wantRows  int64  // rows affected (or counted) on success
 	}{
+		{"read B tenant", `SELECT count(*) FROM tenants WHERE id = $1`, []any{s.b}, "", 0},
+		{"rename B tenant", `UPDATE tenants SET name = 'Renamed by A' WHERE id = $1`, []any{s.b}, "", 0},
 		{"read B memberships", `SELECT count(*) FROM memberships WHERE tenant_id = $1`, []any{s.b}, "", 0},
 		{"read B invitations", `SELECT count(*) FROM invitations WHERE tenant_id = $1`, []any{s.b}, "", 0},
 		{"read B audit", `SELECT count(*) FROM audit_log WHERE tenant_id = $1`, []any{s.b}, "", 0},
@@ -318,6 +329,9 @@ func TestRLS_CrossTenantAccessIsBlocked(t *testing.T) {
 	f := newFixtures(t)
 	if n := f.scalar(`SELECT count(*)::text FROM memberships WHERE tenant_id = $1 AND role = 'owner'`, s.b); n != "1" {
 		t.Fatalf("tenant B owner memberships = %s, want 1", n)
+	}
+	if name := f.scalar(`SELECT name FROM tenants WHERE id = $1`, s.b); name != "Test tenant" {
+		t.Fatalf("tenant B name = %q, want it unchanged", name)
 	}
 }
 
@@ -427,6 +441,8 @@ func TestRLS_OwnScope(t *testing.T) {
 // SECURITY DEFINER functions
 // ----------------------------------------------------------------------------------
 
+// auth_membership reads tenants, which is under RLS, from a transaction without
+// app.tenant_id: the tenant middleware depends on it working through app_security.
 func TestFunc_AuthMembershipAnswersOnlyForCurrentUser(t *testing.T) {
 	t.Parallel()
 
@@ -446,19 +462,19 @@ func TestFunc_AuthMembershipAnswersOnlyForCurrentUser(t *testing.T) {
 
 			conn := connect(t, testDB.RuntimeURL)
 			err := inTx(t, conn, userVars(tc.user), func(tx pgx.Tx) error {
-				rows, err := tx.Query(t.Context(), `SELECT role FROM auth_membership($1)`, tc.tenant)
+				rows, err := tx.Query(t.Context(), `SELECT role || '/' || tenant_status FROM auth_membership($1)`, tc.tenant)
 				if err != nil {
 					return err
 				}
-				roles, err := pgx.CollectRows(rows, pgx.RowTo[string])
+				got, err := pgx.CollectRows(rows, pgx.RowTo[string])
 				if err != nil {
 					return err
 				}
 				switch {
-				case tc.wantRole == "" && len(roles) != 0:
-					t.Errorf("roles = %v, want none", roles)
-				case tc.wantRole != "" && !slices.Equal(roles, []string{tc.wantRole}):
-					t.Errorf("roles = %v, want [%s]", roles, tc.wantRole)
+				case tc.wantRole == "" && len(got) != 0:
+					t.Errorf("role/tenant status = %v, want none", got)
+				case tc.wantRole != "" && !slices.Equal(got, []string{tc.wantRole + "/active"}):
+					t.Errorf("role/tenant status = %v, want [%s/active]", got, tc.wantRole)
 				}
 				return nil
 			})
@@ -466,6 +482,42 @@ func TestFunc_AuthMembershipAnswersOnlyForCurrentUser(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+// GET /me: auth_memberships_for_user returns the caller's tenants, read from tenants
+// under RLS without app.tenant_id, and nobody else's.
+func TestFunc_AuthMembershipsForUser(t *testing.T) {
+	t.Parallel()
+
+	s := seedTwoTenants(t)
+	f := newFixtures(t)
+	f.member(s.b, s.ownerA, "member")
+	want := []string{
+		f.scalar(`SELECT slug || '/Test tenant/active/owner' FROM tenants WHERE id = $1`, s.a),
+		f.scalar(`SELECT slug || '/Test tenant/active/member' FROM tenants WHERE id = $1`, s.b),
+	}
+	slices.Sort(want)
+
+	conn := connect(t, testDB.RuntimeURL)
+	err := inTx(t, conn, userVars(s.ownerA.id), func(tx pgx.Tx) error {
+		rows, err := tx.Query(t.Context(), `
+			SELECT tenant_slug || '/' || tenant_name || '/' || tenant_status || '/' || role
+			FROM auth_memberships_for_user() ORDER BY 1`)
+		if err != nil {
+			return err
+		}
+		got, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return err
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("memberships = %v, want %v", got, want)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
