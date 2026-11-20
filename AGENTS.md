@@ -48,7 +48,7 @@ Ejemplo vivo: `api/internal/modules/health`.
 - Errores siempre envueltos con contexto: `fmt.Errorf("hacer x: %w", err)`.
 - Sin variables globales ni `init()`; dependencias por constructor (`NewX(deps)`).
 - Un módulo no importa el interior de otro módulo (ni su código en `gen/`); solo su `module.go`. Lo comprueba `mise run arch`.
-- `platform` no importa `internal/modules`; `platform/apperr` solo importa la stdlib; el dominio solo importa la stdlib y `platform/apperr` (depguard).
+- `platform` no importa `internal/modules`; `platform/apperr` y `platform/authctx` solo importan la stdlib; el dominio solo importa la stdlib y `platform/apperr` (depguard).
 - El código generado (`api/gen/`, `web/src/gen/`) no se edita: cambia el contrato o la query y ejecuta `mise run generate`.
 - Errores de negocio con `apperr` (`NotFound`, `Validation`, `Wrap`…). Los handlers nunca escriben errores a mano: usan `httpx.WriteProblem` (RFC 9457).
 - `os.Getenv` (y cualquier lectura del entorno) solo en `platform/config`; el resto recibe `config.Config` (forbidigo).

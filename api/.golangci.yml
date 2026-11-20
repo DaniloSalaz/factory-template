@@ -60,6 +60,13 @@ linters:
             - $gostd
             # Its own external test package (apperr_test) imports it.
             - github.com/DaniloSalaz/factory-template/api/internal/platform/apperr
+        "[authctx-stdlib-only] platform/authctx may import only the standard library: platform/db and every module read it, so it must not pull dependencies into them":
+          files: ["**/internal/platform/authctx/**"]
+          list-mode: strict
+          allow:
+            - $gostd
+            # Its own external test package (authctx_test) imports it.
+            - github.com/DaniloSalaz/factory-template/api/internal/platform/authctx
         "[domain-pure] domain packages may import only the standard library and platform/apperr: move infrastructure to adapters/ behind a port (interface) declared in app/":
           files: ["**/internal/modules/*/domain/**"]
           list-mode: strict

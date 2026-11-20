@@ -47,6 +47,10 @@ func TestLintRules(t *testing.T) {
 			want:    []string{"internal/platform/apperr/apperr.go", "platform/logx", "[apperr-stdlib-only]", "only the standard library"},
 		},
 		{
+			fixture: "authctx-stdlib-only",
+			want:    []string{"internal/platform/authctx/authctx.go", "platform/logx", "[authctx-stdlib-only]", "only the standard library"},
+		},
+		{
 			fixture: "domain-pure",
 			want: []string{
 				"domain/transport.go", "'net/http'", "transport belongs in adapters/http",
