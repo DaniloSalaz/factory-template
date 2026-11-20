@@ -1,0 +1,71 @@
+openapi: 3.1.0
+info:
+  title: Factory Template API
+  version: 0.1.0
+  description: Source of truth for the HTTP contract. Go server and TS client are generated from this file.
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: health
+    description: Liveness and readiness probes
+paths:
+  /healthz:
+    get:
+      operationId: getHealthz
+      summary: Liveness probe
+      tags: [health]
+      responses:
+        "200":
+          description: The process is alive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+  /readyz:
+    get:
+      operationId: getReadyz
+      summary: Readiness probe (checks dependencies such as the database)
+      tags: [health]
+      responses:
+        "200":
+          description: The service is ready to receive traffic
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "503":
+          description: A dependency is unavailable
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+components:
+  schemas:
+    Status:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+    Problem:
+      description: RFC 9457 problem details
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          default: about:blank
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 100
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference

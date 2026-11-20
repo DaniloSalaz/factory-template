@@ -1,0 +1,26 @@
+# Env & secrets
+.env
+.env.*
+!.env.example
+*.agekey
+keys.txt
+
+# Go
+api/bin/
+*.test
+*.out
+coverage.*
+
+# Node
+node_modules/
+web/dist/
+*.tsbuildinfo
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Claude Code local settings
+.claude/settings.local.json

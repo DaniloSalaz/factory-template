@@ -1,0 +1,72 @@
+version: "2"
+
+run:
+  tests: true
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - contextcheck
+    - depguard
+    - errname
+    - errorlint
+    - exhaustive
+    - forcetypeassert
+    - gochecknoglobals
+    - gochecknoinits
+    - gocritic
+    - gosec
+    - misspell
+    - nilerr
+    - noctx
+    - nolintlint
+    - revive
+    - sloglint
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - wrapcheck
+  settings:
+    depguard:
+      rules:
+        domain-is-pure:
+          files: ["**/internal/modules/*/domain/**"]
+          deny:
+            - pkg: net/http
+              desc: domain must not depend on transport
+            - pkg: database/sql
+              desc: domain must not depend on persistence
+            - pkg: github.com/jackc
+              desc: domain must not depend on persistence
+            - pkg: github.com/DaniloSalaz/factory-template/api/gen
+              desc: domain must not depend on generated code
+            - pkg: github.com/DaniloSalaz/factory-template/api/internal/platform
+              desc: domain must not depend on platform
+    sloglint:
+      kv-only: false
+      attr-only: true
+      context: scope
+    wrapcheck:
+      ignore-package-globs:
+        - github.com/DaniloSalaz/factory-template/api/*
+  exclusions:
+    generated: strict
+    paths:
+      - gen/
+    rules:
+      - path: _test\.go
+        linters: [gochecknoglobals, wrapcheck, gosec]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/DaniloSalaz/factory-template
+  exclusions:
+    generated: strict
+    paths:
+      - gen/

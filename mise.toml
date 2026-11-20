@@ -1,0 +1,73 @@
+[tools]
+go = "1.27.4"
+node = "26.13.1"
+sqlc = "1.31.1"
+golangci-lint = "2.15.0"
+sops = "3.13.3"
+age = "1.3.2"
+"aqua:pressly/goose" = "3.30.1"
+oapi-codegen = "2.8.2"
+
+# Defaults for local development against compose.yaml; .env (optional, gitignored) overrides them.
+[env]
+APP_ENV = "development"
+HTTP_ADDR = ":8080"
+LOG_LEVEL = "debug"
+DATABASE_URL = "postgres://factory:factory@localhost:5432/factory?sslmode=disable"
+_.file = ".env"
+
+[tasks.up]
+description = "Start local infrastructure (Postgres) and wait until healthy"
+run = "docker compose up -d --wait"
+
+[tasks.down]
+description = "Stop local infrastructure"
+run = "docker compose down"
+
+[tasks.dev]
+description = "Run the API"
+dir = "api"
+run = "go run ./cmd/api"
+
+[tasks."web:install"]
+description = "Install web dependencies if missing"
+dir = "web"
+run = "test -d node_modules || npm ci"
+hide = true
+
+[tasks.generate]
+description = "Generate code from SQL queries and the OpenAPI contract"
+depends = ["web:install"]
+run = [
+  "cd api && sqlc generate",
+  "cd api && oapi-codegen -config oapi-codegen.yaml ../api-spec/openapi.yaml",
+  "cd web && npm run generate",
+]
+
+[tasks.migrate]
+description = "Apply pending database migrations"
+run = "goose -dir migrations postgres \"$DATABASE_URL\" up"
+
+[tasks.test]
+description = "Run all tests (integration tests need Docker)"
+depends = ["web:install"]
+run = [
+  "cd api && go test -race ./...",
+  "cd web && npm run typecheck",
+]
+
+[tasks.lint]
+description = "Lint Go and web code"
+depends = ["web:install"]
+run = [
+  "cd api && golangci-lint run ./...",
+  "cd web && npm run lint && npm run typecheck",
+]
+
+[tasks.fmt]
+description = "Format Go and web code"
+depends = ["web:install"]
+run = [
+  "cd api && golangci-lint fmt ./...",
+  "cd web && npm run format",
+]
