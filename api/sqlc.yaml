@@ -9,3 +9,6 @@ sql:
         out: gen/sqlc/health
         sql_package: pgx/v5
         emit_interface: true
+        # The schema holds every module's tables; generate only what this module's
+        # queries use, so module code never depends on another module's models.
+        omit_unused_structs: true
