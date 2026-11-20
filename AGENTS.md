@@ -12,6 +12,7 @@ Plantilla base para SaaS: monolito modular en Go + frontend React. Desarrollador
 ## Comandos (`mise run <tarea>`)
 | Tarea | Qué hace |
 |---|---|
+| `hooks:install` | Instala el hook de pre-commit (rechaza commits en `main`); una vez por clon |
 | `up` / `down` | Arranca / para Postgres local |
 | `migrate` | Aplica migraciones de `migrations/` con goose |
 | `generate` | sqlc + oapi-codegen + orval |
@@ -68,6 +69,9 @@ Ejemplo vivo: `api/internal/modules/health`.
 - Usuario de sistema reservado: `00000000-0000-7000-8000-000000000001` (deshabilitado, sin login). Úsalo solo para trabajos de sistema.
 - Cada cambio va con su test (unitario con fakes de puertos; integración con Testcontainers).
 - Comentarios solo para explicar el porqué, no el qué.
+
+## Antes de empezar una tarea
+- Comprueba la rama (`git status -sb`): nunca se trabaja en `main`. Si estás en `main`, o en la rama de un PR ya fusionado, actualiza `main` y crea una rama nueva (`git switch -c <tipo>/<tema>`) antes de tocar nada. El hook de pre-commit (`mise run hooks:install`, una vez por clon) rechaza los commits en `main`; `--no-verify` no se usa para saltárselo.
 
 ## Antes de dar una tarea por terminada
 - `mise run ci` en verde (necesita Docker). Es lo mismo que exige el CI para fusionar en `main`.

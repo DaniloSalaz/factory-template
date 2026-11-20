@@ -33,6 +33,22 @@ WORKOS_REDIRECT_URI = "http://localhost:5173/auth/callback"
 # (it would load the ciphertext), so `dev` runs under `sops exec-env` instead of _.file.
 _.file = ".env"
 
+[tasks."hooks:install"]
+description = "Install the git pre-commit hook, which runs the pre-commit task (once per clone)"
+run = "mise generate git-pre-commit --write --task pre-commit"
+
+[tasks.pre-commit]
+description = "Git pre-commit hook: refuse commits on main (work on a branch and open a PR)"
+hide = true
+run = """
+branch=$(git symbolic-ref --short -q HEAD || true)
+if [ "$branch" = "main" ]; then
+  echo "pre-commit: refusing to commit on main. Create a branch first:" >&2
+  echo "  git switch -c <type>/<topic>   # your staged changes come along" >&2
+  exit 1
+fi
+"""
+
 [tasks.up]
 description = "Start local infrastructure (Postgres) and wait until healthy"
 run = "docker compose up -d --wait"

@@ -10,6 +10,7 @@ PostgreSQL 18 y frontend React + TypeScript + Vite. Las convenciones están en [
 ## Arranque
 ```sh
 mise install
+mise run hooks:install   # hook de pre-commit: rechaza commits en main
 mise run up        # Postgres 18; en un volumen nuevo crea roles y extensiones
 mise run migrate   # migraciones goose, como app_owner
 mise run dev       # API en http://localhost:8080, como app_runtime (descifra secrets.env)
