@@ -26,7 +26,7 @@ type Permission string
 // PermScopeTenant gives a principal the tenant scope; without it the scope is own.
 const PermScopeTenant Permission = "scope:tenant"
 
-// Scope is the row scope a principal has inside its tenant, stored in app.scope.
+// Scope is the row scope a principal has inside its tenant; platform/db hands it to RLS.
 type Scope string
 
 // The two scopes of the design (section 7.2).
