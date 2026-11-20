@@ -24,12 +24,27 @@ type Handler struct {
 	sessions *app.Sessions
 	accounts *app.Accounts
 	mfa      *app.MFA
+	tenants  *app.Tenants
+	members  *app.Members
 	logger   *slog.Logger
 }
 
+// UseCases are the use cases the handler exposes.
+type UseCases struct {
+	Login    *app.Login
+	Sessions *app.Sessions
+	Accounts *app.Accounts
+	MFA      *app.MFA
+	Tenants  *app.Tenants
+	Members  *app.Members
+}
+
 // NewHandler builds a Handler.
-func NewHandler(login *app.Login, sessions *app.Sessions, accounts *app.Accounts, mfa *app.MFA, logger *slog.Logger) *Handler {
-	return &Handler{login: login, sessions: sessions, accounts: accounts, mfa: mfa, logger: logger}
+func NewHandler(uc UseCases, logger *slog.Logger) *Handler {
+	return &Handler{
+		login: uc.Login, sessions: uc.Sessions, accounts: uc.Accounts, mfa: uc.MFA,
+		tenants: uc.Tenants, members: uc.Members, logger: logger,
+	}
 }
 
 // AuthLogin starts a login (design, 5.1.1 and 5.1.2).

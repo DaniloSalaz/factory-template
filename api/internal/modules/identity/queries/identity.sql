@@ -136,3 +136,49 @@ FROM mark_session_mfa(sqlc.arg(token_hash)::bytea, sqlc.arg(challenge_id)::uuid,
 -- name: RemoveMFAFactor :one
 SELECT r.provider::text AS provider, r.provider_factor_id::text AS provider_factor_id
 FROM remove_mfa_factor(sqlc.arg(factor_id)::uuid) AS r(provider, provider_factor_id);
+
+-- Tenants and members (design 5.5 and 5.7, migration 00005). Writes that change who is a
+-- member, or with which role, go through these functions; app_runtime cannot write
+-- memberships directly.
+
+-- name: CreateTenant :one
+SELECT r.tenant_id::uuid AS tenant_id, r.membership_id::uuid AS membership_id
+FROM create_tenant(sqlc.arg(name)::text, sqlc.arg(slug)::text, sqlc.arg(max_tenants)::integer,
+                   sqlc.narg(ip_prefix)::cidr) AS r(tenant_id, membership_id);
+
+-- Under RLS, in the tenant's transaction. The lock serializes renames, so the audited
+-- old name is the one replaced.
+-- name: LockTenantName :one
+SELECT t.name FROM tenants t WHERE t.id = $1 FOR UPDATE;
+
+-- name: RenameTenant :one
+UPDATE tenants SET name = sqlc.arg(name) WHERE id = sqlc.arg(id)
+RETURNING id, slug, name;
+
+-- A page of the tenant's members in membership order (UUIDv7, so by creation), which is
+-- unique and stable. Under RLS; the WHERE on tenant_id is defence in depth.
+-- name: ListMembers :many
+SELECT m.id, m.user_id, u.email::text AS email, u.display_name, m.role, m.created_at
+FROM memberships m
+JOIN users u ON u.id = m.user_id
+WHERE m.tenant_id = sqlc.arg(tenant_id)
+  AND (sqlc.narg(after)::uuid IS NULL OR m.id > sqlc.narg(after)::uuid)
+ORDER BY m.id
+LIMIT sqlc.arg(page_size);
+
+-- name: MemberByUser :one
+SELECT m.id, m.user_id, u.email::text AS email, u.display_name, m.role, m.created_at
+FROM memberships m
+JOIN users u ON u.id = m.user_id
+WHERE m.tenant_id = sqlc.arg(tenant_id) AND m.user_id = sqlc.arg(user_id);
+
+-- name: ChangeMemberRole :exec
+SELECT change_member_role(sqlc.arg(member)::uuid, sqlc.arg(role)::text, sqlc.arg(expected_actor_role)::text,
+                          sqlc.arg(expected_member_role)::text, sqlc.narg(ip_prefix)::cidr);
+
+-- name: RemoveMember :exec
+SELECT remove_member(sqlc.arg(member)::uuid, sqlc.arg(expected_actor_role)::text,
+                     sqlc.arg(expected_member_role)::text, sqlc.narg(ip_prefix)::cidr);
+
+-- name: LeaveTenant :exec
+SELECT leave_tenant(sqlc.narg(ip_prefix)::cidr);

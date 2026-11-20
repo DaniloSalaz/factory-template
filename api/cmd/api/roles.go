@@ -24,7 +24,7 @@ func roleCatalog() (*authz.Catalog, error) {
 		},
 		authz.Role{
 			Name:        "admin",
-			Permissions: append(members, authz.PermAuditRead, authctx.PermScopeTenant),
+			Permissions: append(members, authz.PermAuditRead, authz.PermTenantUpdate, authctx.PermScopeTenant),
 		},
 		authz.Role{
 			Name:        "member",

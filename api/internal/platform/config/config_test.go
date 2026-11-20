@@ -64,7 +64,8 @@ func TestLoad_Valid(t *testing.T) {
 					c.Log.Format == LogFormatJSON &&
 					c.Auth.SessionIdleTTL == 7*24*time.Hour && c.Auth.SessionAbsoluteTTL == 30*24*time.Hour &&
 					c.Web.TrustedClientIPHeader == "" &&
-					c.WorkOS.APIKey.Reveal() == testAPIKey
+					c.WorkOS.APIKey.Reveal() == testAPIKey &&
+					c.Tenancy.MaxTenantsPerUser == 5
 			},
 		},
 		{
@@ -97,10 +98,11 @@ func TestLoad_Valid(t *testing.T) {
 			environ: with(map[string]string{
 				"APP_ENV": "production", "HTTP_PORT": "9090", "HTTP_WRITE_TIMEOUT": "30s",
 				"LOG_LEVEL": "debug", "LOG_FORMAT": "text", "DATABASE_URL": "postgresql://db.internal/app",
-				"WORKOS_REDIRECT_URI": "https://api.example.com/auth/callback",
+				"WORKOS_REDIRECT_URI": "https://api.example.com/auth/callback", "TENANT_MAX_PER_USER": "20",
 			}),
 			want: func(c Config) bool {
 				return c.Env == EnvProduction && c.HTTP.Port == 9090 && c.HTTP.WriteTimeout == 30*time.Second &&
+					c.Tenancy.MaxTenantsPerUser == 20 &&
 					c.Log.Level == slog.LevelDebug && c.Log.Format == LogFormatText &&
 					c.DB.URL.Reveal() == "postgresql://db.internal/app"
 			},
@@ -174,6 +176,16 @@ func TestLoad_Invalid(t *testing.T) {
 				"APP_ENV": "staging", "WORKOS_CLIENT_ID": "wrong", "WORKOS_REDIRECT_URI": "http://api.example.com/auth/callback",
 			}),
 			wantVars: []string{"WORKOS_CLIENT_ID must start with client_", "WORKOS_REDIRECT_URI must use https outside development"},
+		},
+		{
+			name:     "no tenant may be created",
+			environ:  with(map[string]string{"TENANT_MAX_PER_USER": "0"}),
+			wantVars: []string{"TENANT_MAX_PER_USER must be between 1 and 1000"},
+		},
+		{
+			name:     "a limit that is no limit",
+			environ:  with(map[string]string{"TENANT_MAX_PER_USER": "50000"}),
+			wantVars: []string{"TENANT_MAX_PER_USER must be between 1 and 1000"},
 		},
 		{
 			name:     "empty counts as missing",

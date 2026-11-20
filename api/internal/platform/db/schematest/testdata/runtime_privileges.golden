@@ -18,10 +18,11 @@ app_runtime column public.invitations.revoked_at UPDATE
 app_runtime column public.invitations.token_hash UPDATE
 app_runtime column public.invitations.updated_at UPDATE
 
-app_runtime table public.memberships DELETE
+# Migration 00005: no DELETE and no UPDATE (role) on memberships any more. Role changes,
+# removals and leaving go through change_member_role, remove_member and leave_tenant,
+# which keep an owner in every tenant (ADR 0003): a direct write could remove the last
+# one. app_runtime still never inserts a membership.
 app_runtime table public.memberships SELECT
-app_runtime column public.memberships.role UPDATE
-app_runtime column public.memberships.updated_at UPDATE
 
 app_runtime table public.sessions DELETE
 app_runtime table public.sessions INSERT
@@ -54,9 +55,17 @@ app_runtime function public.accept_invitation(p_token_hash bytea, p_ip_prefix ci
 app_runtime function public.audit_mfa_factor_removed() EXECUTE
 app_runtime function public.auth_membership(p_tenant_id uuid) EXECUTE
 app_runtime function public.auth_memberships_for_user() EXECUTE
+# Tenants and members (migration 00005, ADR 0003). create_tenant replaces
+# create_tenant_with_owner and adds the per-user limit. The three member functions lock
+# the tenant row and refuse to leave it without an owner; they act only on
+# app.tenant_id and read the actor from app.user_id. lock_tenant_members, their helper,
+# is not executable by app_runtime.
+app_runtime function public.change_member_role(p_member uuid, p_role text, p_expected_actor_role text, p_expected_member_role text, p_ip_prefix cidr) EXECUTE
+app_runtime function public.create_tenant(p_name text, p_slug text, p_max_tenants integer, p_ip_prefix cidr) EXECUTE
+app_runtime function public.leave_tenant(p_ip_prefix cidr) EXECUTE
+app_runtime function public.remove_member(p_member uuid, p_expected_actor_role text, p_expected_member_role text, p_ip_prefix cidr) EXECUTE
 app_runtime function public.consume_mfa_challenge(p_token_hash bytea, p_challenge_id uuid) EXECUTE
 app_runtime function public.create_mfa_challenge(p_token_hash bytea, p_factor_id uuid, p_provider_challenge_id text) EXECUTE
-app_runtime function public.create_tenant_with_owner(p_name text, p_slug text, p_ip_prefix cidr) EXECUTE
 app_runtime function public.mark_session_mfa(p_token_hash bytea, p_challenge_id uuid, p_code_hash bytea, p_new_token_hash bytea) EXECUTE
 app_runtime function public.mfa_factors_for_user() EXECUTE
 app_runtime function public.register_mfa_factor(p_token_hash bytea, p_provider text, p_provider_factor_id text, p_provider_challenge_id text) EXECUTE

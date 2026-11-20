@@ -33,6 +33,30 @@ func (q *Queries) AuthMembership(ctx context.Context, tenantID pgtype.UUID) (Aut
 	return i, err
 }
 
+const changeMemberRole = `-- name: ChangeMemberRole :exec
+SELECT change_member_role($1::uuid, $2::text, $3::text,
+                          $4::text, $5::cidr)
+`
+
+type ChangeMemberRoleParams struct {
+	Member             pgtype.UUID
+	Role               string
+	ExpectedActorRole  string
+	ExpectedMemberRole string
+	IpPrefix           *netip.Prefix
+}
+
+func (q *Queries) ChangeMemberRole(ctx context.Context, arg ChangeMemberRoleParams) error {
+	_, err := q.db.Exec(ctx, changeMemberRole,
+		arg.Member,
+		arg.Role,
+		arg.ExpectedActorRole,
+		arg.ExpectedMemberRole,
+		arg.IpPrefix,
+	)
+	return err
+}
+
 const consumeMFAChallenge = `-- name: ConsumeMFAChallenge :one
 SELECT r.provider_challenge_id::text AS provider_challenge_id, r.factor_id::uuid AS factor_id,
        r.factor_verified::boolean AS factor_verified
@@ -143,6 +167,40 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (p
 	return id, err
 }
 
+const createTenant = `-- name: CreateTenant :one
+
+SELECT r.tenant_id::uuid AS tenant_id, r.membership_id::uuid AS membership_id
+FROM create_tenant($1::text, $2::text, $3::integer,
+                   $4::cidr) AS r(tenant_id, membership_id)
+`
+
+type CreateTenantParams struct {
+	Name       string
+	Slug       string
+	MaxTenants int32
+	IpPrefix   *netip.Prefix
+}
+
+type CreateTenantRow struct {
+	TenantID     pgtype.UUID
+	MembershipID pgtype.UUID
+}
+
+// Tenants and members (design 5.5 and 5.7, migration 00005). Writes that change who is a
+// member, or with which role, go through these functions; app_runtime cannot write
+// memberships directly.
+func (q *Queries) CreateTenant(ctx context.Context, arg CreateTenantParams) (CreateTenantRow, error) {
+	row := q.db.QueryRow(ctx, createTenant,
+		arg.Name,
+		arg.Slug,
+		arg.MaxTenants,
+		arg.IpPrefix,
+	)
+	var i CreateTenantRow
+	err := row.Scan(&i.TenantID, &i.MembershipID)
+	return i, err
+}
+
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, email_verified, display_name)
 VALUES ($1::text::extensions.citext, $2, $3)
@@ -177,6 +235,82 @@ func (q *Queries) IdentitySubject(ctx context.Context, arg IdentitySubjectParams
 	var subject string
 	err := row.Scan(&subject)
 	return subject, err
+}
+
+const leaveTenant = `-- name: LeaveTenant :exec
+SELECT leave_tenant($1::cidr)
+`
+
+func (q *Queries) LeaveTenant(ctx context.Context, ipPrefix *netip.Prefix) error {
+	_, err := q.db.Exec(ctx, leaveTenant, ipPrefix)
+	return err
+}
+
+const listMembers = `-- name: ListMembers :many
+SELECT m.id, m.user_id, u.email::text AS email, u.display_name, m.role, m.created_at
+FROM memberships m
+JOIN users u ON u.id = m.user_id
+WHERE m.tenant_id = $1
+  AND ($2::uuid IS NULL OR m.id > $2::uuid)
+ORDER BY m.id
+LIMIT $3
+`
+
+type ListMembersParams struct {
+	TenantID pgtype.UUID
+	After    pgtype.UUID
+	PageSize int32
+}
+
+type ListMembersRow struct {
+	ID          pgtype.UUID
+	UserID      pgtype.UUID
+	Email       string
+	DisplayName string
+	Role        string
+	CreatedAt   pgtype.Timestamptz
+}
+
+// A page of the tenant's members in membership order (UUIDv7, so by creation), which is
+// unique and stable. Under RLS; the WHERE on tenant_id is defence in depth.
+func (q *Queries) ListMembers(ctx context.Context, arg ListMembersParams) ([]ListMembersRow, error) {
+	rows, err := q.db.Query(ctx, listMembers, arg.TenantID, arg.After, arg.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMembersRow
+	for rows.Next() {
+		var i ListMembersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Email,
+			&i.DisplayName,
+			&i.Role,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockTenantName = `-- name: LockTenantName :one
+SELECT t.name FROM tenants t WHERE t.id = $1 FOR UPDATE
+`
+
+// Under RLS, in the tenant's transaction. The lock serializes renames, so the audited
+// old name is the one replaced.
+func (q *Queries) LockTenantName(ctx context.Context, id pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, lockTenantName, id)
+	var name string
+	err := row.Scan(&name)
+	return name, err
 }
 
 const mFAFactorsForUser = `-- name: MFAFactorsForUser :many
@@ -259,6 +393,41 @@ func (q *Queries) MarkSessionMFA(ctx context.Context, arg MarkSessionMFAParams) 
 		&i.AbsoluteExpiresAt,
 		&i.FactorID,
 		&i.FirstVerification,
+	)
+	return i, err
+}
+
+const memberByUser = `-- name: MemberByUser :one
+SELECT m.id, m.user_id, u.email::text AS email, u.display_name, m.role, m.created_at
+FROM memberships m
+JOIN users u ON u.id = m.user_id
+WHERE m.tenant_id = $1 AND m.user_id = $2
+`
+
+type MemberByUserParams struct {
+	TenantID pgtype.UUID
+	UserID   pgtype.UUID
+}
+
+type MemberByUserRow struct {
+	ID          pgtype.UUID
+	UserID      pgtype.UUID
+	Email       string
+	DisplayName string
+	Role        string
+	CreatedAt   pgtype.Timestamptz
+}
+
+func (q *Queries) MemberByUser(ctx context.Context, arg MemberByUserParams) (MemberByUserRow, error) {
+	row := q.db.QueryRow(ctx, memberByUser, arg.TenantID, arg.UserID)
+	var i MemberByUserRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Email,
+		&i.DisplayName,
+		&i.Role,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -401,6 +570,51 @@ func (q *Queries) RemoveMFAFactor(ctx context.Context, factorID pgtype.UUID) (Re
 	row := q.db.QueryRow(ctx, removeMFAFactor, factorID)
 	var i RemoveMFAFactorRow
 	err := row.Scan(&i.Provider, &i.ProviderFactorID)
+	return i, err
+}
+
+const removeMember = `-- name: RemoveMember :exec
+SELECT remove_member($1::uuid, $2::text,
+                     $3::text, $4::cidr)
+`
+
+type RemoveMemberParams struct {
+	Member             pgtype.UUID
+	ExpectedActorRole  string
+	ExpectedMemberRole string
+	IpPrefix           *netip.Prefix
+}
+
+func (q *Queries) RemoveMember(ctx context.Context, arg RemoveMemberParams) error {
+	_, err := q.db.Exec(ctx, removeMember,
+		arg.Member,
+		arg.ExpectedActorRole,
+		arg.ExpectedMemberRole,
+		arg.IpPrefix,
+	)
+	return err
+}
+
+const renameTenant = `-- name: RenameTenant :one
+UPDATE tenants SET name = $1 WHERE id = $2
+RETURNING id, slug, name
+`
+
+type RenameTenantParams struct {
+	Name string
+	ID   pgtype.UUID
+}
+
+type RenameTenantRow struct {
+	ID   pgtype.UUID
+	Slug string
+	Name string
+}
+
+func (q *Queries) RenameTenant(ctx context.Context, arg RenameTenantParams) (RenameTenantRow, error) {
+	row := q.db.QueryRow(ctx, renameTenant, arg.Name, arg.ID)
+	var i RenameTenantRow
+	err := row.Scan(&i.ID, &i.Slug, &i.Name)
 	return i, err
 }
 

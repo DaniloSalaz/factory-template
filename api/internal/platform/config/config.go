@@ -53,13 +53,14 @@ func (f LogFormat) Valid() bool { return f == LogFormatJSON || f == LogFormatTex
 
 // Config is the typed process configuration.
 type Config struct {
-	Env    Environment `env:"APP_ENV"`
-	HTTP   HTTP
-	DB     DB
-	Log    Log
-	Web    Web
-	Auth   Auth
-	WorkOS WorkOS
+	Env     Environment `env:"APP_ENV"`
+	HTTP    HTTP
+	DB      DB
+	Log     Log
+	Web     Web
+	Auth    Auth
+	WorkOS  WorkOS
+	Tenancy Tenancy
 }
 
 // HTTP configures the HTTP server.
@@ -105,6 +106,17 @@ type Auth struct {
 	SessionIdleTTL     time.Duration `env:"SESSION_IDLE_TTL"     envDefault:"168h"`
 	SessionAbsoluteTTL time.Duration `env:"SESSION_ABSOLUTE_TTL" envDefault:"720h"`
 }
+
+// Tenancy configures tenant creation (design, 5.5).
+type Tenancy struct {
+	// MaxTenantsPerUser is how many tenants a user may create (POST /tenants), counting
+	// those they later left.
+	MaxTenantsPerUser int `env:"TENANT_MAX_PER_USER" envDefault:"5"`
+}
+
+// maxTenantsPerUserCeiling bounds TENANT_MAX_PER_USER: a typo such as 50000 would
+// otherwise silently disable the limit.
+const maxTenantsPerUserCeiling = 1000
 
 // WorkOS configures the WorkOS AuthKit identity provider.
 type WorkOS struct {
@@ -233,6 +245,9 @@ func (c Config) validate() []*VarError {
 	c.validateWeb(add)
 	c.validateAuth(add)
 	c.validateWorkOS(add)
+	if n := c.Tenancy.MaxTenantsPerUser; n < 1 || n > maxTenantsPerUserCeiling {
+		add("TENANT_MAX_PER_USER", fmt.Sprintf("must be between 1 and %d", maxTenantsPerUserCeiling))
+	}
 	return errs
 }
 
@@ -409,11 +424,11 @@ func (c Config) String() string {
 	return fmt.Sprintf(
 		"Config{Env:%s HTTP:{Port:%d ReadHeaderTimeout:%s ReadTimeout:%s WriteTimeout:%s IdleTimeout:%s ShutdownTimeout:%s MaxHeaderBytes:%d MaxBodyBytes:%d} DB:{URL:%s} Log:{Level:%s Format:%s} "+
 			"Web:{FrontendOrigin:%s AllowedOrigins:%v TrustedClientIPHeader:%s} Auth:{SessionIdleTTL:%s SessionAbsoluteTTL:%s} "+
-			"WorkOS:{ClientID:%s APIKey:%s RedirectURI:%s}}",
+			"WorkOS:{ClientID:%s APIKey:%s RedirectURI:%s} Tenancy:{MaxTenantsPerUser:%d}}",
 		c.Env, c.HTTP.Port, c.HTTP.ReadHeaderTimeout, c.HTTP.ReadTimeout, c.HTTP.WriteTimeout,
 		c.HTTP.IdleTimeout, c.HTTP.ShutdownTimeout, c.HTTP.MaxHeaderBytes, c.HTTP.MaxBodyBytes, c.DB.URL, c.Log.Level, c.Log.Format,
 		c.Web.FrontendOrigin, c.Web.AllowedOrigins, c.Web.TrustedClientIPHeader, c.Auth.SessionIdleTTL, c.Auth.SessionAbsoluteTTL,
-		c.WorkOS.ClientID, c.WorkOS.APIKey, c.WorkOS.RedirectURI,
+		c.WorkOS.ClientID, c.WorkOS.APIKey, c.WorkOS.RedirectURI, c.Tenancy.MaxTenantsPerUser,
 	)
 }
 
@@ -450,6 +465,7 @@ func (c Config) LogValue() slog.Value {
 			slog.Any("api_key", c.WorkOS.APIKey),
 			slog.String("redirect_uri", c.WorkOS.RedirectURI),
 		),
+		slog.Group("tenancy", slog.Int("max_tenants_per_user", c.Tenancy.MaxTenantsPerUser)),
 	)
 }
 

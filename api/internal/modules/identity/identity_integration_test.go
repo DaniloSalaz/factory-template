@@ -121,7 +121,8 @@ type env struct {
 }
 
 type options struct {
-	rateLimit int
+	rateLimit  int
+	maxTenants int
 	// catalog defaults to testCatalog.
 	catalog *authz.Catalog
 }
@@ -133,7 +134,8 @@ func testCatalog(t *testing.T, ownerMFA time.Duration) *authz.Catalog {
 	c, err := authz.NewCatalog(
 		authz.Role{Name: authz.RoleOwner, Permissions: authz.PlatformPermissions(), RequiresMFA: ownerMFA > 0, MFAMaxAge: ownerMFA},
 		authz.Role{Name: "admin", Permissions: []authctx.Permission{
-			authz.PermMembersRead, authz.PermMembersInvite, authz.PermMembersManage, authz.PermAuditRead, authctx.PermScopeTenant,
+			authz.PermMembersRead, authz.PermMembersInvite, authz.PermMembersManage, authz.PermAuditRead,
+			authz.PermTenantUpdate, authctx.PermScopeTenant,
 		}},
 		authz.Role{Name: "member", Permissions: []authctx.Permission{authz.PermMembersRead, authctx.PermScopeTenant}},
 		authz.Role{Name: "client"},
@@ -172,6 +174,9 @@ func newEnv(t *testing.T, opts options) *env {
 	if opts.catalog == nil {
 		opts.catalog = testCatalog(t, 0)
 	}
+	if opts.maxTenants == 0 {
+		opts.maxTenants = 5
+	}
 
 	m, err := identity.New(identity.Deps{
 		DB: db.New(pool), Logger: logger,
@@ -181,6 +186,7 @@ func newEnv(t *testing.T, opts options) *env {
 		RateLimiter:    ratelimit.NewMemory(opts.rateLimit, time.Minute, nil),
 		MFARateLimiter: ratelimit.NewMemory(5, 15*time.Minute, clk.Now),
 		Catalog:        opts.catalog,
+		Tenancy:        config.Tenancy{MaxTenantsPerUser: opts.maxTenants},
 		Provider:       idp, Now: clk.Now,
 	})
 	if err != nil {
@@ -239,6 +245,7 @@ func newEnv(t *testing.T, opts options) *env {
 		httpx.RouteSecurity(mux, security),
 		m.SessionMiddleware(),
 		m.TenantMiddleware(),
+		httpx.KnownBodyFields(mux, routes.BodyFields(), logger),
 	)
 	srv := httptest.NewTLSServer(h)
 	t.Cleanup(srv.Close)
@@ -1019,7 +1026,7 @@ func TestNew_StartsWithAnyCatalog(t *testing.T) {
 				DB: db.New(nil), Logger: slog.New(slog.DiscardHandler),
 				WorkOS:      config.WorkOS{APIKey: pii.Secret(apiKey)},
 				RateLimiter: ratelimit.NewMemory(1, time.Minute, nil), MFARateLimiter: ratelimit.NewMemory(1, time.Minute, nil),
-				Catalog: testCatalog(t, ownerMFA), Provider: fakeidp.New(),
+				Catalog: testCatalog(t, ownerMFA), Provider: fakeidp.New(), Tenancy: config.Tenancy{MaxTenantsPerUser: 1},
 			})
 			if err != nil {
 				t.Fatalf("New = %v", err)

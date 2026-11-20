@@ -9,6 +9,10 @@ servers:
 # forgets to declare its security fails closed. Public operations declare
 # `security: []`; those without a tenant, `security: [{session: []}]`. The API reads
 # this from gen/routes (routegen), never from a hand-written list.
+#
+# A JSON body whose schema says `additionalProperties: false` accepts only its declared
+# properties: any other top-level member is answered with 400 unknown_field
+# (httpx.KnownBodyFields, also from gen/routes), never ignored.
 security:
   - session: []
     tenant: []
@@ -359,6 +363,205 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/InternalError"
+    patch:
+      operationId: updateCurrentTenant
+      summary: Rename the current tenant
+      description: >-
+        Needs tenant:update. Only the name changes; the slug is immutable, and sending it
+        (or any other field) is 400 unknown_field. Audited as tenant.updated with the old
+        and the new name.
+      tags: [identity]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantUpdate"
+      responses:
+        "200":
+          description: The renamed tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /tenants:
+    post:
+      operationId: createTenant
+      summary: Create a tenant, with the caller as its owner
+      description: >-
+        Needs a session but no tenant. The caller becomes the tenant's owner in the same
+        transaction. If the owner role requires MFA, creating the tenant does not: acting
+        in it does, so the first request with its X-Tenant-ID may answer 403
+        auth.mfa_enrollment_required or auth.mfa_required. Errors: 422
+        tenant.slug_invalid, 422 tenant.slug_reserved, 422 tenant.name_invalid, 409
+        tenant.slug_taken, 403 tenant.limit_reached (the caller has created as many
+        tenants as TENANT_MAX_PER_USER allows).
+      tags: [identity]
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantCreate"
+      responses:
+        "201":
+          description: The tenant, with the caller's role in it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatedTenant"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /tenant/members:
+    get:
+      operationId: listMembers
+      summary: The members of the current tenant
+      description: >-
+        Needs members:read. Ordered by membership, oldest first, which is stable; pass the
+        previous page's next_cursor to get the next one. Only members of the tenant of
+        X-Tenant-ID.
+      tags: [identity]
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: The next_cursor of the previous page; omit it for the first page.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        "200":
+          description: A page of members
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /tenant/members/me:
+    delete:
+      operationId: leaveTenant
+      summary: Leave the current tenant
+      description: >-
+        Needs only a session and the tenant, whatever the role. The last owner cannot
+        leave (409 membership.last_owner): make someone else owner first.
+      tags: [identity]
+      responses:
+        "204":
+          description: The caller is no longer a member.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /tenant/members/{userId}:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      operationId: changeMemberRole
+      summary: Change a member's role
+      description: >-
+        Needs members:manage. The caller acts only on members whose role is strictly
+        included in theirs (an owner also on other owners) and assigns only roles
+        included in theirs; nobody changes their own role. Errors: 404
+        membership.not_found (not a member of this tenant, whether or not the user
+        exists), 403 membership.target_forbidden, membership.role_not_assignable or
+        membership.self_change, 422 membership.unknown_role, 409 membership.last_owner or
+        membership.changed (a role changed meanwhile; read again and retry).
+      tags: [identity]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemberRoleChange"
+      responses:
+        "200":
+          description: The member with the new role
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: removeMember
+      summary: Remove a member from the current tenant
+      description: >-
+        Needs members:manage and the same hierarchy as changing the role. To leave the
+        tenant, use DELETE /tenant/members/me (403 membership.self_change here). The last
+        owner cannot be removed (409 membership.last_owner).
+      tags: [identity]
+      responses:
+        "204":
+          description: The user is no longer a member.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   securitySchemes:
     session:
@@ -537,6 +740,92 @@ components:
           type: array
           items:
             type: string
+    Tenant:
+      type: object
+      additionalProperties: false
+      required: [id, slug, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+    CreatedTenant:
+      type: object
+      additionalProperties: false
+      required: [id, slug, name, role]
+      properties:
+        id:
+          description: The value to send as X-Tenant-ID.
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        role:
+          description: The caller's role in it, always owner.
+          type: string
+    TenantCreate:
+      type: object
+      additionalProperties: false
+      required: [name, slug]
+      properties:
+        name:
+          description: 1 to 100 characters, not only spaces; leading and trailing spaces are trimmed.
+          type: string
+        slug:
+          description: >-
+            3 to 40 lower-case letters, digits and hyphens, not starting or ending with a
+            hyphen, unique and not reserved (api, www, admin…). It cannot change later.
+          type: string
+    TenantUpdate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          description: 1 to 100 characters, not only spaces; leading and trailing spaces are trimmed.
+          type: string
+    Member:
+      type: object
+      additionalProperties: false
+      required: [user_id, email, display_name, role, joined_at]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        display_name:
+          type: string
+        role:
+          type: string
+        joined_at:
+          type: string
+          format: date-time
+    MemberPage:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Member"
+        next_cursor:
+          description: Pass it as cursor to get the next page; null on the last one.
+          type: [string, "null"]
+    MemberRoleChange:
+      type: object
+      additionalProperties: false
+      required: [role]
+      properties:
+        role:
+          description: A role of the app's catalog.
+          type: string
     Logout:
       type: object
       additionalProperties: false

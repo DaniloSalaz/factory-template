@@ -45,14 +45,11 @@ func (s *Store) Anon(ctx context.Context, fn func(context.Context, app.Repo) err
 
 // AsUser implements app.Store with db.WithUserTx.
 func (s *Store) AsUser(ctx context.Context, userID string, fn func(context.Context, app.Repo) error) error {
-	if u, ok := authctx.UserFrom(ctx); !ok || u.ID() != userID {
-		u, err := authctx.NewUser(userID, time.Time{})
-		if err != nil {
-			return fmt.Errorf("transaction user: %w", err)
-		}
-		ctx = authctx.WithUser(ctx, u)
+	ctx, err := asUser(ctx, userID)
+	if err != nil {
+		return err
 	}
-	err := s.db.WithUserTx(ctx, func(ctx context.Context, q db.Querier) error {
+	err = s.db.WithUserTx(ctx, func(ctx context.Context, q db.Querier) error {
 		return fn(ctx, repo{q: identitydb.New(q)})
 	})
 	return db.MapError(err)
@@ -60,13 +57,31 @@ func (s *Store) AsUser(ctx context.Context, userID string, fn func(context.Conte
 
 // InTenant implements app.Store with db.WithTenantTx.
 func (s *Store) InTenant(ctx context.Context, p authctx.Principal, fn func(context.Context, app.Repo) error) error {
-	if cur, ok := authctx.PrincipalFrom(ctx); !ok || cur.UserID() != p.UserID() || cur.TenantID() != p.TenantID() {
-		ctx = authctx.WithPrincipal(ctx, p)
-	}
-	err := s.db.WithTenantTx(ctx, func(ctx context.Context, q db.Querier) error {
+	err := s.db.WithTenantTx(inTenant(ctx, p), func(ctx context.Context, q db.Querier) error {
 		return fn(ctx, repo{q: identitydb.New(q)})
 	})
 	return db.MapError(err)
+}
+
+// asUser returns ctx with userID as its authctx.User, which db.WithUserTx reads.
+func asUser(ctx context.Context, userID string) (context.Context, error) {
+	if u, ok := authctx.UserFrom(ctx); ok && u.ID() == userID {
+		return ctx, nil
+	}
+	u, err := authctx.NewUser(userID, time.Time{})
+	if err != nil {
+		return nil, fmt.Errorf("transaction user: %w", err)
+	}
+	return authctx.WithUser(ctx, u), nil
+}
+
+// inTenant returns ctx with p as its authctx.Principal, which db.WithTenantTx reads.
+func inTenant(ctx context.Context, p authctx.Principal) context.Context {
+	if cur, ok := authctx.PrincipalFrom(ctx); ok && cur.UserID() == p.UserID() && cur.TenantID() == p.TenantID() &&
+		cur.Role() == p.Role() {
+		return ctx
+	}
+	return authctx.WithPrincipal(ctx, p)
 }
 
 type repo struct {
