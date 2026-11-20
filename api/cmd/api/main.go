@@ -29,6 +29,13 @@ const (
 	authRateWindow = time.Minute
 )
 
+// MFA verification attempts per user and per session, and enrollments and challenges per
+// user, in 15 minutes (design, 5.2).
+const (
+	mfaRateLimit  = 5
+	mfaRateWindow = 15 * time.Minute
+)
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 
@@ -67,8 +74,9 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 
 	idm, err := identity.New(identity.Deps{
 		DB: db.New(pool), Logger: logger, Web: cfg.Web, Auth: cfg.Auth, WorkOS: cfg.WorkOS,
-		RateLimiter: ratelimit.NewMemory(authRateLimit, authRateWindow, nil),
-		Catalog:     catalog,
+		RateLimiter:    ratelimit.NewMemory(authRateLimit, authRateWindow, nil),
+		MFARateLimiter: ratelimit.NewMemory(mfaRateLimit, mfaRateWindow, nil),
+		Catalog:        catalog,
 	})
 	if err != nil {
 		return fmt.Errorf("wire identity module: %w", err)

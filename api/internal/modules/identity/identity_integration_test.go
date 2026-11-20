@@ -121,14 +121,13 @@ type env struct {
 }
 
 type options struct {
-	mfaRequired bool
-	rateLimit   int
+	rateLimit int
 	// catalog defaults to testCatalog.
 	catalog *authz.Catalog
 }
 
-// testCatalog has the example roles but no MFA, so tests that do not care about MFA run
-// with WORKOS_MFA_REQUIRED=false.
+// testCatalog has the example roles; owner requires MFA only when ownerMFA > 0, so tests
+// that do not care about MFA need no factor.
 func testCatalog(t *testing.T, ownerMFA time.Duration) *authz.Catalog {
 	t.Helper()
 	c, err := authz.NewCatalog(
@@ -176,12 +175,13 @@ func newEnv(t *testing.T, opts options) *env {
 
 	m, err := identity.New(identity.Deps{
 		DB: db.New(pool), Logger: logger,
-		Web:         config.Web{FrontendOrigin: frontOrigin, AllowedOrigins: []string{frontOrigin}},
-		Auth:        config.Auth{SessionIdleTTL: idleTTL, SessionAbsoluteTTL: absoluteTTL},
-		WorkOS:      config.WorkOS{ClientID: "client_test", APIKey: pii.Secret(apiKey), MFARequired: opts.mfaRequired},
-		RateLimiter: ratelimit.NewMemory(opts.rateLimit, time.Minute, nil),
-		Catalog:     opts.catalog,
-		Provider:    idp, Now: clk.Now,
+		Web:            config.Web{FrontendOrigin: frontOrigin, AllowedOrigins: []string{frontOrigin}},
+		Auth:           config.Auth{SessionIdleTTL: idleTTL, SessionAbsoluteTTL: absoluteTTL},
+		WorkOS:         config.WorkOS{ClientID: "client_test", APIKey: pii.Secret(apiKey)},
+		RateLimiter:    ratelimit.NewMemory(opts.rateLimit, time.Minute, nil),
+		MFARateLimiter: ratelimit.NewMemory(5, 15*time.Minute, clk.Now),
+		Catalog:        opts.catalog,
+		Provider:       idp, Now: clk.Now,
 	})
 	if err != nil {
 		t.Fatalf("identity.New: %v", err)
@@ -417,7 +417,7 @@ func (e *env) person() app.Authentication {
 		Subject:       fmt.Sprintf("user_%s_%d", strings.ReplaceAll(e.t.Name(), "/", "_"), n),
 		Email:         pii.Email(fmt.Sprintf("u%d.%d@example.test", n, time.Now().UnixNano())),
 		EmailVerified: true, DisplayName: "Test User", SessionID: fmt.Sprintf("session_%d", n), Method: "Password",
-		MFA: domain.ProviderMFA{AuthTime: e.clock.Now().Add(-time.Second), CoveredByPolicy: true},
+		AuthTime: e.clock.Now().Add(-time.Second),
 	}
 }
 
@@ -486,7 +486,7 @@ func TestLogin_CreatesSessionStoringOnlyTheHash(t *testing.T) {
 	if n := e.count(`SELECT count(*) FROM sessions s WHERE row_to_json(s)::text LIKE '%' || $1 || '%'`, token); n != 0 {
 		t.Fatal("the session token is stored in clear")
 	}
-	if got := e.scalar(`SELECT (auth_time = $2)::text FROM sessions WHERE user_id = $1`, userID, who.MFA.AuthTime); got != "true" {
+	if got := e.scalar(`SELECT (auth_time = $2)::text FROM sessions WHERE user_id = $1`, userID, who.AuthTime); got != "true" {
 		t.Fatalf("auth_time must be the provider's time")
 	}
 	if got := e.scalar(`SELECT ip_prefix::text FROM sessions WHERE user_id = $1`, userID); got != "127.0.0.0/24" {
@@ -707,7 +707,7 @@ func TestLogin_ConcurrentFirstLogin(t *testing.T) {
 }
 
 func TestLogin_ImpersonationIsRefused(t *testing.T) {
-	e := newEnv(t, options{mfaRequired: true})
+	e := newEnv(t, options{})
 	victim := e.person()
 	e.browser().login(victim)
 	userID := e.scalar(`SELECT user_id::text FROM user_identities WHERE subject = $1`, victim.Subject)
@@ -730,13 +730,13 @@ func TestLogin_ImpersonationIsRefused(t *testing.T) {
 }
 
 func TestLogin_StaleAuthenticationIsRejected(t *testing.T) {
-	e := newEnv(t, options{mfaRequired: true})
+	e := newEnv(t, options{})
 
 	t.Run("older than the attempt, beyond the clock margin", func(t *testing.T) {
 		who := e.person()
 		b := e.browser()
 		state := b.startLogin("/")
-		who.MFA.AuthTime = e.clock.Now().Add(-domain.AuthClockSkew - time.Second)
+		who.AuthTime = e.clock.Now().Add(-domain.AuthClockSkew - time.Second)
 		e.idp.Authenticate(state, "c", who)
 		if res := b.callback(state, "c"); res.status != http.StatusUnauthorized || res.problemCode(t) != "auth.stale_authentication" {
 			t.Fatalf("callback: %d %s", res.status, res.body)
@@ -753,7 +753,7 @@ func TestLogin_StaleAuthenticationIsRejected(t *testing.T) {
 		who := e.person()
 		b := e.browser()
 		state := b.startLogin("/")
-		who.MFA.AuthTime = e.clock.Now().Add(-domain.AuthClockSkew + time.Second)
+		who.AuthTime = e.clock.Now().Add(-domain.AuthClockSkew + time.Second)
 		e.idp.Authenticate(state, "c2", who)
 		if res := b.callback(state, "c2"); res.status != http.StatusFound {
 			t.Fatalf("callback: %d %s", res.status, res.body)
@@ -995,55 +995,36 @@ func TestLogin_RateLimited(t *testing.T) {
 	}
 }
 
-func TestLogin_MFA(t *testing.T) {
-	e := newEnv(t, options{mfaRequired: true})
-	mfaOf := func(who app.Authentication) string {
-		return e.scalar(`SELECT (mfa_auth_time = auth_time)::text FROM sessions
-			WHERE user_id = (SELECT user_id FROM user_identities WHERE subject = $1)
-			ORDER BY created_at DESC LIMIT 1`, who.Subject)
-	}
-
+// A login never gives the session MFA, whatever the method (design, 5.2).
+func TestLogin_NeverSetsMFA(t *testing.T) {
+	e := newEnv(t, options{})
 	who := e.person()
 	e.browser().login(who)
-	if got := mfaOf(who); got != "true" {
-		t.Fatalf("with MFA required at the provider, mfa_auth_time = auth_time; got %s", got)
-	}
-
-	offList := e.person()
-	offList.MFA.CoveredByPolicy = false
-	e.browser().login(offList)
-	if got := mfaOf(offList); got != "<null>" {
-		t.Fatalf("a method off the allowlist is never MFA; got %s", got)
-	}
-
-	noMFA := e.person()
-	noMFA.MFA.HasAMR, noMFA.MFA.AMR = true, []string{"pwd"}
-	b := e.browser()
-	state := b.startLogin("/")
-	e.idp.Authenticate(state, "c", noMFA)
-	if res := b.callback(state, "c"); res.status != http.StatusForbidden || res.problemCode(t) != "auth.mfa_required" {
-		t.Fatalf("reported methods without mfa: %d %s", res.status, res.body)
+	got := e.scalar(`SELECT mfa_auth_time::text FROM sessions
+		WHERE user_id = (SELECT user_id FROM user_identities WHERE subject = $1)`, who.Subject)
+	if got != "<null>" {
+		t.Fatalf("mfa_auth_time after a login = %s, want NULL", got)
 	}
 }
 
-func TestNew_RefusesRolesRequiringMFAWithoutProviderMFA(t *testing.T) {
+// Nothing about the provider's MFA setting gates the start-up any more: a catalog with or
+// without roles that require MFA starts.
+func TestNew_StartsWithAnyCatalog(t *testing.T) {
 	t.Parallel()
 
-	catalog, err := authz.NewCatalog(
-		authz.Role{Name: authz.RoleOwner, Permissions: authz.PlatformPermissions(), RequiresMFA: true, MFAMaxAge: time.Hour},
-		authz.Role{Name: "lawyer", RequiresMFA: true, MFAMaxAge: time.Hour},
-		authz.Role{Name: "client"},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = identity.New(identity.Deps{
-		WorkOS:  config.WorkOS{APIKey: pii.Secret(apiKey), MFARequired: false},
-		Catalog: catalog,
-	})
-	if err == nil || !strings.Contains(err.Error(), "lawyer, owner require MFA but WORKOS_MFA_REQUIRED is false") ||
-		!strings.Contains(err.Error(), "docs/runbooks/auth.md") {
-		t.Fatalf("New = %v", err)
+	for name, ownerMFA := range map[string]time.Duration{"no role requires MFA": 0, "owner requires MFA": 12 * time.Hour} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			_, err := identity.New(identity.Deps{
+				DB: db.New(nil), Logger: slog.New(slog.DiscardHandler),
+				WorkOS:      config.WorkOS{APIKey: pii.Secret(apiKey)},
+				RateLimiter: ratelimit.NewMemory(1, time.Minute, nil), MFARateLimiter: ratelimit.NewMemory(1, time.Minute, nil),
+				Catalog: testCatalog(t, ownerMFA), Provider: fakeidp.New(),
+			})
+			if err != nil {
+				t.Fatalf("New = %v", err)
+			}
+		})
 	}
 }
 
@@ -1241,32 +1222,242 @@ func TestTenant_Principal(t *testing.T) {
 	}
 }
 
+// The acceptance cases of a role that requires MFA, through the real flow: enroll,
+// verify, the 12 h window, and a role that needs none.
 func TestTenant_RoleMFA(t *testing.T) {
-	e := newEnv(t, options{mfaRequired: true, catalog: testCatalog(t, 12*time.Hour)})
+	e := newEnv(t, options{catalog: testCatalog(t, 12*time.Hour)})
 	tenant := e.tenant()
 
-	noMFA := e.person()
-	noMFA.MFA.CoveredByPolicy = false // a method off the allowlist: mfa_auth_time is NULL
-	nb := e.browser()
-	nb.login(noMFA)
-	e.member(noMFA, tenant, authz.RoleOwner)
-	if res := nb.inTenant(tenant); res.status != http.StatusForbidden || res.problemCode(t) != "auth.mfa_required" {
-		t.Fatalf("owner without MFA: %d %s", res.status, res.body)
+	who := e.person()
+	b := e.browser()
+	b.login(who)
+	e.member(who, tenant, authz.RoleOwner)
+	if res := b.inTenant(tenant); res.status != http.StatusForbidden || res.problemCode(t) != "auth.mfa_enrollment_required" {
+		t.Fatalf("owner without a factor: %d %s, want auth.mfa_enrollment_required", res.status, res.body)
 	}
-	if res := nb.do(http.MethodGet, "/whoami", ""); res.status != http.StatusNoContent {
+	if res := b.do(http.MethodGet, "/whoami", ""); res.status != http.StatusNoContent {
 		t.Fatalf("routes without a tenant do not check the role's MFA: %d", res.status)
 	}
 
-	withMFA := e.person()
-	b := e.browser()
-	b.login(withMFA)
-	e.member(withMFA, tenant, authz.RoleOwner)
+	factor := b.enrollAndVerify("111111")
 	if p := b.inTenant(tenant).principal(t); p.Role != authz.RoleOwner {
-		t.Fatalf("owner with recent MFA: %+v", p)
+		t.Fatalf("owner with MFA inside the window: %+v", p)
 	}
-	e.clock.Advance(12*time.Hour + time.Minute)
+
+	b.ageMFA(12*time.Hour + time.Minute)
 	if res := b.inTenant(tenant); res.status != http.StatusForbidden || res.problemCode(t) != "auth.mfa_required" {
-		t.Fatalf("owner with MFA older than 12 h: %d %s", res.status, res.body)
+		t.Fatalf("owner with MFA older than 12 h: %d %s, want auth.mfa_required", res.status, res.body)
+	}
+	e.idp.SetCode(e.providerFactor(factor), "222222")
+	if res := b.verify(b.challenge(factor), "222222"); res.status != http.StatusOK {
+		t.Fatalf("verify again: %d %s", res.status, res.body)
+	}
+	if res := b.inTenant(tenant); res.status != http.StatusOK {
+		t.Fatalf("owner after verifying again: %d %s", res.status, res.body)
+	}
+
+	member := e.person()
+	mb := e.browser()
+	mb.login(member)
+	e.member(member, tenant, "member")
+	if res := mb.inTenant(tenant); res.status != http.StatusOK {
+		t.Fatalf("member without MFA: %d %s", res.status, res.body)
+	}
+}
+
+func TestMFA_VerifyReplacesTheSession(t *testing.T) {
+	e := newEnv(t, options{})
+	who := e.person()
+	b := e.browser()
+	b.login(who)
+	before := b.sessionToken()
+	uid := e.userID(who)
+
+	factorID, challengeID := b.enroll()
+	if n := e.count(`SELECT count(*) FROM mfa_factors WHERE id = $1 AND verified_at IS NULL`, factorID); n != 1 {
+		t.Fatal("the factor counts only after its first code")
+	}
+	e.idp.SetCode(e.providerFactor(factorID), "123456")
+	res := b.verify(challengeID, "123456")
+	if res.status != http.StatusOK {
+		t.Fatalf("verify: %d %s", res.status, res.body)
+	}
+	after := b.sessionToken()
+	if after == before || after == "" {
+		t.Fatal("the verification must set a new session cookie")
+	}
+	if res := e.browserWithToken(before).do(http.MethodGet, "/whoami", ""); res.status != http.StatusUnauthorized {
+		t.Fatalf("the cookie from before the verification: %d, want 401", res.status)
+	}
+	if res := b.do(http.MethodGet, "/whoami", ""); res.status != http.StatusNoContent {
+		t.Fatalf("the new cookie: %d", res.status)
+	}
+	if got := e.scalar(`SELECT (mfa_auth_time IS NOT NULL)::text FROM sessions WHERE token_hash = decode($1, 'hex')`, hashHex(after)); got != "true" {
+		t.Fatal("the new session must have its MFA set")
+	}
+	if got := e.scalar(`SELECT (revoked_at IS NOT NULL)::text FROM sessions WHERE token_hash = decode($1, 'hex')`, hashHex(before)); got != "true" {
+		t.Fatal("the old session must be revoked")
+	}
+	for _, action := range []string{"mfa.factor_enrolled", "mfa.verified"} {
+		if n := e.count(`SELECT count(*) FROM audit_log WHERE action = $1 AND actor_user_id = $2`, action, uid); n != 1 {
+			t.Fatalf("%s events = %d, want 1", action, n)
+		}
+	}
+
+	var me struct {
+		MFAEnrolled  bool    `json:"mfa_enrolled"`
+		SessionMFAAt *string `json:"session_mfa_at"`
+		Factors      []struct {
+			ID       string `json:"id"`
+			Verified bool   `json:"verified"`
+		} `json:"mfa_factors"`
+	}
+	if err := json.Unmarshal(b.do(http.MethodGet, "/me", "").body, &me); err != nil {
+		t.Fatal(err)
+	}
+	if !me.MFAEnrolled || me.SessionMFAAt == nil || len(me.Factors) != 1 || me.Factors[0].ID != factorID || !me.Factors[0].Verified {
+		t.Fatalf("/me = %+v", me)
+	}
+}
+
+func TestMFA_CodesAndChallenges(t *testing.T) {
+	e := newEnv(t, options{})
+	// Each case has its own user: the verification quota is per user.
+	withFactor := func(code string) (*browser, app.Authentication, string) {
+		who := e.person()
+		b := e.browser()
+		b.login(who)
+		return b, who, b.enrollAndVerify(code)
+	}
+	failures := func(who app.Authentication) int {
+		return e.count(`SELECT count(*) FROM audit_log WHERE action = 'mfa.verify_failed' AND actor_user_id = $1`, e.userID(who))
+	}
+
+	t.Run("a code accepted once is refused again", func(t *testing.T) {
+		b, who, factor := withFactor("333333")
+		if res := b.verify(b.challenge(factor), "333333"); res.status != http.StatusConflict || res.problemCode(t) != "mfa.code_reused" {
+			t.Fatalf("reused code: %d %s, want 409 mfa.code_reused", res.status, res.body)
+		}
+		if n := failures(who); n != 1 {
+			t.Fatalf("mfa.verify_failed events = %d, want 1", n)
+		}
+	})
+	t.Run("a challenge admits one attempt", func(t *testing.T) {
+		b, who, factor := withFactor("333333")
+		e.idp.SetCode(e.providerFactor(factor), "444444")
+		ch := b.challenge(factor)
+		if res := b.verify(ch, "999999"); res.status != http.StatusUnprocessableEntity || res.problemCode(t) != "mfa.code_invalid" {
+			t.Fatalf("wrong code: %d %s", res.status, res.body)
+		}
+		if res := b.verify(ch, "444444"); res.status != http.StatusConflict || res.problemCode(t) != "mfa.challenge_used" {
+			t.Fatalf("second attempt: %d %s, want 409 mfa.challenge_used", res.status, res.body)
+		}
+		if n := failures(who); n != 2 {
+			t.Fatalf("mfa.verify_failed events = %d, want 2", n)
+		}
+	})
+	t.Run("a challenge expires after 5 minutes", func(t *testing.T) {
+		b, _, factor := withFactor("333333")
+		e.idp.SetCode(e.providerFactor(factor), "444444")
+		ch := b.challenge(factor)
+		if got := e.scalar(`SELECT (expires_at - created_at)::text FROM mfa_challenges WHERE id = $1`, ch); got != "00:05:00" {
+			t.Fatalf("challenge lifetime = %s, want 5 minutes", got)
+		}
+		e.exec(`UPDATE mfa_challenges SET expires_at = now() - interval '1 second' WHERE id = $1`, ch)
+		if res := b.verify(ch, "444444"); res.status != http.StatusConflict || res.problemCode(t) != "mfa.challenge_expired" {
+			t.Fatalf("expired challenge: %d %s", res.status, res.body)
+		}
+	})
+	t.Run("a challenge belongs to its session", func(t *testing.T) {
+		b, who, factor := withFactor("333333")
+		e.idp.SetCode(e.providerFactor(factor), "444444")
+		other := e.browser()
+		other.login(who)
+		ch := b.challenge(factor)
+		if res := other.verify(ch, "444444"); res.status != http.StatusNotFound || res.problemCode(t) != "mfa.challenge_not_found" {
+			t.Fatalf("another session's challenge: %d %s", res.status, res.body)
+		}
+		if res := b.verify(ch, "444444"); res.status != http.StatusOK {
+			t.Fatalf("the challenge's own session can still use it: %d %s", res.status, res.body)
+		}
+	})
+}
+
+func TestMFA_SameCodeTwiceConcurrently(t *testing.T) {
+	e := newEnv(t, options{})
+	b := e.browser()
+	b.login(e.person())
+	factor := b.enrollAndVerify("123123")
+	e.idp.SetCode(e.providerFactor(factor), "456456")
+	c1, c2 := b.challenge(factor), b.challenge(factor)
+
+	var wg sync.WaitGroup
+	statuses := make([]int, 2)
+	for i, ch := range []string{c1, c2} {
+		wg.Go(func() { statuses[i] = b.verify(ch, "456456").status })
+	}
+	wg.Wait()
+	ok := 0
+	for _, st := range statuses {
+		if st == http.StatusOK {
+			ok++
+		}
+	}
+	if ok != 1 {
+		t.Fatalf("statuses = %v, want exactly one 200", statuses)
+	}
+}
+
+func TestMFA_VerificationIsRateLimited(t *testing.T) {
+	e := newEnv(t, options{})
+	who := e.person()
+	b := e.browser()
+	b.login(who)
+	for i := range 5 {
+		if res := b.verify("0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f0000", "000000"); res.status == http.StatusTooManyRequests {
+			t.Fatalf("attempt %d already limited", i+1)
+		}
+	}
+	res := b.verify("0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f0000", "000000")
+	if res.status != http.StatusTooManyRequests || res.problemCode(t) != "mfa.rate_limited" ||
+		res.header.Get("Content-Type") != httpx.ProblemContentType {
+		t.Fatalf("6th attempt: %d %s, want 429 mfa.rate_limited (problem+json)", res.status, res.body)
+	}
+	if n := e.count(`SELECT count(*) FROM audit_log WHERE action = 'mfa.verify_locked' AND actor_user_id = $1`, e.userID(who)); n != 1 {
+		t.Fatalf("mfa.verify_locked events = %d, want 1", n)
+	}
+}
+
+func TestMFA_RemoveFactor(t *testing.T) {
+	e := newEnv(t, options{catalog: testCatalog(t, 12*time.Hour)})
+	tenant := e.tenant()
+
+	owner := e.person()
+	ob := e.browser()
+	ob.login(owner)
+	e.member(owner, tenant, authz.RoleOwner)
+	factor := ob.enrollAndVerify("121212")
+	if res := ob.remove(factor); res.status != http.StatusForbidden || res.problemCode(t) != "mfa.last_factor_required" {
+		t.Fatalf("owner removing the only factor: %d %s, want 403 mfa.last_factor_required", res.status, res.body)
+	}
+	if e.idp.Factors() == 0 {
+		t.Fatal("the refused removal reached the provider")
+	}
+	ob.ageMFA(domain.FactorChangeMFAMaxAge + time.Second)
+	e.exec(`UPDATE memberships SET role = 'member' WHERE tenant_id = $1`, tenant)
+	if res := ob.remove(factor); res.status != http.StatusForbidden || res.problemCode(t) != "auth.mfa_required" {
+		t.Fatalf("removing with an MFA older than 10 minutes: %d %s, want auth.mfa_required", res.status, res.body)
+	}
+	e.idp.SetCode(e.providerFactor(factor), "343434")
+	if res := ob.verify(ob.challenge(factor), "343434"); res.status != http.StatusOK {
+		t.Fatalf("verify: %d %s", res.status, res.body)
+	}
+	if res := ob.remove(factor); res.status != http.StatusNoContent {
+		t.Fatalf("member removing a factor with a recent MFA: %d %s", res.status, res.body)
+	}
+	got := e.scalar(`SELECT metadata->>'by' FROM audit_log WHERE action = 'mfa.factor_removed' AND target_id = $1`, factor)
+	if got != "app_runtime" {
+		t.Fatalf("mfa.factor_removed by = %s, want app_runtime", got)
 	}
 }
 
@@ -1471,4 +1662,118 @@ func TestAuthorizer_DeniesWhenTheAuditFails(t *testing.T) {
 	if len(recs) != 1 || recs[0]["level"] != "ERROR" {
 		t.Fatalf("the failed audit must be logged at Error: %v", recs)
 	}
+}
+
+// ageMFA makes the browser's session MFA older by d. mark_session_mfa sets it with the
+// database clock, which the test clock cannot move.
+func (b *browser) ageMFA(d time.Duration) {
+	b.e.t.Helper()
+	b.e.exec(`UPDATE sessions SET mfa_auth_time = mfa_auth_time - make_interval(secs => $2)
+		WHERE token_hash = decode($1, 'hex')`, hashHex(b.sessionToken()), d.Seconds())
+}
+
+// providerFactor is the provider's id of one of our factors.
+func (e *env) providerFactor(factorID string) string {
+	e.t.Helper()
+	return e.scalar(`SELECT provider_factor_id FROM mfa_factors WHERE id = $1`, factorID)
+}
+
+// browserWithToken is a browser holding the session cookie token.
+func (e *env) browserWithToken(token string) *browser {
+	e.t.Helper()
+	b := e.browser()
+	u, _ := url.Parse(e.srv.URL)
+	b.client.Jar.SetCookies(u, []*http.Cookie{{Name: "__Host-session", Value: token, Path: "/", Secure: true}})
+	return b
+}
+
+func (b *browser) doJSON(method, path string, body any) response {
+	b.e.t.Helper()
+	var r io.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			b.e.t.Fatal(err)
+		}
+		r = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequestWithContext(b.e.t.Context(), method, b.e.srv.URL+path, r)
+	if err != nil {
+		b.e.t.Fatal(err)
+	}
+	req.Header.Set("Origin", frontOrigin)
+	req.Header.Set("Content-Type", "application/json")
+	res, err := b.client.Do(req)
+	if err != nil {
+		b.e.t.Fatalf("%s %s: %v", method, path, err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	out, err := io.ReadAll(res.Body)
+	if err != nil {
+		b.e.t.Fatal(err)
+	}
+	return response{status: res.StatusCode, header: res.Header, body: out}
+}
+
+// enroll enrolls a TOTP factor and returns it and its first challenge.
+func (b *browser) enroll() (factorID, challengeID string) {
+	b.e.t.Helper()
+	res := b.doJSON(http.MethodPost, "/me/mfa/totp", nil)
+	if res.status != http.StatusCreated {
+		var cause string
+		for _, r := range b.e.logRecords("request failed") {
+			cause = fmt.Sprint(r["error"])
+		}
+		b.e.t.Fatalf("enroll: %d %s (cause: %s)", res.status, res.body, cause)
+	}
+	var e struct {
+		FactorID    string `json:"factor_id"`
+		ChallengeID string `json:"challenge_id"`
+		Secret      string `json:"secret"`
+		QRCode      string `json:"qr_code"`
+	}
+	if err := json.Unmarshal(res.body, &e); err != nil || e.Secret == "" || e.QRCode == "" {
+		b.e.t.Fatalf("enrollment %s: %v", res.body, err)
+	}
+	if strings.Contains(b.e.logs.String(), e.Secret) {
+		b.e.t.Fatal("the TOTP secret reached the logs")
+	}
+	return e.FactorID, e.ChallengeID
+}
+
+func (b *browser) challenge(factorID string) string {
+	b.e.t.Helper()
+	res := b.doJSON(http.MethodPost, "/me/mfa/challenges", map[string]string{"factor_id": factorID})
+	if res.status != http.StatusCreated {
+		b.e.t.Fatalf("challenge: %d %s", res.status, res.body)
+	}
+	var c struct {
+		ChallengeID string `json:"challenge_id"`
+	}
+	if err := json.Unmarshal(res.body, &c); err != nil {
+		b.e.t.Fatal(err)
+	}
+	return c.ChallengeID
+}
+
+func (b *browser) verify(challengeID, code string) response {
+	b.e.t.Helper()
+	return b.doJSON(http.MethodPost, "/me/mfa/totp/verify", map[string]string{"challenge_id": challengeID, "code": code})
+}
+
+func (b *browser) remove(factorID string) response {
+	b.e.t.Helper()
+	return b.doJSON(http.MethodDelete, "/me/mfa/totp/"+factorID, nil)
+}
+
+// enrollAndVerify enrolls a factor that accepts code and verifies it; the browser ends
+// with a session whose MFA is now. It returns the factor id.
+func (b *browser) enrollAndVerify(code string) string {
+	b.e.t.Helper()
+	factorID, challengeID := b.enroll()
+	b.e.idp.SetCode(b.e.providerFactor(factorID), code)
+	if res := b.verify(challengeID, code); res.status != http.StatusOK {
+		b.e.t.Fatalf("verify: %d %s", res.status, res.body)
+	}
+	return factorID
 }

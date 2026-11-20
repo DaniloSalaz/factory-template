@@ -63,7 +63,7 @@ func TestLoad_Valid(t *testing.T) {
 					c.Log.Level == slog.LevelInfo &&
 					c.Log.Format == LogFormatJSON &&
 					c.Auth.SessionIdleTTL == 7*24*time.Hour && c.Auth.SessionAbsoluteTTL == 30*24*time.Hour &&
-					c.Web.TrustedClientIPHeader == "" && !c.WorkOS.MFARequired &&
+					c.Web.TrustedClientIPHeader == "" &&
 					c.WorkOS.APIKey.Reveal() == testAPIKey
 			},
 		},

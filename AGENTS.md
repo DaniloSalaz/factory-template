@@ -12,6 +12,7 @@ Plantilla base para SaaS: monolito modular en Go + frontend React. Desarrollador
 ## Comandos (`mise run <tarea>`)
 | Tarea | Qué hace |
 |---|---|
+| `hooks:install` | Instala el hook de pre-commit (rechaza commits en `main`); una vez por clon |
 | `up` / `down` | Arranca / para Postgres local |
 | `migrate` | Aplica migraciones de `migrations/` con goose |
 | `generate` | sqlc + oapi-codegen + orval |
@@ -64,9 +65,13 @@ Ejemplo vivo: `api/internal/modules/health`.
 - Base de datos: la API conecta como `app_runtime` (RLS siempre); las migraciones, como `app_owner`. Toda tabla con `tenant_id` lleva RLS forzado, `tenant_isolation` y alcance declarado (diseño 7.3); los permisos se conceden explícitamente en la migración que crea la tabla (`docs/runbooks/database.md`).
 - Los permisos de `app_runtime` (de tabla, de columna y de ejecución) están fijados en `api/internal/platform/db/schematest/testdata/runtime_privileges.golden`; nunca un `UPDATE` sin columnas. Cambiar ese fichero es una decisión de seguridad: se edita a mano y el PR justifica qué permiso cambia y por qué el diseño lo necesita.
 - Una migración fusionada en main es inmutable; los cambios posteriores van en una migración nueva.
+- MFA (ADR 0002): opcional, exigida solo por los roles del catálogo que lo dicen. Una sesión solo tiene MFA por `sessions.mfa_auth_time`, que fija únicamente `mark_session_mfa` tras un `valid: true` del proveedor (y rota el token). Nunca se deduce del login ni de que el usuario tenga un factor.
 - Usuario de sistema reservado: `00000000-0000-7000-8000-000000000001` (deshabilitado, sin login). Úsalo solo para trabajos de sistema.
 - Cada cambio va con su test (unitario con fakes de puertos; integración con Testcontainers).
 - Comentarios solo para explicar el porqué, no el qué.
+
+## Antes de empezar una tarea
+- Comprueba la rama (`git status -sb`): nunca se trabaja en `main`. Si estás en `main`, o en la rama de un PR ya fusionado, actualiza `main` y crea una rama nueva (`git switch -c <tipo>/<tema>`) antes de tocar nada. El hook de pre-commit (`mise run hooks:install`, una vez por clon) rechaza los commits en `main`; `--no-verify` no se usa para saltárselo.
 
 ## Antes de dar una tarea por terminada
 - `mise run ci` en verde (necesita Docker). Es lo mismo que exige el CI para fusionar en `main`.

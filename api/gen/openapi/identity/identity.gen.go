@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -29,6 +30,21 @@ func (e CurrentTenantScope) Valid() bool {
 	case Own:
 		return true
 	case Tenant:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MFAFactorType.
+const (
+	Totp MFAFactorType = "totp"
+)
+
+// Valid indicates whether the value is a known member of the MFAFactorType enum.
+func (e MFAFactorType) Valid() bool {
+	switch e {
+	case Totp:
 		return true
 	default:
 		return false
@@ -90,14 +106,60 @@ type Logout struct {
 	LogoutUrl *string `json:"logout_url"`
 }
 
+// MFAChallenge defines model for MFAChallenge.
+type MFAChallenge struct {
+	ChallengeId openapi_types.UUID `json:"challenge_id"`
+	ExpiresAt   time.Time          `json:"expires_at"`
+	FactorId    openapi_types.UUID `json:"factor_id"`
+}
+
+// MFAChallengeRequest defines model for MFAChallengeRequest.
+type MFAChallengeRequest struct {
+	FactorId openapi_types.UUID `json:"factor_id"`
+}
+
+// MFAFactor defines model for MFAFactor.
+type MFAFactor struct {
+	CreatedAt time.Time          `json:"created_at"`
+	Id        openapi_types.UUID `json:"id"`
+	Type      MFAFactorType      `json:"type"`
+
+	// Verified False until its first code is verified.
+	Verified bool `json:"verified"`
+}
+
+// MFAFactorType defines model for MFAFactor.Type.
+type MFAFactorType string
+
+// MFAVerified defines model for MFAVerified.
+type MFAVerified struct {
+	MfaVerifiedAt time.Time `json:"mfa_verified_at"`
+}
+
+// MFAVerifyRequest defines model for MFAVerifyRequest.
+type MFAVerifyRequest struct {
+	ChallengeId openapi_types.UUID `json:"challenge_id"`
+	Code        string             `json:"code"`
+}
+
 // Me defines model for Me.
 type Me struct {
 	Memberships []Membership `json:"memberships"`
-	User        CurrentUser  `json:"user"`
+
+	// MfaEnrolled The user has at least one verified factor.
+	MfaEnrolled bool        `json:"mfa_enrolled"`
+	MfaFactors  []MFAFactor `json:"mfa_factors"`
+
+	// SessionMfaAt When this session last verified a factor; null if never.
+	SessionMfaAt *time.Time  `json:"session_mfa_at"`
+	User         CurrentUser `json:"user"`
 }
 
 // Membership defines model for Membership.
 type Membership struct {
+	// MfaRequired The role requires a recent MFA to act in the tenant.
+	MfaRequired bool `json:"mfa_required"`
+
 	// Role The member's role in the app's role catalog.
 	Role string `json:"role"`
 
@@ -128,6 +190,22 @@ type Problem struct {
 	Type      string  `json:"type"`
 }
 
+// TOTPEnrollment defines model for TOTPEnrollment.
+type TOTPEnrollment struct {
+	ChallengeId openapi_types.UUID `json:"challenge_id"`
+	ExpiresAt   time.Time          `json:"expires_at"`
+	FactorId    openapi_types.UUID `json:"factor_id"`
+
+	// QrCode A data URI of a PNG image to scan with an authenticator app. Shown once.
+	QrCode string `json:"qr_code"`
+
+	// Secret The shared secret, for apps that cannot scan. Shown once.
+	Secret string `json:"secret"`
+
+	// Uri The otpauth:// URI the QR code encodes.
+	Uri string `json:"uri"`
+}
+
 // BadRequest RFC 9457 problem details with this API's extension members.
 type BadRequest = Problem
 
@@ -143,6 +221,9 @@ type InternalError = Problem
 // LoggedOut defines model for LoggedOut.
 type LoggedOut = Logout
 
+// NotFound RFC 9457 problem details with this API's extension members.
+type NotFound = Problem
+
 // ServiceUnavailable RFC 9457 problem details with this API's extension members.
 type ServiceUnavailable = Problem
 
@@ -151,6 +232,9 @@ type TooManyRequests = Problem
 
 // Unauthorized RFC 9457 problem details with this API's extension members.
 type Unauthorized = Problem
+
+// UnprocessableEntity RFC 9457 problem details with this API's extension members.
+type UnprocessableEntity = Problem
 
 // AuthCallbackParams defines parameters for AuthCallback.
 type AuthCallbackParams struct {
@@ -165,6 +249,12 @@ type AuthLoginParams struct {
 	// ReturnTo Path (or URL) of the front end to return to; it must resolve to FRONTEND_ORIGIN.
 	ReturnTo *string `form:"return_to,omitempty" json:"return_to,omitempty"`
 }
+
+// CreateMFAChallengeJSONRequestBody defines body for CreateMFAChallenge for application/json ContentType.
+type CreateMFAChallengeJSONRequestBody = MFAChallengeRequest
+
+// VerifyTOTPJSONRequestBody defines body for VerifyTOTP for application/json ContentType.
+type VerifyTOTPJSONRequestBody = MFAVerifyRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -183,6 +273,18 @@ type ServerInterface interface {
 	// GetMe The current user and their memberships
 	// (GET /me)
 	GetMe(w http.ResponseWriter, r *http.Request)
+	// CreateMFAChallenge Challenge one of the user's factors
+	// (POST /me/mfa/challenges)
+	CreateMFAChallenge(w http.ResponseWriter, r *http.Request)
+	// EnrollTOTP Enroll a TOTP factor
+	// (POST /me/mfa/totp)
+	EnrollTOTP(w http.ResponseWriter, r *http.Request)
+	// VerifyTOTP Verify a TOTP code
+	// (POST /me/mfa/totp/verify)
+	VerifyTOTP(w http.ResponseWriter, r *http.Request)
+	// RemoveTOTP Remove one of the user's factors
+	// (DELETE /me/mfa/totp/{factorId})
+	RemoveTOTP(w http.ResponseWriter, r *http.Request, factorId openapi_types.UUID)
 	// GetCurrentTenant The tenant named by X-Tenant-ID, with the caller's role and permissions in it
 	// (GET /tenant)
 	GetCurrentTenant(w http.ResponseWriter, r *http.Request)
@@ -344,6 +446,74 @@ func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request)
 	handler.ServeHTTP(w, r)
 }
 
+// CreateMFAChallenge operation middleware
+func (siw *ServerInterfaceWrapper) CreateMFAChallenge(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateMFAChallenge(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// EnrollTOTP operation middleware
+func (siw *ServerInterfaceWrapper) EnrollTOTP(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EnrollTOTP(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VerifyTOTP operation middleware
+func (siw *ServerInterfaceWrapper) VerifyTOTP(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VerifyTOTP(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemoveTOTP operation middleware
+func (siw *ServerInterfaceWrapper) RemoveTOTP(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "factorId" -------------
+	var factorId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "factorId", r.PathValue("factorId"), &factorId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "factorId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemoveTOTP(w, r, factorId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetCurrentTenant operation middleware
 func (siw *ServerInterfaceWrapper) GetCurrentTenant(w http.ResponseWriter, r *http.Request) {
 
@@ -483,6 +653,10 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/logout", wrapper.AuthLogout)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/logout-all", wrapper.AuthLogoutAll)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/me", wrapper.GetMe)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/me/mfa/totp", wrapper.EnrollTOTP)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/me/mfa/challenges", wrapper.CreateMFAChallenge)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/me/mfa/totp/verify", wrapper.VerifyTOTP)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/me/mfa/totp/{factorId}", wrapper.RemoveTOTP)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tenant", wrapper.GetCurrentTenant)
 
 	return m
@@ -498,6 +672,8 @@ type InternalErrorApplicationProblemPlusJSONResponse Problem
 
 type LoggedOutJSONResponse Logout
 
+type NotFoundApplicationProblemPlusJSONResponse Problem
+
 type RedirectResponseHeaders struct {
 	Location *string
 }
@@ -510,6 +686,8 @@ type ServiceUnavailableApplicationProblemPlusJSONResponse Problem
 type TooManyRequestsApplicationProblemPlusJSONResponse Problem
 
 type UnauthorizedApplicationProblemPlusJSONResponse Problem
+
+type UnprocessableEntityApplicationProblemPlusJSONResponse Problem
 
 type AuthCallbackRequestObject struct {
 	Params AuthCallbackParams
@@ -882,6 +1060,561 @@ func (response GetMe500ApplicationProblemPlusJSONResponse) VisitGetMeResponse(w 
 	return err
 }
 
+type CreateMFAChallengeRequestObject struct {
+	Body *CreateMFAChallengeJSONRequestBody
+}
+
+type CreateMFAChallengeResponseObject interface {
+	VisitCreateMFAChallengeResponse(w http.ResponseWriter) error
+}
+
+type CreateMFAChallenge201JSONResponse MFAChallenge
+
+func (response CreateMFAChallenge201JSONResponse) VisitCreateMFAChallengeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMFAChallenge400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response CreateMFAChallenge400ApplicationProblemPlusJSONResponse) VisitCreateMFAChallengeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMFAChallenge401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response CreateMFAChallenge401ApplicationProblemPlusJSONResponse) VisitCreateMFAChallengeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMFAChallenge403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response CreateMFAChallenge403ApplicationProblemPlusJSONResponse) VisitCreateMFAChallengeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMFAChallenge404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response CreateMFAChallenge404ApplicationProblemPlusJSONResponse) VisitCreateMFAChallengeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMFAChallenge409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response CreateMFAChallenge409ApplicationProblemPlusJSONResponse) VisitCreateMFAChallengeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMFAChallenge429ApplicationProblemPlusJSONResponse struct {
+	TooManyRequestsApplicationProblemPlusJSONResponse
+}
+
+func (response CreateMFAChallenge429ApplicationProblemPlusJSONResponse) VisitCreateMFAChallengeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMFAChallenge500ApplicationProblemPlusJSONResponse struct {
+	InternalErrorApplicationProblemPlusJSONResponse
+}
+
+func (response CreateMFAChallenge500ApplicationProblemPlusJSONResponse) VisitCreateMFAChallengeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMFAChallenge503ApplicationProblemPlusJSONResponse struct {
+	ServiceUnavailableApplicationProblemPlusJSONResponse
+}
+
+func (response CreateMFAChallenge503ApplicationProblemPlusJSONResponse) VisitCreateMFAChallengeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnrollTOTPRequestObject struct {
+}
+
+type EnrollTOTPResponseObject interface {
+	VisitEnrollTOTPResponse(w http.ResponseWriter) error
+}
+
+type EnrollTOTP201JSONResponse TOTPEnrollment
+
+func (response EnrollTOTP201JSONResponse) VisitEnrollTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnrollTOTP401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response EnrollTOTP401ApplicationProblemPlusJSONResponse) VisitEnrollTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnrollTOTP403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response EnrollTOTP403ApplicationProblemPlusJSONResponse) VisitEnrollTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnrollTOTP409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response EnrollTOTP409ApplicationProblemPlusJSONResponse) VisitEnrollTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnrollTOTP429ApplicationProblemPlusJSONResponse struct {
+	TooManyRequestsApplicationProblemPlusJSONResponse
+}
+
+func (response EnrollTOTP429ApplicationProblemPlusJSONResponse) VisitEnrollTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnrollTOTP500ApplicationProblemPlusJSONResponse struct {
+	InternalErrorApplicationProblemPlusJSONResponse
+}
+
+func (response EnrollTOTP500ApplicationProblemPlusJSONResponse) VisitEnrollTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EnrollTOTP503ApplicationProblemPlusJSONResponse struct {
+	ServiceUnavailableApplicationProblemPlusJSONResponse
+}
+
+func (response EnrollTOTP503ApplicationProblemPlusJSONResponse) VisitEnrollTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyTOTPRequestObject struct {
+	Body *VerifyTOTPJSONRequestBody
+}
+
+type VerifyTOTPResponseObject interface {
+	VisitVerifyTOTPResponse(w http.ResponseWriter) error
+}
+
+type VerifyTOTP200ResponseHeaders struct {
+	SetCookie *string
+}
+
+type VerifyTOTP200JSONResponse struct {
+	Body    MFAVerified
+	Headers VerifyTOTP200ResponseHeaders
+}
+
+func (response VerifyTOTP200JSONResponse) VisitVerifyTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.SetCookie != nil {
+		w.Header().Set("Set-Cookie", fmt.Sprint(*response.Headers.SetCookie))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyTOTP400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response VerifyTOTP400ApplicationProblemPlusJSONResponse) VisitVerifyTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyTOTP401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response VerifyTOTP401ApplicationProblemPlusJSONResponse) VisitVerifyTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyTOTP403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response VerifyTOTP403ApplicationProblemPlusJSONResponse) VisitVerifyTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyTOTP404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response VerifyTOTP404ApplicationProblemPlusJSONResponse) VisitVerifyTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyTOTP409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response VerifyTOTP409ApplicationProblemPlusJSONResponse) VisitVerifyTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyTOTP422ApplicationProblemPlusJSONResponse struct {
+	UnprocessableEntityApplicationProblemPlusJSONResponse
+}
+
+func (response VerifyTOTP422ApplicationProblemPlusJSONResponse) VisitVerifyTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyTOTP429ApplicationProblemPlusJSONResponse struct {
+	TooManyRequestsApplicationProblemPlusJSONResponse
+}
+
+func (response VerifyTOTP429ApplicationProblemPlusJSONResponse) VisitVerifyTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyTOTP500ApplicationProblemPlusJSONResponse struct {
+	InternalErrorApplicationProblemPlusJSONResponse
+}
+
+func (response VerifyTOTP500ApplicationProblemPlusJSONResponse) VisitVerifyTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyTOTP503ApplicationProblemPlusJSONResponse struct {
+	ServiceUnavailableApplicationProblemPlusJSONResponse
+}
+
+func (response VerifyTOTP503ApplicationProblemPlusJSONResponse) VisitVerifyTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveTOTPRequestObject struct {
+	FactorId openapi_types.UUID `json:"factorId"`
+}
+
+type RemoveTOTPResponseObject interface {
+	VisitRemoveTOTPResponse(w http.ResponseWriter) error
+}
+
+type RemoveTOTP204Response struct {
+}
+
+func (response RemoveTOTP204Response) VisitRemoveTOTPResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RemoveTOTP400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response RemoveTOTP400ApplicationProblemPlusJSONResponse) VisitRemoveTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveTOTP401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response RemoveTOTP401ApplicationProblemPlusJSONResponse) VisitRemoveTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveTOTP403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response RemoveTOTP403ApplicationProblemPlusJSONResponse) VisitRemoveTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveTOTP404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response RemoveTOTP404ApplicationProblemPlusJSONResponse) VisitRemoveTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveTOTP500ApplicationProblemPlusJSONResponse struct {
+	InternalErrorApplicationProblemPlusJSONResponse
+}
+
+func (response RemoveTOTP500ApplicationProblemPlusJSONResponse) VisitRemoveTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveTOTP503ApplicationProblemPlusJSONResponse struct {
+	ServiceUnavailableApplicationProblemPlusJSONResponse
+}
+
+func (response RemoveTOTP503ApplicationProblemPlusJSONResponse) VisitRemoveTOTPResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetCurrentTenantRequestObject struct {
 }
 
@@ -968,6 +1701,18 @@ type StrictServerInterface interface {
 	// GetMe The current user and their memberships
 	// (GET /me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
+	// CreateMFAChallenge Challenge one of the user's factors
+	// (POST /me/mfa/challenges)
+	CreateMFAChallenge(ctx context.Context, request CreateMFAChallengeRequestObject) (CreateMFAChallengeResponseObject, error)
+	// EnrollTOTP Enroll a TOTP factor
+	// (POST /me/mfa/totp)
+	EnrollTOTP(ctx context.Context, request EnrollTOTPRequestObject) (EnrollTOTPResponseObject, error)
+	// VerifyTOTP Verify a TOTP code
+	// (POST /me/mfa/totp/verify)
+	VerifyTOTP(ctx context.Context, request VerifyTOTPRequestObject) (VerifyTOTPResponseObject, error)
+	// RemoveTOTP Remove one of the user's factors
+	// (DELETE /me/mfa/totp/{factorId})
+	RemoveTOTP(ctx context.Context, request RemoveTOTPRequestObject) (RemoveTOTPResponseObject, error)
 	// GetCurrentTenant The tenant named by X-Tenant-ID, with the caller's role and permissions in it
 	// (GET /tenant)
 	GetCurrentTenant(ctx context.Context, request GetCurrentTenantRequestObject) (GetCurrentTenantResponseObject, error)
@@ -1129,6 +1874,118 @@ func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetMeResponseObject); ok {
 		if err := validResponse.VisitGetMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateMFAChallenge operation middleware
+func (sh *strictHandler) CreateMFAChallenge(w http.ResponseWriter, r *http.Request) {
+	var request CreateMFAChallengeRequestObject
+
+	var body CreateMFAChallengeJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateMFAChallenge(ctx, request.(CreateMFAChallengeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateMFAChallenge")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateMFAChallengeResponseObject); ok {
+		if err := validResponse.VisitCreateMFAChallengeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// EnrollTOTP operation middleware
+func (sh *strictHandler) EnrollTOTP(w http.ResponseWriter, r *http.Request) {
+	var request EnrollTOTPRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.EnrollTOTP(ctx, request.(EnrollTOTPRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "EnrollTOTP")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(EnrollTOTPResponseObject); ok {
+		if err := validResponse.VisitEnrollTOTPResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// VerifyTOTP operation middleware
+func (sh *strictHandler) VerifyTOTP(w http.ResponseWriter, r *http.Request) {
+	var request VerifyTOTPRequestObject
+
+	var body VerifyTOTPJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.VerifyTOTP(ctx, request.(VerifyTOTPRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "VerifyTOTP")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(VerifyTOTPResponseObject); ok {
+		if err := validResponse.VisitVerifyTOTPResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RemoveTOTP operation middleware
+func (sh *strictHandler) RemoveTOTP(w http.ResponseWriter, r *http.Request, factorId openapi_types.UUID) {
+	var request RemoveTOTPRequestObject
+
+	request.FactorId = factorId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RemoveTOTP(ctx, request.(RemoveTOTPRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RemoveTOTP")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RemoveTOTPResponseObject); ok {
+		if err := validResponse.VisitRemoveTOTPResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

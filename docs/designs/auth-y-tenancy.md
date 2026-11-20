@@ -34,7 +34,7 @@ RLS protege contra **omisiones** del código. No protege contra una aplicación 
 | Escritura de tenants y membresías | Solo con funciones `SECURITY DEFINER` (`create_tenant_with_owner`, `accept_invitation`); `app_runtime` no tiene `INSERT` en ninguna de las dos ni `DELETE` en `tenants`, y en `tenants` solo actualiza `name` | `INSERT` directo filtrado por RLS: un fallo del código podría crear un tenant sin owner o una membresía sin invitación |
 | Rol `owner` | Reservado por la plataforma; solo un owner concede owner | Tratarlo con la regla general de inclusión |
 | Invitaciones de quien pierde permisos | Se revocan al degradar, expulsar o deshabilitar a quien invitó | Revalidar a quien invitó al aceptar |
-| MFA | Por rol, con la hora real de autenticación. WorkOS no informa de la MFA: se exige a todos en el panel (`WORKOS_MFA_REQUIRED`) y cada login es una autenticación nueva; cuando caduca la de un rol, login completo (5.2) | Step-up con rotación del token: WorkOS no permite exigir MFA en la reautenticación ni saber si la hubo (sección 13) |
+| MFA | Opcional para todos y exigida solo por los roles del catálogo que lo dicen (ADR 0002). La verifica la app después del login, con la API de MFA de WorkOS: solo un `valid: true` da MFA a la sesión, que se sustituye por una nueva con otro token (5.2) | Exigirla a todos en el panel (`Required`) y deducirla del método de login: obliga a todos los usuarios y WorkOS no informa de si la hubo (sección 13). Deducirla de "tiene un factor dado de alta": no prueba nada de la sesión |
 | Locales | Fuera de esta versión | — |
 | Clientes del despacho | Usuarios con cuenta y rol `client` (alcance `own`) | Enlace mágico |
 
@@ -57,7 +57,8 @@ Sin `tenant_id` ni RLS. Solo las consultas del módulo `identity` las tocan; un 
 
 - **users**: `id`, `email` (citext, único), `email_verified`, `display_name`, `last_login_at`, `disabled_at`. Un **usuario de sistema** reservado (UUID fijo `00000000-0000-7000-8000-000000000001`, sin identidades ni login) para los trabajos de sistema. Se crea deshabilitado, con `email = 'system@system.invalid'` (dominio reservado, RFC 2606) y `email_verified = false`: cualquier función que exija un usuario activo y verificado lo rechaza sin caso especial.
 - **user_identities**: `id`, `user_id`, `provider`, `subject`, `email_at_link`, `linked_at`. Único `(provider, subject)`.
-- **sessions**: `id`, `token_hash` (único), `user_id`, `auth_time`, `mfa_auth_time` (nullable), `last_seen_at`, `idle_expires_at`, `absolute_expires_at`, `ip_prefix`, `user_agent`, `provider_session_id` (nullable), `revoked_at`.
+- **mfa_factors**: `id`, `user_id` (`ON DELETE CASCADE`), `provider`, `provider_factor_id` (único con `provider`), `verified_at`, `last_code_hash` y `last_code_at` (el último código aceptado, para no aceptarlo otra vez). **mfa_challenges**: `id`, `factor_id`, `session_id`, `provider_challenge_id`, `expires_at` (5 min), `consumed_at`, `completed_at`. Solo las escriben sus funciones (7.4).
+- **sessions**: `id`, `token_hash` (único), `user_id`, `auth_time`, `mfa_auth_time` (nullable; solo lo fija `mark_session_mfa`, 5.2), `last_seen_at`, `idle_expires_at`, `absolute_expires_at`, `ip_prefix`, `user_agent`, `provider_session_id` (nullable), `revoked_at`.
 
 ### 4.2 Tablas de plataforma bajo RLS
 
@@ -88,12 +89,11 @@ Todas las claves foráneas hacia `tenants` son `ON DELETE RESTRICT`: el borrado 
 1. `GET /auth/login?return_to=<ruta>`. `return_to` se resuelve con un parser de URL contra `FRONTEND_ORIGIN` y el origen resultante debe ser exactamente ese.
 2. Se crea un **intento** en una cookie `__Host-oauth_<state>` (`HttpOnly`, `Secure`, `SameSite=Lax`, 5 minutos, como mucho 3 vivas). El intento guarda: el verificador PKCE, `return_to`, el **propósito** (`login`) y la hora de inicio. Va sellado con HMAC-SHA256 sobre el `state` y el contenido, así que el navegador lo guarda pero no lo puede alterar ni mover a otro `state`. Redirige a AuthKit.
    - **Clave del sello**: se deriva de `WORKOS_API_KEY` con HMAC y una etiqueta fija (`factory-template/identity/oauth-intent/v1`). Así todas las réplicas comparten la misma clave sin un secreto más. Rotar la API key invalida los logins en curso (5 minutos como mucho), y quien tenga la API key podría forjar intentos, pero con ella ya controla el proveedor.
-3. `GET /auth/callback?code&state`: localiza y borra la cookie de ese intento. **El propósito lo dice el intento, nunca un parámetro de la URL.** Canjea el código y obtiene `subject`, `email`, `email_verified`, la hora real de autenticación (`auth_time` del access token), el método y si es una suplantación. Si hubo MFA se decide como dice la 5.2.
+3. `GET /auth/callback?code&state`: localiza y borra la cookie de ese intento. **El propósito lo dice el intento, nunca un parámetro de la URL.** Canjea el código y obtiene `subject`, `email`, `email_verified`, la hora real de autenticación (`auth_time` del access token), el método y si es una suplantación. Nada de eso dice si hubo MFA (5.2).
 4. Rechaza, registrando `auth.login_failed` con el motivo, y en este orden:
    - **suplantación** (`impersonation`): WorkOS indica que alguien (un administrador del panel) entró como el usuario. La suplantación para soporte está fuera de esta versión (sección 12): `403 auth.impersonation_refused`;
    - **autenticación antigua** (`stale_auth`): `auth_time` anterior al inicio del intento, con 60 s de margen de reloj. Cada login fuerza una autenticación nueva (5.2.1); si el proveedor no lo hizo, `auth_time` y la MFA deducida describirían otro login: `401 auth.stale_authentication`;
-   - **email sin verificar** (`email_unverified`): `403 auth.email_unverified`;
-   - métodos informados sin MFA cuando se exige (`mfa_missing`, 5.2.3).
+   - **email sin verificar** (`email_unverified`): `403 auth.email_unverified`.
 5. Resuelve el usuario **sin escribir nada**:
    - Existe `user_identities(workos, subject)`: ese usuario.
    - No existe y el email no lo usa nadie: usuario nuevo.
@@ -101,22 +101,30 @@ Todas las claves foráneas hacia `tenants` son `ON DELETE RESTRICT`: el borrado 
 6. Rechaza si el usuario está deshabilitado. Hasta aquí no se ha escrito nada salvo, en caso de rechazo, `auth.login_failed`.
 7. Crea el usuario y la identidad si son nuevos. Si dos primeros logins de la misma identidad compiten, el que choca con la unicidad repite la resolución una vez, en una transacción nueva, y encuentra la del ganador. Si el email verificado cambió en el proveedor y no lo usa otro usuario, actualiza `users.email` con su `email_verified`. Si lo usa otro usuario, conserva el email anterior **con `email_verified = false`**: el proveedor ya no lo respalda, y no debe abrir invitaciones dirigidas a esa dirección.
 8. Revoca la sesión anterior del navegador, si había (evita la fijación de sesión).
-9. Crea la sesión (32 bytes aleatorios; en la BD solo el hash SHA-256) con `auth_time` y, si hubo MFA, `mfa_auth_time`, ambos **con la hora que da el proveedor**, no con la del servidor, y la sesión de AuthKit (`sid`) para cerrarla en el logout.
+9. Crea la sesión (32 bytes aleatorios; en la BD solo el hash SHA-256) con `auth_time` **con la hora que da el proveedor**, no con la del servidor, sin `mfa_auth_time` (5.2.1), y la sesión de AuthKit (`sid`) para cerrarla en el logout.
 10. Pone la cookie, redirige a `return_to` y registra `auth.login`.
 
 Vincular otra identidad desde una sesión ya autenticada: fuera de esta versión. Migración entre proveedores: comando de administración, nunca en el login.
 
-### 5.2 MFA y reautenticación
+### 5.2 MFA: opcional, exigida por rol y verificada por la app
 
-El step-up de versiones anteriores (reautenticar con MFA y rotar el token en la misma sesión) **no se puede construir sobre WorkOS**: AuthKit no permite exigir un factor MFA al reautenticar ni informa de si lo hubo (sección 13). En su lugar:
+WorkOS no informa de si un login tuvo MFA: el access token no trae `amr` ni nada equivalente, y la respuesta de autenticación tampoco (sección 13). Con el panel sin `Required` no hay ninguna señal fiable por sesión. Por eso la app no deduce la MFA del login: **la verifica ella misma después**, con la API de MFA de WorkOS, y solo esa verificación cuenta (ADR 0002).
 
-1. **Cada login es una autenticación nueva**: la URL de autorización lleva `max_age=0`, así que AuthKit pide credenciales aunque tenga una sesión abierta, y `auth_time` es la hora de ese login.
-2. **MFA obligatoria en el proveedor** para todos los usuarios de las apps con roles que la exigen: en el panel de WorkOS, *Multi-factor auth* en *Required*, declarado a la app con `WORKOS_MFA_REQUIRED=true`.
-3. **`mfa_auth_time`**:
-   - si el access token trae los métodos de autenticación (`amr`, RFC 8176), se usan ellos: con `mfa`, `mfa_auth_time = auth_time`; sin `mfa` y con `WORKOS_MFA_REQUIRED=true`, el login se rechaza (`403 auth.mfa_required`, `auth.login_failed` con motivo `mfa_missing`). Hoy WorkOS no envía `amr`;
-   - si no los trae, `mfa_auth_time = auth_time` solo con `WORKOS_MFA_REQUIRED=true` y un método de la **lista blanca**: los métodos que una prueba en staging ha demostrado que hacen que AuthKit pida el segundo factor. Lista actual: `Password`. Cualquier otro método, incluidos los desconocidos y los que WorkOS añada, deja `NULL`: WorkOS documenta que su MFA no se aplica a `SSO` y no dice nada de Magic Auth, passkeys ni OAuth. La MFA se **deduce de la configuración**, no la informa el proveedor; `docs/runbooks/auth.md` describe la comprobación manual de que `WORKOS_MFA_REQUIRED` coincide con el panel en cada entorno y cómo añadir un método a la lista.
-4. **Arranque**: si algún rol del catálogo requiere MFA y `WORKOS_MFA_REQUIRED=false`, la API no arranca y explica por qué.
-5. **Cuando la MFA de un rol caduca** (5.4.3), el front recibe `403 auth.mfa_required` y lleva al usuario a un **login completo** (`GET /auth/login?return_to=…`): sesión nueva y la anterior revocada (5.1.8). No hay `GET /auth/stepup` ni rotación del token en la misma fila, y `app_runtime` no tiene `UPDATE` sobre `mfa_auth_time` ni `token_hash` (7.1). Un proveedor futuro que permita el step-up lo concedería en una migración nueva.
+1. **Un login nunca deja MFA**: la sesión nace con `mfa_auth_time` nulo. Cada login sigue forzando una autenticación nueva (`max_age=0`), así que `auth_time` es la hora de ese login.
+2. **Alta** (`POST /me/mfa/totp`): crea un factor TOTP en WorkOS (`POST /user_management/users/{id}/auth_factors`) y su primer challenge. El factor cuenta solo cuando se verifica su primer código. Si el usuario ya tiene un factor verificado, el alta exige una MFA de la sesión de los últimos 10 minutos (`403 auth.mfa_required`), para que una sesión robada no cambie el factor de la víctima. Como mucho 3 factores sin verificar por usuario.
+3. **Challenge** (`POST /me/mfa/challenges`): WorkOS crea el challenge (`POST /auth/factors/{id}/challenge`); la app guarda el suyo en `mfa_challenges`, ligado a la sesión, de **un solo uso** y con caducidad propia de **5 minutos** (los challenges TOTP de WorkOS no caducan).
+4. **Verificación** (`POST /me/mfa/totp/verify`):
+   - `consume_mfa_challenge` gasta el challenge antes de enviar el código: un intento por challenge, acierte o no;
+   - WorkOS verifica el código (`POST /auth/challenges/{id}/verify`); solo `valid: true` sigue;
+   - `mark_session_mfa` comprueba que el código no es el último aceptado con ese factor en los últimos 10 minutos (`409 mfa.code_reused`: WorkOS no documenta protección contra la reutilización) y **sustituye la sesión**: una fila nueva con otro token y `mfa_auth_time = now()` (hora de la BD), y la anterior revocada. Una cookie robada antes de la verificación no sirve después.
+   - Límite: 5 intentos por usuario y por sesión en 15 minutos (`429 mfa.rate_limited`, por réplica, sección 6). Se auditan los fallos (`mfa.verify_failed`, con el motivo) y los bloqueos (`mfa.verify_locked`).
+   - El primer código de un factor nuevo, si el usuario ya tiene otro verificado, también exige la MFA reciente del punto 2.
+5. **Baja** (`DELETE /me/mfa/totp/{id}`): con la MFA reciente del punto 2 si el usuario tiene un factor verificado. El último factor verificado no se puede quitar mientras un rol del usuario, en un tenant activo, exija MFA (`403 mfa.last_factor_required`). La borra en la BD y en WorkOS en la misma transacción; un disparador audita cada baja (`mfa.factor_removed`), la haga quien la haga.
+6. **Por rol** (5.4.3): si el rol exige MFA y `mfa_auth_time` es nulo o más antiguo que su máximo, `403 auth.mfa_required` si el usuario tiene un factor verificado (el front pide un código) o `403 auth.mfa_enrollment_required` si no (el front lleva al alta).
+7. **Primera alta** sin factor previo: es confianza en el primer uso. Quien tenga la sesión puede dar de alta un factor propio; el riesgo es el mismo que el de la sesión, y la cookie robada deja de valer al verificar.
+8. **Recuperación**: sin factor (dispositivo perdido), un administrador lo borra en WorkOS y en la BD con su motivo (`docs/runbooks/auth.md`); el comando de administración llega en el paso 7 (issue #18). Sin códigos de recuperación en esta versión (issue #19).
+
+`app_runtime` no tiene ningún permiso sobre `mfa_factors` ni `mfa_challenges`, ni `UPDATE` sobre `sessions.mfa_auth_time` o `token_hash`: todo pasa por las funciones de la sección 7.4.
 
 ### 5.3 Transacciones: tres formas, y ninguna más
 
@@ -142,7 +150,7 @@ Qué exige cada ruta lo declara el contrato OpenAPI con `security`: por defecto,
 
 1. **Sesión**: busca el hash con un join a `users`. `401` si está revocada o caducada (inactividad comparada con el `last_seen_at` **anterior**) o si el usuario está deshabilitado. Después actualiza `last_seen_at`, como mucho una vez cada 5 minutos.
 2. **Tenant**: valida que `X-Tenant-ID` es un UUID y, con `WithUserTx`, llama a `auth_membership(tenant_id)`: rol, estado del tenant y del usuario. Si algo falla (cabecera ausente o mal formada, tenant inexistente o suspendido, sin membresía, usuario deshabilitado), el mismo `403 auth.tenant_forbidden`. **No se audita**: cualquiera con sesión podría llenar el registro con UUIDs inventados, y en el de otro tenant no puede entrar (sección 7.4, `TN031`). Se registra en el log a nivel `Warn`, con `user_id`, el motivo y el tenant pedido solo si es un UUID válido.
-3. **MFA del rol**: si el rol la requiere y `mfa_auth_time` es nulo o más antiguo que la antigüedad máxima del rol: `403 auth.mfa_required`.
+3. **MFA del rol**: si el rol la requiere y `mfa_auth_time` es nulo o más antiguo que la antigüedad máxima del rol: `403 auth.mfa_required` si el usuario tiene un factor verificado, `403 auth.mfa_enrollment_required` si no (5.2.6).
 4. **Principal** en el contexto (`platform/authctx`): `UserID`, `TenantID`, `Role`, `Permissions`, `Scope`. `user_id` y `tenant_id`, a los logs, también al registro de acceso.
 5. **Caso de uso**: `Authorizer.Require(ctx, perm)` (`platform/authz`), en cualquier punto del caso de uso, también dentro de su transacción. Sin el permiso: `403 authz.denied` y el evento `authz.denied` en la auditoría del tenant, escrito en una transacción propia (`db.Independent`, 5.3) que sobrevive al rollback de quien llama. Si no se puede auditar, deniega igualmente y lo registra en el log como `Error`.
 6. **Datos**: `WithTenantTx`.
@@ -200,11 +208,12 @@ Comando de administración, con `app_admin`:
 
 - **Cookie** `__Host-session`: `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, sin `Domain`.
 - **Caducidad**: por inactividad y absoluta, configurables (7 y 30 días por defecto).
-- **MFA por rol**: cada rol declara si la requiere y su antigüedad máxima (por ejemplo, 12 horas para `owner` y `lawyer`). Con WorkOS exige `WORKOS_MFA_REQUIRED=true` (5.2); al caducar, login completo.
+- **MFA por rol**: cada rol declara si la requiere y su antigüedad máxima (por ejemplo, 12 horas para `owner` y `lawyer`). Un catálogo sin ningún rol que la exija es válido. Al caducar, el usuario verifica un código de nuevo, sin login (5.2).
 - **CSRF**: `SameSite=Lax` y `Origin` en `ALLOWED_ORIGINS` en los métodos que modifican datos.
 - **CORS**: `ALLOWED_ORIGINS` explícita, con `credentials`, sin comodines.
 - **Límite de peticiones**, `429 rate_limit.exceeded`:
   - por IP en `/auth/login` y `/auth/callback` (sin sesión todavía): la dirección en IPv4 (/32) y su /64 en IPv6, para que rotar direcciones dentro de un bloque no renueve la cuota. La IP sale de `TRUSTED_CLIENT_IP_HEADER` o de `RemoteAddr`, nunca de `X-Forwarded-For`;
+  - por usuario y por sesión en la verificación de MFA, y por usuario en el alta y los challenges: 5 en 15 minutos (5.2);
   - por usuario en las rutas autenticadas que lo necesitan: `POST /invitations`, `POST /invitations/{id}/resend`, `POST /invitations/accept` y `POST /tenants` (paso 5);
   - detrás del puerto `ratelimit.Limiter`, con implementación en memoria: **cada réplica cuenta por separado**, así que el límite efectivo se multiplica por el número de réplicas. Un almacén compartido implementaría el mismo puerto.
 - **Datos personales**: emails con `pii.Email`; IPs solo truncadas: `/24` en IPv4 y `/48` en IPv6, guardadas como `cidr` (`sessions.ip_prefix`, `audit_log.ip_prefix`). Go trunca antes de escribir; un `CHECK` en cada columna rechaza una IP completa (`/32`, `/128`) o cualquier otra máscara, y el tipo `cidr` rechaza bits de host tras la máscara.
@@ -217,7 +226,8 @@ Comando de administración, con `app_admin`:
 - `app_runtime`: la aplicación; sin `BYPASSRLS` y sin ser dueño de nada. Nunca un `UPDATE` sin columnas: cada tabla lista las que la aplicación cambia. La lista completa está fijada en `runtime_privileges.golden` (sección 11). Permisos de tabla:
   - `users`: `SELECT`, `INSERT` y `UPDATE (email, email_verified, last_login_at, updated_at)`; sin `DELETE` (solo `app_admin`, sección 5.8). `email` cambia en el login si cambió en el proveedor (5.1.7), y **en la misma sentencia** `email_verified` toma el valor del proveedor: nunca se conserva la verificación de otro email, porque `accept_invitation` se fía de ella (issue #4). `disabled_at` es de `app_admin`.
   - `user_identities`: `SELECT`, `INSERT`; ni `UPDATE` (una identidad vinculada es inmutable) ni `DELETE` (solo `app_admin`).
-  - `sessions`: `SELECT`, `INSERT`, `DELETE` y `UPDATE (last_seen_at, idle_expires_at, revoked_at, updated_at)`: el toque de cada petición (5.4.1) y la revocación (5.1.8, 5.5). Sin step-up (5.2), `mfa_auth_time` y `token_hash` se fijan en el login y no cambian, igual que `auth_time`, `absolute_expires_at`, `provider_session_id` (la sesión de AuthKit, para cerrarla en el logout) y el usuario.
+  - `sessions`: `SELECT`, `INSERT`, `DELETE` y `UPDATE (last_seen_at, idle_expires_at, revoked_at, updated_at)`: el toque de cada petición (5.4.1) y la revocación (5.1.8, 5.5). Nunca `UPDATE` de `mfa_auth_time` ni de `token_hash`: la MFA se da solo con `mark_session_mfa`, que crea una sesión nueva con otro token y revoca la anterior (5.2). `auth_time`, `absolute_expires_at`, `provider_session_id` (la sesión de AuthKit, para cerrarla en el logout) y el usuario tampoco cambian.
+  - `mfa_factors` y `mfa_challenges`: ningún permiso; solo sus funciones (7.4).
   - `tenants`: `SELECT` y `UPDATE (name, updated_at)`, filtrados por RLS; sin `INSERT` (se crean con `create_tenant_with_owner`) ni `DELETE` (sección 12). El estado (`status`) solo lo cambia `app_admin`.
   - `memberships`: `SELECT`, `DELETE` y `UPDATE (role, updated_at)`, filtrados por RLS; sin `INSERT` (solo `create_tenant_with_owner` y `accept_invitation`). Sin `UPDATE` de `user_id`: pasar una membresía a otro usuario lo admitiría sin invitación.
   - `invitations`: `SELECT`, `INSERT`, `DELETE` y `UPDATE (token_hash, expires_at, revoked_at, updated_at)`, filtrados por RLS: reenviar rota el token y la caducidad (5.6.2) y revocar fija `revoked_at` (5.6.4). `accepted_at` solo lo fija `accept_invitation`; `email`, `role` e `invited_by` se fijan al crearla.
@@ -331,6 +341,13 @@ Todas: propiedad de `app_security`, `SET search_path = pg_catalog, extensions, p
 | `accept_invitation(token_hash, ip_prefix)` | Todo lo de la sección 5.6.5, con `FOR UPDATE` | Membresía creada e invitación aceptada; registra `invitation.accepted` y `membership.created` |
 | `tenant_status(tenant_id)` | — | Estado del tenant (trabajos de sistema) |
 | `roles_in_use()` | — | Roles distintos en `memberships`, sin datos de tenants |
+| `mfa_factors_for_user()` | — | Factores del usuario actual: id, proveedor, id en el proveedor, verificado y alta |
+| `register_mfa_factor(token_hash, provider, provider_factor_id, provider_challenge_id)` | Sesión del usuario actual viva; como mucho 3 factores sin verificar (`TN045`) | Factor sin verificar y su primer challenge (5 min), ligado a la sesión |
+| `create_mfa_challenge(token_hash, factor_id, provider_challenge_id)` | Sesión viva; el factor es del usuario actual | Challenge de 5 min, ligado a la sesión |
+| `consume_mfa_challenge(token_hash, challenge_id)` | Challenge de esa sesión y de un factor del usuario, sin usar y sin caducar (`FOR UPDATE`) | Lo marca usado y devuelve el id del proveedor |
+| `mark_session_mfa(token_hash, challenge_id, code_hash, new_token_hash)` | Challenge gastado por esa sesión hace menos de 5 min y sin completar; código distinto del último aceptado en 10 min (`FOR UPDATE` del factor); sesión viva y usuario activo | Verifica el factor, completa el challenge, crea la sesión nueva con `mfa_auth_time = now()` y revoca la anterior |
+| `remove_mfa_factor(factor_id)` | El factor es del usuario actual | Lo borra (el disparador lo audita) y devuelve su id en el proveedor |
+| `audit_mfa_factor_removed()` | — | Disparador `AFTER DELETE` de `mfa_factors`: registra `mfa.factor_removed` con quién (`by`) y el motivo de `app.audit_reason`, también si borra `app_admin` |
 | `record_audit(…)` | Con `app.tenant_id` fijado, el tenant del evento es ese o nulo (`TN030`); sin él (o vacío), nulo (`TN031`) | Inserta en `audit_log`; actor nulo si no hay `app.user_id` |
 
 Ya no existe ninguna función que devuelva datos de **otro** miembro.
@@ -345,7 +362,12 @@ Ya no existe ninguna función que devuelva datos de **otro** miembro.
 | `tenants` | `SELECT`, `INSERT` | Estado del tenant; `create_tenant_with_owner` |
 | `memberships` | `SELECT`, `INSERT` | `auth_membership*`, `roles_in_use`; crear la membresía |
 | `invitations` | `SELECT`, `UPDATE (accepted_at)` | `SELECT … FOR UPDATE` y marcarla aceptada |
-| `audit_log` | `INSERT` | `record_audit`, `create_tenant_with_owner` y `accept_invitation` (sin `SELECT`: el id lo genera la función o la columna) |
+| `audit_log` | `INSERT` | `record_audit`, `create_tenant_with_owner`, `accept_invitation` y `audit_mfa_factor_removed` (sin `SELECT`: el id lo genera la función o la columna) |
+| `sessions` | `SELECT`, `INSERT`, `UPDATE (revoked_at, updated_at)` | Revalidar la sesión; `mark_session_mfa` crea la nueva y revoca la anterior |
+| `mfa_factors` | `SELECT`, `INSERT`, `DELETE`, `UPDATE (verified_at, last_code_hash, last_code_at, updated_at)` | Las funciones de MFA |
+| `mfa_challenges` | `SELECT`, `INSERT`, `UPDATE (consumed_at, completed_at)` | Las funciones de MFA |
+
+`app_admin` tiene además `SELECT` y `DELETE` en `mfa_factors` y `SELECT` en `mfa_challenges`, para la recuperación de un dispositivo perdido (5.2.8).
 
 **Códigos de error** (clase `TN`, definidos por la implementación; Go los traduce a `apperr`):
 
@@ -361,6 +383,13 @@ Ya no existe ninguna función que devuelva datos de **otro** miembro.
 | `TN015` | El email de la invitación no coincide con el email verificado del usuario |
 | `TN016` | El usuario ya es miembro del tenant |
 | `TN020` | El slug del tenant ya existe |
+| `TN040` | Factor de MFA no encontrado (o no es del usuario actual) |
+| `TN041` | Challenge no encontrado, de otra sesión o de otro usuario |
+| `TN042` | Challenge ya usado |
+| `TN043` | Challenge caducado |
+| `TN044` | Código ya aceptado con ese factor en los últimos 10 minutos |
+| `TN045` | Demasiados factores sin verificar |
+| `TN050` | La sesión no existe, no es del usuario actual, está revocada o caducada, o el usuario está deshabilitado |
 | `TN030` | El tenant del evento de auditoría no coincide con `app.tenant_id` |
 | `TN031` | El evento de auditoría tiene tenant, pero `app.tenant_id` no está fijado |
 
@@ -395,7 +424,7 @@ Ya no existe ninguna función que devuelva datos de **otro** miembro.
 
 ## 9. Auditoría
 
-`auth.login`, `auth.logout`, `auth.login_failed`, `auth.email_in_use`, `session.revoked`, `user.disabled`, `user.deleted`, `tenant.created`, `membership.created`, `membership.role_changed`, `membership.removed`, `membership.left`, `invitation.created`, `invitation.resent`, `invitation.accepted`, `invitation.revoked`, `authz.denied`, `job.cancelled`.
+`auth.login`, `auth.logout`, `auth.login_failed`, `auth.email_in_use`, `session.revoked`, `user.disabled`, `user.deleted`, `tenant.created`, `membership.created`, `membership.role_changed`, `membership.removed`, `membership.left`, `invitation.created`, `invitation.resent`, `invitation.accepted`, `invitation.revoked`, `authz.denied`, `job.cancelled`, `mfa.factor_enrolled`, `mfa.verified` (con la sesión sustituida y si es el primer código del factor), `mfa.verify_failed` (con el motivo), `mfa.verify_locked`, `mfa.factor_removed` (quién y por qué).
 
 El email del invitado no va en `metadata`. Retención configurable.
 
@@ -409,7 +438,11 @@ El email del invitado no va en `metadata`. Retención configurable.
 | `GET /auth/callback` | No | No | — | Retorno desde AuthKit (el propósito lo dice el intento) |
 | `POST /auth/logout` | Sí | No | — | Cierra la sesión |
 | `POST /auth/logout-all` | Sí | No | — | Cierra todas las sesiones |
-| `GET /me` | Sí | No | — | Usuario y membresías |
+| `GET /me` | Sí | No | — | Usuario, membresías (con `mfa_required` por rol), factores, `mfa_enrolled` y la MFA de la sesión |
+| `POST /me/mfa/totp` | Sí | No | — | Alta de un factor TOTP (5.2.2) |
+| `POST /me/mfa/challenges` | Sí | No | — | Challenge de un factor (5.2.3) |
+| `POST /me/mfa/totp/verify` | Sí | No | — | Verifica un código; sustituye la sesión (5.2.4) |
+| `DELETE /me/mfa/totp/{factorId}` | Sí | No | — | Baja de un factor (5.2.5) |
 | `GET /tenant` | Sí | Sí | — | Tenant actual, con el rol, el alcance y los permisos del usuario |
 | `POST /tenants` | Sí | No | — | Crea un tenant (si está habilitado) |
 | `POST /invitations/accept` | Sí | No | — | Acepta una invitación |
@@ -445,8 +478,8 @@ Los `{id}` son de la membresía o de la invitación, nunca del usuario. El rol `
 **Sesión y login**
 - Sesión caducada (también por inactividad), revocada o inexistente: `401`. Usuario deshabilitado con sesión viva: `401`.
 - `X-Tenant-ID` mal formado, inexistente, sin membresía o tenant suspendido: el mismo `403`.
-- MFA ausente o más antigua que la máxima del rol: `403 auth.mfa_required`.
-- MFA (5.2): con `WORKOS_MFA_REQUIRED=true`, `mfa_auth_time = auth_time`; con `SSO` o sin la variable, `NULL`; métodos informados sin `mfa` → login rechazado. La API no arranca si un rol exige MFA y la variable es `false`.
+- MFA ausente o más antigua que la máxima del rol: `403 auth.mfa_required` (con factor) o `auth.mfa_enrollment_required` (sin él); dentro de la ventana, 200; un rol sin MFA, 200.
+- MFA (5.2): un login nunca fija `mfa_auth_time`. Verificar un código sustituye la sesión y la cookie anterior da `401`. Un código reutilizado, un challenge gastado, caducado o de otra sesión: rechazados. Dos verificaciones simultáneas con el mismo código: solo una pasa. Más de 5 intentos: `429`. El último factor de un owner no se puede borrar; con un factor verificado, el alta y la baja exigen MFA de menos de 10 minutos. Las bajas de `app_admin` quedan auditadas. Un catálogo sin roles con MFA arranca.
 - El login revoca la sesión anterior del navegador. El propósito no se puede forzar desde la URL.
 - Dos logins en paralelo funcionan; con más de 3 intentos se descarta el más antiguo.
 - `return_to` con `//evil.com`, `/\evil.com`, `/\t/evil.com` o `https://evil.com`: rechazado.
@@ -480,8 +513,8 @@ Vincular identidades desde la sesión, borrado de un tenant (será un comando de
 
 - **PKCE y canje desde el backend**: sí. `GET /user_management/authorize` con `code_challenge` (`S256`) y `state`; `POST /user_management/authenticate` (`grant_type=authorization_code`, `code`, `code_verifier`, API key como `client_secret`). SDK oficial `github.com/workos/workos-go/v7`. [authorize](https://workos.com/docs/reference/authkit/authentication/get-authorization-url), [code](https://workos.com/docs/reference/authkit/authentication/code).
 - **Qué devuelve**: el usuario (con `email_verified`), `authentication_method` (`Password`, `Passkey`, `MagicAuth`, `SSO`, OAuth…) y un access token con `sub`, `sid`, `org_id`, `role`, `permissions`, `exp`, `iat` y `auth_time` (última autenticación activa; no avanza al refrescar). **No hay `amr` ni ningún dato de MFA.** [sessions](https://workos.com/docs/authkit/sessions), [reauthentication](https://workos.com/docs/authkit/reauthentication).
-- **Forzar reautenticación**: `max_age=0` (solo con `provider=authkit`). AuthKit elige el método (contraseña, MFA o el IdP de SSO); la app **no puede exigir MFA** ni sabe cuál se usó. Por eso no hay step-up (5.2).
-- **MFA**: se puede exigir a todos los usuarios del entorno en el panel; **no se aplica a usuarios SSO**. No se documenta si cubre todos los métodos (passkey, magic auth): la comprobación manual del runbook incluye probarlo. [mfa](https://workos.com/docs/authkit/mfa).
+- **Forzar reautenticación**: `max_age=0` (solo con `provider=authkit`). AuthKit elige el método (contraseña, MFA o el IdP de SSO); la app **no puede exigir MFA** en el login ni sabe cuál se usó.
+- **MFA**: el panel puede exigirla a todos (*Required*); **no se aplica a usuarios SSO**. Sin *Required*, la documentación no dice si AuthKit pide el código a quien tiene un factor, y **no hay ninguna señal por sesión** de que lo hubo: "AuthKit access tokens do not include built-in `amr`, `acr`, or MFA-completion claims" ([mfa](https://workos.com/docs/authkit/mfa)). La vía documentada para una prueba ligada a la sesión es que el backend liste los factores del usuario, cree un challenge y verifique el código exigiendo `valid: true` ("This proves the new challenge, not the earlier hosted challenge"), que es lo que hace la app (5.2). Los challenges TOTP no caducan (`expires_at` "Does not apply to totp factors") y no se documentan límites de intentos ni protección contra la reutilización: los pone la app. [mfa API](https://workos.com/docs/reference/mfa/challenge/verify), [authkit mfa API](https://workos.com/docs/reference/authkit/mfa).
 - **Logout de AuthKit**: `GET /user_management/sessions/logout?session_id=<sid>`; vuelve al *Sign-out URI* configurado en el panel. [logout](https://workos.com/docs/reference/authkit/logout/get-logout-url).
 - Pendiente: si `email_verified` puede ser cierto con emails no controlados por el usuario, y residencia de datos y DPA.
 
@@ -489,8 +522,8 @@ Vincular identidades desde la sesión, borrado de un tenant (será un comando de
 
 1. **Esquema y RLS**: esquema `extensions`, roles de BD, tablas, políticas, funciones `SECURITY DEFINER`, usuario de sistema y tests de estructura de la BD.
 2. **Transacciones y contexto**: `platform/authctx`, `WithTenantTx`, `WithUserTx`, `WithAnonTx`, y tests de aislamiento, pool y alcance `own` con tablas de ejemplo (incluida una tabla de acceso).
-3. **Login y sesiones**: adaptador de WorkOS, intentos, `/auth/*`, MFA deducida de la configuración (5.2), CSRF, CORS, IP de confianza y límite de peticiones.
-4. **Principal y permisos**: middlewares de sesión y tenant, MFA por rol, `authz`, catálogo de roles con su validación al arrancar, y `/me`.
+3. **Login y sesiones**: adaptador de WorkOS, intentos, `/auth/*`, CSRF, CORS, IP de confianza y límite de peticiones.
+4. **Principal y permisos**: middlewares de sesión y tenant, MFA por rol verificada por la app (5.2), `authz`, catálogo de roles con su validación al arrancar, y `/me`.
 5. **Tenants, invitaciones, miembros y auditoría**, con la revocación automática y el evento `identity.member_removed`.
 6. **Trabajos**: workers de usuario y de sistema.
 7. **Administración**: deshabilitar y borrar usuario.

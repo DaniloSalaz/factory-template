@@ -404,6 +404,10 @@ func TestSchema_RuntimeWritePrivileges(t *testing.T) {
 	session := f.scalar(`INSERT INTO sessions (token_hash, user_id, auth_time, idle_expires_at, absolute_expires_at)
 		VALUES (sha256(uuidv7()::text::bytea), $1, now(), now() + interval '7 days', now() + interval '30 days')
 		RETURNING id::text`, outsider.id)
+	factor := f.scalar(`INSERT INTO mfa_factors (user_id, provider, provider_factor_id)
+		VALUES ($1::uuid, 'workos', 'auth_factor_' || $1::text) RETURNING id::text`, outsider.id)
+	f.exec(`INSERT INTO mfa_challenges (factor_id, session_id, provider_challenge_id, expires_at)
+		VALUES ($1::uuid, $2::uuid, 'auth_challenge_' || $1::text, now() + interval '5 minutes')`, factor, session)
 
 	const denied = "42501"
 	tests := []struct {
@@ -445,9 +449,18 @@ func TestSchema_RuntimeWritePrivileges(t *testing.T) {
 		{"update session auth_time", `UPDATE sessions SET auth_time = now() WHERE id = $1`, []any{session}, denied},
 		{"update session absolute expiry", `UPDATE sessions SET absolute_expires_at = now() WHERE id = $1`, []any{session}, denied},
 		{"update session provider session", `UPDATE sessions SET provider_session_id = 'x' WHERE id = $1`, []any{session}, denied},
-		// No step-up (design, 5.2): MFA time and token are fixed at login.
+		// Only mark_session_mfa gives a session MFA, and it does so in a new session with a
+		// new token (design, 5.2): app_runtime never writes either column.
 		{"update session mfa_auth_time", `UPDATE sessions SET mfa_auth_time = now() WHERE id = $1`, []any{session}, denied},
 		{"update session token", `UPDATE sessions SET token_hash = sha256(uuidv7()::text::bytea) WHERE id = $1`, []any{session}, denied},
+
+		// MFA tables: only their SECURITY DEFINER functions touch them (migration 00004).
+		{"select mfa factors", `SELECT 1 FROM mfa_factors WHERE id = $1`, []any{factor}, denied},
+		{"insert mfa factor", `INSERT INTO mfa_factors (user_id, provider, provider_factor_id) VALUES ($1, 'workos', 'forged')`, []any{outsider.id}, denied},
+		{"verify mfa factor", `UPDATE mfa_factors SET verified_at = now() WHERE id = $1`, []any{factor}, denied},
+		{"delete mfa factor", `DELETE FROM mfa_factors WHERE id = $1`, []any{factor}, denied},
+		{"select mfa challenges", `SELECT 1 FROM mfa_challenges WHERE factor_id = $1`, []any{factor}, denied},
+		{"complete mfa challenge", `UPDATE mfa_challenges SET consumed_at = now(), completed_at = now() WHERE factor_id = $1`, []any{factor}, denied},
 		{"touch and revoke session", `UPDATE sessions SET last_seen_at = now(), idle_expires_at = now(),
 			revoked_at = now(), updated_at = now() WHERE id = $1`, []any{session}, ""},
 		{"delete session", `DELETE FROM sessions WHERE id = $1`, []any{session}, ""},

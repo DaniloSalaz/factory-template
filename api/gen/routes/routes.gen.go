@@ -9,13 +9,17 @@ import "github.com/DaniloSalaz/factory-template/api/internal/platform/httpx"
 // Security returns the security of every operation of the contract.
 func Security() map[string]httpx.Security {
 	return map[string]httpx.Security{
-		"GET /auth/callback":    {Session: false, Tenant: false},
-		"GET /auth/login":       {Session: false, Tenant: false},
-		"GET /healthz":          {Session: false, Tenant: false},
-		"GET /me":               {Session: true, Tenant: false},
-		"GET /readyz":           {Session: false, Tenant: false},
-		"GET /tenant":           {Session: true, Tenant: true},
-		"POST /auth/logout":     {Session: true, Tenant: false},
-		"POST /auth/logout-all": {Session: true, Tenant: false},
+		"DELETE /me/mfa/totp/{factorId}": {Session: true, Tenant: false},
+		"GET /auth/callback":             {Session: false, Tenant: false},
+		"GET /auth/login":                {Session: false, Tenant: false},
+		"GET /healthz":                   {Session: false, Tenant: false},
+		"GET /me":                        {Session: true, Tenant: false},
+		"GET /readyz":                    {Session: false, Tenant: false},
+		"GET /tenant":                    {Session: true, Tenant: true},
+		"POST /auth/logout":              {Session: true, Tenant: false},
+		"POST /auth/logout-all":          {Session: true, Tenant: false},
+		"POST /me/mfa/challenges":        {Session: true, Tenant: false},
+		"POST /me/mfa/totp":              {Session: true, Tenant: false},
+		"POST /me/mfa/totp/verify":       {Session: true, Tenant: false},
 	}
 }

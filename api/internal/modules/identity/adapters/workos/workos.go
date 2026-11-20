@@ -1,5 +1,6 @@
-// Package workos implements app.IdentityProvider with WorkOS AuthKit. It is the only
-// package that imports the WorkOS SDK; none of its types leave it.
+// Package workos implements app.IdentityProvider with WorkOS AuthKit, and app.MFAProvider
+// with its MFA API. It is the only package that imports the WorkOS SDK; none of its
+// types leave it.
 package workos
 
 import (
@@ -19,7 +20,6 @@ import (
 	sdk "github.com/workos/workos-go/v7"
 
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
 )
@@ -41,11 +41,15 @@ type Config struct {
 // Provider is the WorkOS AuthKit identity provider.
 type Provider struct {
 	um          *sdk.UserManagementService
+	mfa         *sdk.MultiFactorAuthService
 	redirectURI string
 	logger      *slog.Logger
 }
 
-var _ app.IdentityProvider = (*Provider)(nil)
+var (
+	_ app.IdentityProvider = (*Provider)(nil)
+	_ app.MFAProvider      = (*Provider)(nil)
+)
 
 // New builds the provider.
 func New(cfg Config, logger *slog.Logger) *Provider {
@@ -60,7 +64,7 @@ func New(cfg Config, logger *slog.Logger) *Provider {
 		opts = append(opts, sdk.WithBaseURL(cfg.BaseURL))
 	}
 	client := sdk.NewClient(cfg.APIKey.Reveal(), opts...)
-	return &Provider{um: client.UserManagement(), redirectURI: cfg.RedirectURI, logger: logger}
+	return &Provider{um: client.UserManagement(), mfa: client.MultiFactorAuth(), redirectURI: cfg.RedirectURI, logger: logger}
 }
 
 // Name implements app.IdentityProvider.
@@ -103,8 +107,8 @@ func (p *Provider) ExchangeCode(ctx context.Context, code, codeVerifier string) 
 	if err != nil {
 		return app.Authentication{}, unavailable(err)
 	}
-	// Only the names, never the values: this is how the runbook checks whether WorkOS
-	// started sending an MFA claim (docs/runbooks/auth.md).
+	// Only the names, never the values: whether WorkOS ever starts sending an MFA claim
+	// (design, section 13) shows here.
 	p.logger.DebugContext(ctx, "workos access token claims", slog.Any("claims", names))
 	if claims.Subject != res.User.ID {
 		return app.Authentication{}, unavailable(errors.New("workos: access token sub does not match the user"))
@@ -125,12 +129,7 @@ func (p *Provider) ExchangeCode(ctx context.Context, code, codeVerifier string) 
 		SessionID:     claims.SessionID,
 		Method:        method,
 		Impersonated:  res.Impersonator != nil,
-		MFA: domain.ProviderMFA{
-			AuthTime:        time.Unix(*claims.AuthTime, 0).UTC(),
-			CoveredByPolicy: coveredByMFAPolicy(method),
-			AMR:             claims.AMR,
-			HasAMR:          claims.AMR != nil,
-		},
+		AuthTime:      time.Unix(*claims.AuthTime, 0).UTC(),
 	}, nil
 }
 
@@ -143,25 +142,77 @@ func (p *Provider) LogoutURL(providerSessionID string) (string, error) {
 	return p.um.GetLogoutURL(&sdk.UserManagementGetLogoutURLParams{SessionID: providerSessionID}), nil
 }
 
-// coveredByMFAPolicy is the allowlist of authentication methods confirmed, with a test in
-// staging, to make AuthKit ask for the second factor when MFA is Required (design, 5.2).
-// Every other method, unknown ones included, never counts as MFA: WorkOS documents that
-// its MFA does not apply to SSO and says nothing about Magic Auth, passkeys or OAuth.
-// Adding one follows docs/runbooks/auth.md.
-func coveredByMFAPolicy(method string) bool {
-	switch sdk.AuthenticateResponseAuthenticationMethod(method) { //nolint:exhaustive // an allowlist: every other method is not covered
-	case sdk.AuthenticateResponseAuthenticationMethodPassword:
-		return true
-	default:
-		return false
+// EnrollTOTP implements app.MFAProvider. Issuer and account name are left to WorkOS: its
+// team name and the user's email.
+func (p *Provider) EnrollTOTP(ctx context.Context, subject string) (app.TOTPEnrollment, error) {
+	res, err := p.mfa.CreateUserAuthFactor(ctx, subject, &sdk.MultiFactorAuthCreateUserAuthFactorParams{Type: "totp"})
+	if err != nil {
+		return app.TOTPEnrollment{}, classifyMFA(err)
 	}
+	f, c := res.AuthenticationFactor, res.AuthenticationChallenge
+	if f == nil || f.ID == "" || f.TOTP == nil || c == nil || c.ID == "" {
+		return app.TOTPEnrollment{}, unavailable(errors.New("workos: enrollment response without a factor or challenge"))
+	}
+	return app.TOTPEnrollment{
+		FactorID: f.ID, ChallengeID: c.ID,
+		QRCode: pii.Secret(f.TOTP.QrCode), URI: pii.Secret(f.TOTP.URI), Secret: pii.Secret(f.TOTP.Secret),
+	}, nil
+}
+
+// Challenge implements app.MFAProvider.
+func (p *Provider) Challenge(ctx context.Context, providerFactorID string) (string, error) {
+	c, err := p.mfa.ChallengeFactor(ctx, providerFactorID, &sdk.MultiFactorAuthChallengeFactorParams{})
+	if err != nil {
+		return "", classifyMFA(err)
+	}
+	if c == nil || c.ID == "" {
+		return "", unavailable(errors.New("workos: challenge response without an id"))
+	}
+	return c.ID, nil
+}
+
+// Verify implements app.MFAProvider: only valid: true counts.
+func (p *Provider) Verify(ctx context.Context, providerChallengeID, code string) (bool, error) {
+	res, err := p.mfa.VerifyChallenge(ctx, providerChallengeID, &sdk.MultiFactorAuthVerifyChallengeParams{Code: code})
+	if err != nil {
+		return false, classifyMFA(err)
+	}
+	return res != nil && res.Valid, nil
+}
+
+// DeleteFactor implements app.MFAProvider. A factor WorkOS no longer has is already gone.
+func (p *Provider) DeleteFactor(ctx context.Context, providerFactorID string) error {
+	err := p.mfa.DeleteFactor(ctx, providerFactorID)
+	var notFound *sdk.NotFoundError
+	if err == nil || errors.As(err, &notFound) {
+		return nil
+	}
+	return classifyMFA(err)
+}
+
+// classifyMFA maps MFA API errors to apperr, keeping only the typed fields. A rejected
+// request (4xx) means a factor or challenge WorkOS does not know: the user starts over.
+func classifyMFA(err error) error {
+	var apiErr *sdk.APIError
+	if errors.As(err, &apiErr) {
+		summary := summarize(apiErr)
+		if apiErr.StatusCode >= http.StatusBadRequest && apiErr.StatusCode < http.StatusInternalServerError &&
+			apiErr.StatusCode != http.StatusTooManyRequests && apiErr.StatusCode != http.StatusUnauthorized {
+			return apperr.Wrap(summary, apperr.KindConflict, "mfa.provider_rejected",
+				"The identity provider rejected the request; start again.")
+		}
+		return unavailable(summary)
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return unavailable(errors.New("workos: request cancelled or timed out"))
+	}
+	return unavailable(errors.New("workos: request failed"))
 }
 
 type accessClaims struct {
-	Subject   string   `json:"sub"`
-	SessionID string   `json:"sid"`
-	AuthTime  *int64   `json:"auth_time"`
-	AMR       []string `json:"amr"`
+	Subject   string `json:"sub"`
+	SessionID string `json:"sid"`
+	AuthTime  *int64 `json:"auth_time"`
 }
 
 // decodeClaims reads the access token's payload without verifying its signature. That
@@ -169,8 +220,8 @@ type accessClaims struct {
 // request authenticated with the API key over TLS.
 //
 // It must NEVER be given a token that came from the browser (a cookie, a header, a
-// query parameter or a body): anyone can write a JWT with any sub, sid, auth_time or
-// amr, and without the signature check this function would accept it. The BFF never
+// query parameter or a body): anyone can write a JWT with any sub, sid or auth_time,
+// and without the signature check this function would accept it. The BFF never
 // hands provider tokens to the browser; a flow that needs to accept one must verify it
 // against WorkOS's JWKS (issuer, audience, expiry) instead of calling this.
 func decodeClaims(token string) (accessClaims, []string, error) {

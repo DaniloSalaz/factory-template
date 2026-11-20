@@ -26,6 +26,30 @@ type IdentityProvider interface {
 	LogoutURL(providerSessionID string) (string, error)
 }
 
+// MFAProvider is the provider's MFA API (WorkOS today). The provider reports nothing
+// about MFA in a login, so the app challenges the user's factor and verifies the code
+// itself after the login (design, 5.2).
+type MFAProvider interface {
+	// EnrollTOTP creates a TOTP factor for the provider's user and its first challenge.
+	EnrollTOTP(ctx context.Context, subject string) (TOTPEnrollment, error)
+	// Challenge creates a challenge of a factor.
+	Challenge(ctx context.Context, providerFactorID string) (providerChallengeID string, err error)
+	// Verify checks a code against a challenge; valid is the provider's answer.
+	Verify(ctx context.Context, providerChallengeID, code string) (valid bool, err error)
+	// DeleteFactor removes a factor; one that no longer exists is not an error.
+	DeleteFactor(ctx context.Context, providerFactorID string) error
+}
+
+// TOTPEnrollment is a factor just created at the provider, with what the user needs to
+// add it to an authenticator app. The secret is shown once and never stored.
+type TOTPEnrollment struct {
+	FactorID    string
+	ChallengeID string
+	QRCode      pii.Secret // a PNG data: URI; it encodes the secret too
+	URI         pii.Secret
+	Secret      pii.Secret
+}
+
 // Authentication is what the provider reports about a completed authentication.
 type Authentication struct {
 	Subject       string
@@ -38,7 +62,9 @@ type Authentication struct {
 	Method string
 	// Impersonated is true when someone else (a provider admin) signed in as the user.
 	Impersonated bool
-	MFA          domain.ProviderMFA
+	// AuthTime is when the user actively authenticated, per the provider. It says
+	// nothing about MFA.
+	AuthTime time.Time
 }
 
 // Store runs the module's transactions.
@@ -82,6 +108,56 @@ type Repo interface {
 	MembershipsForUser(ctx context.Context) ([]TenantMembership, error)
 	// TenantByID returns a tenant; under RLS, only the transaction's own (InTenant).
 	TenantByID(ctx context.Context, id string) (t Tenant, found bool, err error)
+
+	// IdentitySubject returns the user's subject at provider.
+	IdentitySubject(ctx context.Context, userID, provider string) (subject string, found bool, err error)
+	// MFAFactors returns the transaction user's factors, and only theirs.
+	MFAFactors(ctx context.Context) ([]MFAFactor, error)
+	// RegisterMFAFactor records a factor just enrolled and its first challenge, bound to
+	// the session of tokenHash.
+	RegisterMFAFactor(ctx context.Context, tokenHash []byte, provider, providerFactorID, providerChallengeID string) (Challenge, error)
+	// CreateMFAChallenge records a challenge of one of the user's factors, bound to the
+	// session of tokenHash.
+	CreateMFAChallenge(ctx context.Context, tokenHash []byte, factorID, providerChallengeID string) (Challenge, error)
+	// ConsumeMFAChallenge uses up a challenge of the session of tokenHash.
+	ConsumeMFAChallenge(ctx context.Context, tokenHash []byte, challengeID string) (ConsumedChallenge, error)
+	// MarkSessionMFA replaces the session of tokenHash by a new one, with the token
+	// newTokenHash and its MFA verified now.
+	MarkSessionMFA(ctx context.Context, tokenHash []byte, challengeID string, codeHash, newTokenHash []byte) (MarkedSession, error)
+	// RemoveMFAFactor deletes one of the user's factors and returns its provider id.
+	RemoveMFAFactor(ctx context.Context, factorID string) (providerFactorID string, err error)
+}
+
+// MFAFactor is one of the user's factors.
+type MFAFactor struct {
+	ID               string
+	Provider         string
+	ProviderFactorID string
+	VerifiedAt       time.Time // zero: enrolled, its first code not verified yet
+	CreatedAt        time.Time
+}
+
+// Challenge is a challenge the user can answer once, before ExpiresAt.
+type Challenge struct {
+	ID        string
+	FactorID  string
+	ExpiresAt time.Time
+}
+
+// ConsumedChallenge is a challenge just used up by a verification attempt.
+type ConsumedChallenge struct {
+	ProviderChallengeID string
+	FactorID            string
+	FactorVerified      bool
+}
+
+// MarkedSession is the session that replaced the verified one.
+type MarkedSession struct {
+	SessionID         string
+	MFAAuthTime       time.Time
+	AbsoluteExpiresAt time.Time
+	FactorID          string
+	FirstVerification bool
 }
 
 // Tenant is a tenant as its members see it.
@@ -105,6 +181,8 @@ type TenantMembership struct {
 	TenantName   string
 	TenantStatus string
 	Role         string
+	// MFARequired: the role requires MFA in the catalog (set by Accounts, not the Repo).
+	MFARequired bool
 }
 
 // Membership is the acting user's membership in a tenant, with the state of both.
@@ -132,7 +210,6 @@ type NewSession struct {
 	TokenHash         []byte
 	UserID            string
 	AuthTime          time.Time
-	MFAAuthTime       time.Time // zero: no MFA
 	Now               time.Time
 	IdleExpiresAt     time.Time
 	AbsoluteExpiresAt time.Time
@@ -166,4 +243,10 @@ const (
 	AuditLoginFailed = "auth.login_failed"
 	AuditEmailInUse  = "auth.email_in_use"
 	AuditLogout      = "auth.logout"
+
+	AuditMFAEnrolled     = "mfa.factor_enrolled"
+	AuditMFAVerified     = "mfa.verified"
+	AuditMFAVerifyFailed = "mfa.verify_failed"
+	AuditMFAVerifyLocked = "mfa.verify_locked"
+	// mfa.factor_removed is recorded by a database trigger, whoever removes the factor.
 )

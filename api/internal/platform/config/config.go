@@ -111,11 +111,6 @@ type WorkOS struct {
 	ClientID    string     `env:"WORKOS_CLIENT_ID"`
 	APIKey      pii.Secret `env:"WORKOS_API_KEY"`
 	RedirectURI string     `env:"WORKOS_REDIRECT_URI"`
-	// MFARequired states that MFA is set to "Required" in this environment's WorkOS
-	// dashboard. WorkOS reports no MFA claim, so this is the only evidence the app has
-	// that a login included MFA (design, 5.2 and 13); docs/runbooks/auth.md says how to
-	// check that it matches the dashboard.
-	MFARequired bool `env:"WORKOS_MFA_REQUIRED" envDefault:"false"`
 }
 
 // DefaultDeployedClientIPHeader is the client IP header in staging and production, where
@@ -414,11 +409,11 @@ func (c Config) String() string {
 	return fmt.Sprintf(
 		"Config{Env:%s HTTP:{Port:%d ReadHeaderTimeout:%s ReadTimeout:%s WriteTimeout:%s IdleTimeout:%s ShutdownTimeout:%s MaxHeaderBytes:%d MaxBodyBytes:%d} DB:{URL:%s} Log:{Level:%s Format:%s} "+
 			"Web:{FrontendOrigin:%s AllowedOrigins:%v TrustedClientIPHeader:%s} Auth:{SessionIdleTTL:%s SessionAbsoluteTTL:%s} "+
-			"WorkOS:{ClientID:%s APIKey:%s RedirectURI:%s MFARequired:%t}}",
+			"WorkOS:{ClientID:%s APIKey:%s RedirectURI:%s}}",
 		c.Env, c.HTTP.Port, c.HTTP.ReadHeaderTimeout, c.HTTP.ReadTimeout, c.HTTP.WriteTimeout,
 		c.HTTP.IdleTimeout, c.HTTP.ShutdownTimeout, c.HTTP.MaxHeaderBytes, c.HTTP.MaxBodyBytes, c.DB.URL, c.Log.Level, c.Log.Format,
 		c.Web.FrontendOrigin, c.Web.AllowedOrigins, c.Web.TrustedClientIPHeader, c.Auth.SessionIdleTTL, c.Auth.SessionAbsoluteTTL,
-		c.WorkOS.ClientID, c.WorkOS.APIKey, c.WorkOS.RedirectURI, c.WorkOS.MFARequired,
+		c.WorkOS.ClientID, c.WorkOS.APIKey, c.WorkOS.RedirectURI,
 	)
 }
 
@@ -454,7 +449,6 @@ func (c Config) LogValue() slog.Value {
 			slog.String("client_id", c.WorkOS.ClientID),
 			slog.Any("api_key", c.WorkOS.APIKey),
 			slog.String("redirect_uri", c.WorkOS.RedirectURI),
-			slog.Bool("mfa_required", c.WorkOS.MFARequired),
 		),
 	)
 }

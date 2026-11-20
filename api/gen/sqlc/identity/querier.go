@@ -14,15 +14,25 @@ type Querier interface {
 	// The acting user's membership in a tenant (tenant middleware, design 5.4.2). No row:
 	// no membership, or no such tenant.
 	AuthMembership(ctx context.Context, tenantID pgtype.UUID) (AuthMembershipRow, error)
+	ConsumeMFAChallenge(ctx context.Context, arg ConsumeMFAChallengeParams) (ConsumeMFAChallengeRow, error)
 	CreateIdentity(ctx context.Context, arg CreateIdentityParams) error
+	CreateMFAChallenge(ctx context.Context, arg CreateMFAChallengeParams) (CreateMFAChallengeRow, error)
+	// A new session has no MFA: only mark_session_mfa gives it one (design, 5.2).
 	CreateSession(ctx context.Context, arg CreateSessionParams) (pgtype.UUID, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (pgtype.UUID, error)
+	// The user's subject at a provider (WorkOS: the user id its MFA API takes).
+	IdentitySubject(ctx context.Context, arg IdentitySubjectParams) (string, error)
+	// MFA (design 5.2, migration 00004): every write goes through these functions.
+	MFAFactorsForUser(ctx context.Context) ([]MFAFactorsForUserRow, error)
+	MarkSessionMFA(ctx context.Context, arg MarkSessionMFAParams) (MarkSessionMFARow, error)
 	// The acting user's own memberships, never anyone else's (GET /me).
 	MembershipsForUser(ctx context.Context) ([]MembershipsForUserRow, error)
 	// Events without a tenant: login and logout never have one (record_audit, TN031).
 	RecordAudit(ctx context.Context, arg RecordAuditParams) error
 	// Events of the transaction's tenant; record_audit refuses any other (TN030).
 	RecordTenantAudit(ctx context.Context, arg RecordTenantAuditParams) error
+	RegisterMFAFactor(ctx context.Context, arg RegisterMFAFactorParams) (RegisterMFAFactorRow, error)
+	RemoveMFAFactor(ctx context.Context, factorID pgtype.UUID) (RemoveMFAFactorRow, error)
 	RevokeSession(ctx context.Context, id pgtype.UUID) error
 	RevokeSessionByHash(ctx context.Context, tokenHash []byte) error
 	RevokeUserSessions(ctx context.Context, userID pgtype.UUID) (int64, error)

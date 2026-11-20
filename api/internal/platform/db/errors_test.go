@@ -29,6 +29,13 @@ func TestMapError(t *testing.T) {
 		{"TN015", apperr.KindForbidden, "invitation.email_mismatch"},
 		{"TN016", apperr.KindConflict, "invitation.already_member"},
 		{"TN020", apperr.KindConflict, "tenant.slug_taken"},
+		{"TN040", apperr.KindNotFound, "mfa.factor_not_found"},
+		{"TN041", apperr.KindNotFound, "mfa.challenge_not_found"},
+		{"TN042", apperr.KindConflict, "mfa.challenge_used"},
+		{"TN043", apperr.KindConflict, "mfa.challenge_expired"},
+		{"TN044", apperr.KindConflict, "mfa.code_reused"},
+		{"TN045", apperr.KindConflict, "mfa.too_many_pending"},
+		{"TN050", apperr.KindUnauthorized, "auth.session_invalid"},
 		{"TN030", apperr.KindInternal, "audit.tenant_mismatch"},
 		{"TN031", apperr.KindInternal, "audit.tenant_not_set"},
 	}

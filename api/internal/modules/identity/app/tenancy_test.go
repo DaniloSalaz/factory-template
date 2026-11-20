@@ -37,7 +37,16 @@ func tenancyCatalog(t *testing.T) *authz.Catalog {
 // is the one member of tenantB.
 func tenancyFixture(t *testing.T, now time.Time, role string, disabled bool) *app.Tenancy {
 	t.Helper()
+	return tenancyFixtureWithFactor(t, now, role, disabled, false)
+}
+
+// tenancyFixtureWithFactor also gives memberID a verified factor when verified is true.
+func tenancyFixtureWithFactor(t *testing.T, now time.Time, role string, disabled, verified bool) *app.Tenancy {
+	t.Helper()
 	store := newMemStore()
+	if verified {
+		store.st.factors["factor-1"] = memFactor{user: memberID, providerID: "pf-1", verifiedAt: now.Add(-24 * time.Hour)}
+	}
 	store.st.memberships = map[string]map[string]app.Membership{
 		tenantA:   {memberID: {Role: role, TenantActive: true, UserDisabled: disabled}},
 		tenantB:   {otherID: {Role: "member", TenantActive: true}},
@@ -88,23 +97,26 @@ func TestTenancy_RoleMFA(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+	enroll, verify := domain.ErrMFAEnrollmentRequired(), domain.ErrMFAVerificationRequired()
 	tests := []struct {
-		name    string
-		role    string
-		mfa     time.Time
-		wantErr bool
+		name      string
+		role      string
+		mfa       time.Time
+		hasFactor bool
+		want      error // nil: allowed
 	}{
-		{"owner without MFA", authz.RoleOwner, time.Time{}, true},
-		{"owner with MFA older than 12 h", authz.RoleOwner, now.Add(-12*time.Hour - time.Second), true},
-		{"owner with recent MFA", authz.RoleOwner, now.Add(-11 * time.Hour), false},
-		{"member needs no MFA", "member", time.Time{}, false},
+		{"owner without a factor must enroll", authz.RoleOwner, time.Time{}, false, enroll},
+		{"owner with a factor, session without MFA, must verify", authz.RoleOwner, time.Time{}, true, verify},
+		{"owner with MFA older than 12 h", authz.RoleOwner, now.Add(-12*time.Hour - time.Second), true, verify},
+		{"owner with recent MFA", authz.RoleOwner, now.Add(-11 * time.Hour), true, nil},
+		{"member needs no MFA", "member", time.Time{}, false, nil},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := tenancyFixture(t, now, tc.role, false).Enter(t.Context(), user(t, tc.mfa), tenantA)
-			if tc.wantErr != errors.Is(err, domain.ErrRoleMFARequired()) || (!tc.wantErr && err != nil) {
-				t.Fatalf("Enter = %v, want MFA error %v", err, tc.wantErr)
+			_, err := tenancyFixtureWithFactor(t, now, tc.role, false, tc.hasFactor).Enter(t.Context(), user(t, tc.mfa), tenantA)
+			if tc.want == nil && err != nil || tc.want != nil && !errors.Is(err, tc.want) {
+				t.Fatalf("Enter = %v, want %v", err, tc.want)
 			}
 		})
 	}
@@ -194,9 +206,14 @@ func TestAccounts_MeOnlyHasTheUsersOwnMemberships(t *testing.T) {
 		tenantB:   {otherID: {Role: "member", TenantActive: true}},
 		suspended: {memberID: {Role: "client"}},
 	}
-	me, err := app.NewAccounts(store).Me(t.Context(), memberID)
+	store.st.factors["factor-1"] = memFactor{user: memberID, providerID: "pf-1", verifiedAt: time.Now()}
+	store.st.factors["factor-2"] = memFactor{user: otherID, providerID: "pf-2", verifiedAt: time.Now()}
+	me, err := app.NewAccounts(store, tenancyCatalog(t)).Me(t.Context(), app.Current{UserID: memberID})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !me.MFAEnrolled() || len(me.Factors) != 1 || me.Factors[0].ID != "factor-1" {
+		t.Fatalf("factors = %+v, want only the user's own", me.Factors)
 	}
 	if me.User.ID != memberID || me.User.Email.Reveal() != "me@example.test" {
 		t.Fatalf("user = %+v", me.User)
@@ -209,7 +226,7 @@ func TestAccounts_MeOnlyHasTheUsersOwnMemberships(t *testing.T) {
 		t.Fatalf("memberships = %+v, want %+v", me.Memberships, want)
 	}
 
-	if _, err := app.NewAccounts(store).Me(t.Context(), otherID); !errors.Is(err, domain.ErrSessionInvalid()) {
+	if _, err := app.NewAccounts(store, tenancyCatalog(t)).Me(t.Context(), app.Current{UserID: "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f0003"}); !errors.Is(err, domain.ErrSessionInvalid()) {
 		t.Fatalf("a user that no longer exists: %v, want auth.session_invalid", err)
 	}
 }
@@ -217,7 +234,7 @@ func TestAccounts_MeOnlyHasTheUsersOwnMemberships(t *testing.T) {
 func TestAccounts_CurrentTenant(t *testing.T) {
 	t.Parallel()
 
-	accounts := app.NewAccounts(newMemStore())
+	accounts := app.NewAccounts(newMemStore(), tenancyCatalog(t))
 	if _, err := accounts.CurrentTenant(t.Context()); !errors.Is(err, domain.ErrTenantForbidden()) {
 		t.Fatalf("without a principal: %v", err)
 	}

@@ -905,3 +905,36 @@ func deref(s *string) string {
 	}
 	return *s
 }
+
+// Every removed MFA factor is audited by its trigger, whoever removes it: the runbook's
+// recovery of a lost device has app_admin delete it with a reason (docs/runbooks/auth.md).
+func TestFunc_MFAFactorRemovalIsAudited(t *testing.T) {
+	t.Parallel()
+
+	f := newFixtures(t)
+	u := f.user(true, false)
+	factor := f.scalar(`INSERT INTO mfa_factors (user_id, provider, provider_factor_id, verified_at)
+		VALUES ($1::uuid, 'workos', 'auth_factor_' || $1::text, now()) RETURNING id::text`, u.id)
+
+	ctx := t.Context()
+	admin := connect(t, testDB.AdminURL)
+	tx, err := admin.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `SELECT set_config('app.audit_reason', 'lost device, ticket 42', true)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM mfa_factors WHERE id = $1`, factor); err != nil {
+		t.Fatalf("app_admin deletes the factor: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got := f.scalar(`SELECT (metadata->>'by') || '|' || (metadata->>'reason') || '|' || (metadata->>'user_id')
+		|| '|' || coalesce(actor_user_id::text, 'none') || '|' || coalesce(tenant_id::text, 'none')
+		FROM audit_log WHERE action = 'mfa.factor_removed' AND target_id = $1`, factor)
+	if want := "app_admin|lost device, ticket 42|" + u.id + "|none|none"; got != want {
+		t.Fatalf("audit = %s, want %s", got, want)
+	}
+}
