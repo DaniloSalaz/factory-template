@@ -20,7 +20,9 @@ APP_ENV = "development"
 HTTP_PORT = "8080"
 LOG_LEVEL = "debug"
 LOG_FORMAT = "json"
-DATABASE_URL = "postgres://factory:factory@localhost:5432/factory?sslmode=disable"
+# The API connects as app_runtime (subject to RLS); only migrations use app_owner.
+DATABASE_URL = "postgres://app_runtime:app_runtime@localhost:5432/factory?sslmode=disable"
+MIGRATIONS_DATABASE_URL = "postgres://app_owner:app_owner@localhost:5432/factory?sslmode=disable"
 _.file = ".env"
 
 [tasks.up]
@@ -52,8 +54,12 @@ run = [
 ]
 
 [tasks.migrate]
-description = "Apply pending database migrations"
-run = "goose -dir migrations postgres \"$DATABASE_URL\" up"
+description = "Apply pending database migrations as app_owner"
+run = "goose -dir migrations postgres \"$MIGRATIONS_DATABASE_URL\" up"
+
+[tasks."db:bootstrap"]
+description = "Re-run the role and extension bootstrap on the local Postgres (idempotent)"
+run = "docker compose exec -T postgres /docker-entrypoint-initdb.d/10-bootstrap.sh"
 
 [tasks.test]
 description = "Run Go tests with the race detector (integration tests need Docker)"

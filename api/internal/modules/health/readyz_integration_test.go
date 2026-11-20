@@ -1,26 +1,19 @@
 package health_test
 
 import (
-	"database/sql"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" database/sql driver used by goose
-	"github.com/pressly/goose/v3"
-	"github.com/testcontainers/testcontainers-go"
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/health"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/db/dbtest"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/httpx"
 )
-
-const migrationsDir = "../../../../migrations"
 
 func TestReadyz_Integration(t *testing.T) {
 	if testing.Short() {
@@ -28,22 +21,10 @@ func TestReadyz_Integration(t *testing.T) {
 	}
 	ctx := t.Context()
 
-	ctr, err := tcpostgres.Run(ctx, "postgres:18",
-		tcpostgres.WithDatabase("factory"),
-		tcpostgres.WithUsername("factory"),
-		tcpostgres.WithPassword("factory"),
-		tcpostgres.BasicWaitStrategies(),
-	)
-	testcontainers.CleanupContainer(t, ctr)
-	if err != nil {
-		t.Fatalf("start postgres: %v", err)
-	}
-
-	dsn, err := ctr.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("connection string: %v", err)
-	}
-	migrate(t, dsn)
+	// Bootstrapped and migrated like a real environment; the app connects as app_runtime.
+	db := dbtest.Start(t)
+	ctr := db.Container
+	dsn := db.RuntimeURL
 
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
@@ -83,24 +64,6 @@ func TestReadyz_Integration(t *testing.T) {
 			t.Fatalf("unexpected problem: %+v", p)
 		}
 	})
-}
-
-func migrate(t *testing.T, dsn string) {
-	t.Helper()
-
-	db, err := sql.Open("pgx", dsn)
-	if err != nil {
-		t.Fatalf("open sql db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-
-	provider, err := goose.NewProvider(goose.DialectPostgres, db, os.DirFS(migrationsDir))
-	if err != nil {
-		t.Fatalf("goose provider: %v", err)
-	}
-	if _, err := provider.Up(t.Context()); err != nil {
-		t.Fatalf("apply migrations: %v", err)
-	}
 }
 
 type response struct {

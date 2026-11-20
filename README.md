@@ -10,11 +10,16 @@ PostgreSQL 18 y frontend React + TypeScript + Vite. Las convenciones están en [
 ## Arranque
 ```sh
 mise install
-mise run up        # Postgres 18
-mise run migrate   # migraciones goose
-mise run dev       # API en http://localhost:8080
+mise run up        # Postgres 18; en un volumen nuevo crea roles y extensiones
+mise run migrate   # migraciones goose, como app_owner
+mise run dev       # API en http://localhost:8080, como app_runtime
 curl localhost:8080/readyz
 ```
+
+La API conecta como `app_runtime`, sujeto a row-level security; las migraciones, como
+`app_owner`. Si tu volumen de Postgres es anterior a los roles, recréalo una vez con
+`docker compose down -v` (o ejecuta `mise run db:bootstrap`). Detalles en
+[docs/runbooks/database.md](docs/runbooks/database.md).
 
 `/healthz` indica que el proceso vive; `/readyz` devuelve 200 si la BD responde y 503
 (`application/problem+json`) si no.
