@@ -385,7 +385,8 @@ func TestSchema_RuntimeCannotWriteAuditLog(t *testing.T) {
 }
 
 // app_runtime writes only what the design needs (section 7.1): tenants and memberships
-// are created only through create_tenant_with_owner and accept_invitation, users and
+// are created only through create_tenant and accept_invitation, and change only through
+// the member functions of migration 00005, users and
 // identities are deleted only by app_admin, and UPDATE is granted per column. Every
 // statement runs with the RLS variables of a tenant the user owns and targets rows
 // that would otherwise accept it (a tenant with no children, a user that is not yet a
@@ -424,7 +425,11 @@ func TestSchema_RuntimeWritePrivileges(t *testing.T) {
 		{"insert membership", `INSERT INTO memberships (tenant_id, user_id, role) VALUES ($1, $2, 'member')`, []any{owned, outsider.id}, denied},
 		{"update membership user", `UPDATE memberships SET user_id = $2 WHERE id = $1`, []any{membership, outsider.id}, denied},
 		{"update membership tenant", `UPDATE memberships SET tenant_id = tenant_id WHERE id = $1`, []any{membership}, denied},
-		{"update membership role", `UPDATE memberships SET role = 'admin', updated_at = now() WHERE id = $1`, []any{membership}, ""},
+		// Migration 00005: role changes and removals go through change_member_role and
+		// remove_member, which keep an owner in every tenant (ADR 0003).
+		{"update membership role", `UPDATE memberships SET role = 'admin', updated_at = now() WHERE id = $1`, []any{membership}, denied},
+		{"delete membership", `DELETE FROM memberships WHERE id = $1`, []any{membership}, denied},
+		{"call the tenant lock helper", `SELECT lock_tenant_members()`, nil, denied},
 
 		{"update invitation accepted_at", `UPDATE invitations SET accepted_at = now() WHERE token_hash = $1`, []any{invitation}, denied},
 		{"update invitation role", `UPDATE invitations SET role = 'owner' WHERE token_hash = $1`, []any{invitation}, denied},

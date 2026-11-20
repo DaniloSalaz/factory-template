@@ -311,10 +311,12 @@ func TestRLS_CrossTenantAccessIsBlocked(t *testing.T) {
 		{"insert membership into B", `INSERT INTO memberships (tenant_id, user_id, role) VALUES ($1, $2, 'member')`, []any{s.b, other.id}, "42501", 0},
 		{"insert invitation into B", `INSERT INTO invitations (tenant_id, email, role, token_hash, expires_at)
 			VALUES ($1, 'x@example.com', 'member', sha256('x'::bytea), now())`, []any{s.b}, "42501", 0},
-		{"update B memberships", `UPDATE memberships SET role = 'owner' WHERE tenant_id = $1`, []any{s.b}, "", 0},
+		// app_runtime has no UPDATE (role) or DELETE on memberships (migration 00005); the
+		// member functions act only on app.tenant_id (TestFunc_MemberFunctionsStayInTheTenant).
+		{"update B memberships", `UPDATE memberships SET role = 'owner' WHERE tenant_id = $1`, []any{s.b}, "42501", 0},
 		// Stopped by the column privilege, before WITH CHECK would.
 		{"move an A membership to B", `UPDATE memberships SET tenant_id = $1 WHERE user_id = $2`, []any{s.b, s.ownerA.id}, "42501", 0},
-		{"delete B memberships", `DELETE FROM memberships WHERE tenant_id = $1`, []any{s.b}, "", 0},
+		{"delete B memberships", `DELETE FROM memberships WHERE tenant_id = $1`, []any{s.b}, "42501", 0},
 		{"delete B invitations", `DELETE FROM invitations WHERE tenant_id = $1`, []any{s.b}, "", 0},
 	}
 	for _, tc := range tests {
@@ -368,14 +370,14 @@ func TestRLS_OwnScope(t *testing.T) {
 
 		conn := connect(t, testDB.RuntimeURL)
 		err := inTx(t, conn, tenantVars(tenant, client.id, "own"), func(tx pgx.Tx) error {
-			tag, err := tx.Exec(t.Context(), `DELETE FROM memberships WHERE id = $1`, membership)
-			if err == nil && tag.RowsAffected() != 1 {
-				t.Errorf("deleted %d rows of its own membership, want 1", tag.RowsAffected())
-			}
+			_, err := tx.Exec(t.Context(), `SELECT leave_tenant($1)`, testIPPrefix)
 			return err
 		})
 		if err != nil {
 			t.Fatal(err)
+		}
+		if n := f.scalar(`SELECT count(*)::text FROM memberships WHERE id = $1`, membership); n != "0" {
+			t.Fatalf("the client's membership is still there")
 		}
 	})
 
@@ -406,36 +408,24 @@ func TestRLS_OwnScope(t *testing.T) {
 		}
 	})
 
-	t.Run("client cannot delete someone else's membership", func(t *testing.T) {
-		conn := connect(t, testDB.RuntimeURL)
-		err := inTx(t, conn, tenantVars(s.a, s.clientA.id, "own"), func(tx pgx.Tx) error {
-			tag, err := tx.Exec(t.Context(), `DELETE FROM memberships WHERE user_id <> $1`, s.clientA.id)
-			if err == nil && tag.RowsAffected() != 0 {
-				t.Errorf("deleted %d memberships of others, want 0", tag.RowsAffected())
-			}
-			return err
+	// Without UPDATE (role) or DELETE on memberships (migration 00005) the privilege stops
+	// these before own_scope and own_write would; the policies stay as a second layer.
+	for name, sql := range map[string]string{
+		"client cannot delete someone else's membership": `DELETE FROM memberships WHERE user_id <> $1`,
+		"client cannot change its own membership":        `UPDATE memberships SET role = 'owner' WHERE user_id = $1`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			conn := connect(t, testDB.RuntimeURL)
+			err := inTx(t, conn, tenantVars(s.a, s.clientA.id, "own"), func(tx pgx.Tx) error {
+				_, err := tx.Exec(t.Context(), sql, s.clientA.id)
+				return err
+			})
+			wantSQLState(t, err, "42501")
 		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	})
-
-	t.Run("client cannot change its own membership", func(t *testing.T) {
-		conn := connect(t, testDB.RuntimeURL)
-		err := inTx(t, conn, tenantVars(s.a, s.clientA.id, "own"), func(tx pgx.Tx) error {
-			tag, err := tx.Exec(t.Context(), `UPDATE memberships SET role = 'owner' WHERE id = $1`, s.clientMembership)
-			if err == nil && tag.RowsAffected() != 0 {
-				t.Errorf("updated %d rows of its own membership, want 0", tag.RowsAffected())
-			}
-			return err
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if role := newFixtures(t).scalar(`SELECT role FROM memberships WHERE id = $1`, s.clientMembership); role != "client" {
-			t.Fatalf("client role = %q, want client", role)
-		}
-	})
+	}
+	if role := newFixtures(t).scalar(`SELECT role FROM memberships WHERE id = $1`, s.clientMembership); role != "client" {
+		t.Fatalf("client role = %q, want client", role)
+	}
 
 	t.Run("scope tenant sees the whole tenant", func(t *testing.T) {
 		conn := connect(t, testDB.RuntimeURL)
@@ -538,51 +528,6 @@ func TestFunc_AuthMembershipsForUser(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestFunc_CreateTenantWithOwner(t *testing.T) {
-	t.Parallel()
-
-	f := newFixtures(t)
-	active := f.user(true, false)
-	taken := f.scalar(`SELECT slug FROM tenants WHERE id = $1`, f.tenant("active"))
-
-	tests := []struct {
-		name, user, slug, wantState string
-	}{
-		{"active user becomes owner", active.id, "acme-" + active.id[:8], ""},
-		{"disabled user", f.user(true, true).id, "disabled-" + active.id[:8], "TN002"},
-		{"system user is disabled", systemUserID, "system-" + active.id[:8], "TN002"},
-		{"unknown user", "01890000-0000-7000-8000-000000000000", "ghost-" + active.id[:8], "TN001"},
-		{"slug taken", active.id, taken, "TN020"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			var tenantID string
-			conn := connect(t, testDB.RuntimeURL)
-			err := inTx(t, conn, userVars(tc.user), func(tx pgx.Tx) error {
-				return tx.QueryRow(t.Context(), `SELECT tenant_id::text FROM create_tenant_with_owner('Acme', $1, $2)`, tc.slug, testIPPrefix).Scan(&tenantID)
-			})
-			if tc.wantState != "" {
-				wantSQLState(t, err, tc.wantState)
-				return
-			}
-			if err != nil {
-				t.Fatalf("create_tenant_with_owner: %v", err)
-			}
-			f := newFixtures(t)
-			membershipID := f.scalar(`SELECT id::text FROM memberships WHERE tenant_id = $1 AND user_id = $2 AND role = 'owner'`, tenantID, tc.user)
-			want := []string{
-				"membership.created/" + tc.user + "/membership/" + membershipID + "/owner/" + testIPPrefix,
-				"tenant.created/" + tc.user + "/tenant/" + tenantID + "/" + testIPPrefix,
-			}
-			if got := f.auditEvents(tenantID); !slices.Equal(got, want) {
-				t.Fatalf("audit events = %v, want %v", got, want)
-			}
-		})
 	}
 }
 
