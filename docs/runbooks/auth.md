@@ -1,7 +1,7 @@
 # Runbook: login con WorkOS AuthKit
 
-Diseño: `docs/designs/auth-y-tenancy.md` (secciones 5.1, 5.2, 5.5, 6 y 13) y
-`docs/adr/0002-mfa-opcional-por-rol.md`.
+Diseño: `docs/designs/auth-y-tenancy.md` (secciones 5.1, 5.2, 5.5, 5.7, 6 y 13),
+`docs/adr/0002-mfa-opcional-por-rol.md` y `docs/adr/0003-invariante-owner.md`.
 
 ## Variables
 
@@ -14,6 +14,7 @@ Diseño: `docs/designs/auth-y-tenancy.md` (secciones 5.1, 5.2, 5.5, 6 y 13) y
 | `ALLOWED_ORIGINS` | `[env]` | Lista cerrada para CORS y CSRF; incluye `FRONTEND_ORIGIN`; sin comodines |
 | `TRUSTED_CLIENT_IP_HEADER` | `[env]` | Vacía en desarrollo; `CF-Connecting-IP` por defecto en staging y producción; nunca `X-Forwarded-For` |
 | `SESSION_IDLE_TTL` / `SESSION_ABSOLUTE_TTL` | `[env]` | 168h y 720h por defecto |
+| `TENANT_MAX_PER_USER` | `[env]` | Tenants que puede crear cada usuario (`POST /tenants`), también los que ya dejó; 5 por defecto, entre 1 y 1000 |
 
 ### Secretos con SOPS
 
@@ -180,7 +181,8 @@ cd web && npm run dev             # terminal 2: front en :5173
 
 Dos roles, cada uno para lo suyo:
 - **Preparar datos** (tenants, usuarios, eventos de prueba): el superusuario local
-  `factory`, que salta RLS. Hasta que llegue `POST /tenants` (paso 5) no hay otra forma.
+  `factory`, que salta RLS. Esta prueba necesita un tenant ajeno y membresías ya hechas;
+  para crear tenants por la API, "Prueba manual: tenants y miembros".
   **Nunca así en staging ni en producción.**
 - **Comprobar**: la API, o `app_runtime` con las mismas variables que fija
   `db.WithTenantTx`. Una comprobación hecha como superusuario no prueba nada: se salta RLS.
@@ -308,6 +310,165 @@ psql_app() { docker compose exec -T postgres psql -U app_runtime -d factory -v O
    ```
 
    Con la opción A no se borra tu usuario ni tus sesiones: solo los de prueba.
+
+## Prueba manual: tenants y miembros
+
+Diseño: 5.5 y 5.7, `docs/adr/0003-invariante-owner.md`. Sin navegador y solo en local:
+las sesiones se crean como en la opción B de la sección anterior. Mismas reglas:
+**preparar** con el superusuario `factory` (sesiones, y las membresías que llegarán con
+las invitaciones del paso 5b); **comprobar** con la API o con `app_runtime`.
+
+Desde la raíz del repo, con `mise run up && mise run migrate` y la API en marcha
+(`mise run dev`). Los bloques valen para bash y zsh.
+
+```sh
+psql_su()  { docker compose exec -T postgres psql -U factory -d factory -v ON_ERROR_STOP=1 -At "$@"; }
+psql_app() { docker compose exec -T postgres psql -U app_runtime -d factory -v ON_ERROR_STOP=1 "$@"; }
+# api METHOD PATH SESSION [TENANT] [BODY]: cuerpo y estado HTTP, sin request_id.
+api() {
+  local args=(-s -w ' → %{http_code}\n' -X "$1" "localhost:8080$2" -H "Cookie: __Host-session=$3"
+              -H "Origin: http://localhost:5173" -H "Content-Type: application/json")
+  [ -n "$4" ] && args+=(-H "X-Tenant-ID: $4")
+  [ -n "$5" ] && args+=(-d "$5")
+  curl "${args[@]}" | sed 's/,"request_id":"[^"]*"//'
+}
+```
+
+1. **Tres usuarios con sesión**: Ana creará el tenant; Bea y Carla serán miembros.
+
+   ```sh
+   new_session() {
+     local token; token=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')
+     psql_su -v email="$1" -v token="$token" >/dev/null <<'SQL'
+   INSERT INTO users (email, email_verified, display_name) VALUES (:'email', true, split_part(:'email', '@', 1));
+   INSERT INTO sessions (token_hash, user_id, auth_time, last_seen_at, idle_expires_at, absolute_expires_at)
+   SELECT sha256(convert_to(:'token', 'UTF8')), id, now(), now(), now() + interval '1 hour', now() + interval '1 hour'
+   FROM users WHERE email = :'email';
+   SQL
+     printf '%s' "$token"
+   }
+   ANA=$(new_session ana.runbook@example.test)
+   BEA=$(new_session bea.runbook@example.test)
+   CARLA=$(new_session carla.runbook@example.test)
+   ANA_ID=$(psql_su <<< "SELECT id FROM users WHERE email = 'ana.runbook@example.test'")
+   BEA_ID=$(psql_su <<< "SELECT id FROM users WHERE email = 'bea.runbook@example.test'")
+   CARLA_ID=$(psql_su <<< "SELECT id FROM users WHERE email = 'carla.runbook@example.test'")
+   ```
+
+2. **Crear el tenant** (solo sesión, sin `X-Tenant-ID`): un slug con mayúsculas y uno
+   reservado dan `422` con códigos distintos; el bueno, `201` con Ana como `owner`. Repetir
+   el slug da `409 tenant.slug_taken`.
+
+   ```sh
+   api POST /tenants "$ANA" "" '{"name":"Despacho","slug":"Despacho Ana"}'
+   api POST /tenants "$ANA" "" '{"name":"Despacho","slug":"admin"}'
+   api POST /tenants "$ANA" "" '{"name":"Despacho Ana","slug":"despacho-ana"}'
+   api POST /tenants "$ANA" "" '{"name":"Otro","slug":"despacho-ana"}'
+   T=$(psql_su <<< "SELECT id FROM tenants WHERE slug = 'despacho-ana'")
+   ```
+
+   Pasar de `TENANT_MAX_PER_USER` (5 por defecto) tenants creados da
+   `403 tenant.limit_reached`.
+
+3. **La MFA del owner**: crear el tenant no la exige, pero entrar en él sí, porque el
+   `owner` del catálogo de ejemplo la requiere (12 h). Sin factor:
+   `403 auth.mfa_enrollment_required`. Con WorkOS se resuelve como en "Prueba manual: MFA de
+   un rol"; aquí, solo en local, se simula una verificación reciente como superusuario.
+
+   ```sh
+   api GET /tenant "$ANA" "$T"
+   psql_su -v token="$ANA" <<< "UPDATE sessions SET mfa_auth_time = now() WHERE token_hash = sha256(convert_to(:'token', 'UTF8'))"
+   api GET /tenant "$ANA" "$T"
+   ```
+
+4. **Miembros**: Bea y Carla entran como `member`. Es preparación: hasta las
+   invitaciones (paso 5b) no hay otra forma de añadir a alguien. Después, la lista
+   paginada de 2 en 2: la primera página trae `next_cursor`, la segunda no.
+
+   ```sh
+   psql_su -v t="$T" -v bea="$BEA_ID" -v carla="$CARLA_ID" <<< "INSERT INTO memberships (tenant_id, user_id, role) VALUES (:'t', :'bea', 'member'), (:'t', :'carla', 'member')"
+   api GET '/tenant/members?limit=2' "$ANA" "$T"
+   CURSOR=$(curl -s 'localhost:8080/tenant/members?limit=2' -H "Cookie: __Host-session=$ANA" -H "X-Tenant-ID: $T" | sed -E 's/.*"next_cursor":"([^"]*)".*/\1/')
+   api GET "/tenant/members?limit=2&cursor=$CURSOR" "$ANA" "$T"
+   ```
+
+5. **Cambiar rol y jerarquía**: Ana hace `admin` a Bea (`200`). Bea, ya admin, no puede
+   tocar a Ana (`403 membership.target_forbidden`) ni nombrar owner a Carla (`403
+   membership.role_not_assignable`); Carla, `member`, no puede gestionar (`403 authz.denied`).
+   Nadie se cambia el rol a sí mismo (`403 membership.self_change`). Un usuario que no es
+   miembro de este tenant da `404 membership.not_found`, exista o no.
+
+   ```sh
+   api PATCH "/tenant/members/$BEA_ID" "$ANA" "$T" '{"role":"admin"}'
+   api PATCH "/tenant/members/$ANA_ID" "$BEA" "$T" '{"role":"member"}'
+   api PATCH "/tenant/members/$CARLA_ID" "$BEA" "$T" '{"role":"owner"}'
+   api PATCH "/tenant/members/$BEA_ID" "$CARLA" "$T" '{"role":"member"}'
+   api PATCH "/tenant/members/$ANA_ID" "$ANA" "$T" '{"role":"admin"}'
+   api PATCH "/tenant/members/0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f9999" "$ANA" "$T" '{"role":"admin"}'
+   ```
+
+6. **Expulsar, con efecto inmediato**: Bea expulsa a Carla (`204`); la siguiente petición
+   de Carla, con la misma cookie y el mismo `X-Tenant-ID`, ya da `403 auth.tenant_forbidden`.
+
+   ```sh
+   api DELETE "/tenant/members/$CARLA_ID" "$BEA" "$T"
+   api GET /tenant "$CARLA" "$T"
+   ```
+
+7. **Dejar el tenant sin owner**: Ana es la única owner. No puede salir (`409
+   membership.last_owner`). Bea sí puede salir (`204`).
+
+   ```sh
+   api DELETE /tenant/members/me "$ANA" "$T"
+   api DELETE /tenant/members/me "$BEA" "$T"
+   ```
+
+8. **La invariante la guarda la BD**, como `app_runtime` con las variables que fija
+   `db.WithTenantTx`: ni un `DELETE` ni un `UPDATE` directos sobre `memberships` (`permission
+   denied`), y `leave_tenant()` de la última owner falla con `TN061`.
+
+   ```sh
+   for sql in "DELETE FROM memberships WHERE user_id = :'u'" \
+              "UPDATE memberships SET role = 'admin' WHERE user_id = :'u'" \
+              "SELECT leave_tenant()"; do
+     psql_app -v t="$T" -v u="$ANA_ID" 2>&1 <<SQL | grep -E 'ERROR|leave_tenant' | head -1
+   BEGIN;
+   SELECT set_config('app.tenant_id', :'t', true), set_config('app.user_id', :'u', true),
+          set_config('app.scope', 'tenant', true) \g /dev/null
+   $sql;
+   ROLLBACK;
+   SQL
+   done
+   ```
+
+9. **Auditoría**, como `app_runtime` en el tenant: cada acción con su actor, su
+   destinatario y sus roles. Los intentos rechazados por la jerarquía no escriben nada
+   (`authz.denied` sí: es el de Carla).
+
+   ```sh
+   psql_app -v t="$T" -v u="$ANA_ID" <<'SQL'
+   BEGIN;
+   SELECT set_config('app.tenant_id', :'t', true), set_config('app.user_id', :'u', true),
+          set_config('app.scope', 'tenant', true) \g /dev/null
+   SELECT a.action, u.email AS actor, a.target_id = :'u' AS target_is_ana, a.metadata - 'membership_id' AS metadata
+   FROM audit_log a LEFT JOIN users u ON u.id = a.actor_user_id ORDER BY a.created_at;
+   COMMIT;
+   SQL
+   ```
+
+10. **Limpieza**, como `factory`. El registro de auditoría es inmutable para la aplicación,
+    y un tenant no se borra (sección 12 del diseño): en local, el superusuario borra todo.
+
+    ```sh
+    psql_su -v t="$T" <<'SQL'
+    DELETE FROM audit_log WHERE tenant_id = :'t';
+    DELETE FROM memberships WHERE tenant_id = :'t';
+    DELETE FROM tenants WHERE id = :'t';
+    DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%.runbook@example.test');
+    DELETE FROM audit_log WHERE actor_user_id IN (SELECT id FROM users WHERE email LIKE '%.runbook@example.test');
+    DELETE FROM users WHERE email LIKE '%.runbook@example.test';
+    SQL
+    ```
 
 ## Prueba manual: MFA de un rol
 
