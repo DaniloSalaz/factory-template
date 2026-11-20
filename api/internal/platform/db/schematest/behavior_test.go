@@ -643,16 +643,21 @@ func TestFunc_RecordAudit(t *testing.T) {
 	t.Parallel()
 
 	f := newFixtures(t)
-	tenant := f.tenant("active")
+	tenant, other := f.tenant("active"), f.tenant("active")
 	actor := f.user(true, false)
 
 	tests := []struct {
-		name      string
-		vars      []setting
-		wantActor string
+		name        string
+		vars        []setting
+		eventTenant *string
+		wantActor   string
+		wantState   string
 	}{
-		{"anonymous event has no actor", nil, ""},
-		{"actor comes from app.user_id", userVars(actor.id), actor.id},
+		{"anonymous event has no actor", nil, &tenant, "", ""},
+		{"actor comes from app.user_id", userVars(actor.id), &tenant, actor.id, ""},
+		{"event of the current tenant", tenantVars(tenant, actor.id, "tenant"), &tenant, actor.id, ""},
+		{"event without tenant inside a tenant transaction", tenantVars(tenant, actor.id, "tenant"), nil, actor.id, ""},
+		{"event of another tenant", tenantVars(tenant, actor.id, "tenant"), &other, "", "TN030"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -661,8 +666,12 @@ func TestFunc_RecordAudit(t *testing.T) {
 			var id string
 			conn := connect(t, testDB.RuntimeURL)
 			err := inTx(t, conn, tc.vars, func(tx pgx.Tx) error {
-				return tx.QueryRow(t.Context(), `SELECT record_audit($1, 'test.recorded')::text`, tenant).Scan(&id)
+				return tx.QueryRow(t.Context(), `SELECT record_audit($1, 'test.recorded')::text`, tc.eventTenant).Scan(&id)
 			})
+			if tc.wantState != "" {
+				wantSQLState(t, err, tc.wantState)
+				return
+			}
 			if err != nil {
 				t.Fatalf("record_audit: %v", err)
 			}
@@ -671,6 +680,18 @@ func TestFunc_RecordAudit(t *testing.T) {
 				t.Fatalf("actor = %q, want %q", got, tc.wantActor)
 			}
 		})
+	}
+
+	// A reused connection has app.tenant_id back to '', which means no tenant.
+	conn := connect(t, testDB.RuntimeURL)
+	if err := inTx(t, conn, tenantVars(tenant, actor.id, "tenant"), func(pgx.Tx) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := inTx(t, conn, nil, func(tx pgx.Tx) error {
+		_, err := tx.Exec(t.Context(), `SELECT record_audit($1, 'test.recorded')`, other)
+		return err
+	}); err != nil {
+		t.Fatalf("record_audit on a reused connection without app.tenant_id: %v", err)
 	}
 }
 

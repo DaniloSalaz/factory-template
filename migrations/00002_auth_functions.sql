@@ -28,6 +28,7 @@
 --   TN015 invitation email does not match the user's verified email
 --   TN016 user is already a member of the tenant
 --   TN020 tenant slug already taken
+--   TN030 audit event tenant does not match app.tenant_id
 -- A missing or empty app.user_id is a programming error and surfaces as Postgres' own
 -- 42704 / 22P02 from current_setting and the uuid cast.
 
@@ -246,8 +247,10 @@ ALTER FUNCTION roles_in_use() OWNER TO app_security;
 ------------------------------------------------------------------------------------
 -- record_audit: the only way the application writes to audit_log, which it cannot
 -- modify or delete. The actor is app.user_id, or NULL for anonymous events (login
--- failures): this is the one place allowed to read it with missing_ok. The id is
--- generated here so app_security needs no SELECT on audit_log.
+-- failures): this is the one place allowed to read it with missing_ok. Inside a tenant
+-- transaction the event belongs to that tenant or to none, so a bug cannot plant
+-- events in another tenant's trail. The id is generated here so app_security needs no
+-- SELECT on audit_log.
 ------------------------------------------------------------------------------------
 -- +goose StatementBegin
 CREATE FUNCTION record_audit(
@@ -263,9 +266,14 @@ LANGUAGE plpgsql VOLATILE SECURITY DEFINER
 SET search_path = pg_catalog, extensions, pg_temp
 AS $$
 DECLARE
-  v_id    uuid := uuidv7();
-  v_actor uuid := nullif(current_setting('app.user_id', true), '')::uuid;
+  v_id     uuid := uuidv7();
+  v_actor  uuid := nullif(current_setting('app.user_id', true), '')::uuid;
+  v_tenant uuid := nullif(current_setting('app.tenant_id', true), '')::uuid;
 BEGIN
+  IF v_tenant IS NOT NULL AND p_tenant_id IS NOT NULL AND p_tenant_id <> v_tenant THEN
+    RAISE EXCEPTION 'audit event tenant does not match app.tenant_id' USING ERRCODE = 'TN030';
+  END IF;
+
   INSERT INTO public.audit_log
     (id, tenant_id, actor_user_id, action, target_type, target_id, metadata, ip_prefix)
   VALUES
