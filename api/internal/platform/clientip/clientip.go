@@ -1,5 +1,6 @@
 // Package clientip decides which address a request comes from and is the only place
-// that truncates it for storage (design, section 6): /24 for IPv4, /48 for IPv6.
+// that truncates it: for storage (design, section 6), /24 for IPv4 and /48 for IPv6;
+// for rate limiting, /32 and /64.
 package clientip
 
 import (
@@ -13,6 +14,11 @@ import (
 const (
 	ipv4PrefixBits = 24
 	ipv6PrefixBits = 48
+
+	ipv4LimitBits = 32
+	// A /64 is the smallest IPv6 block a client normally gets, and it holds 2^64
+	// addresses: limiting by the full address would let one client rotate around it.
+	ipv6LimitBits = 64
 )
 
 // Resolver reads the client address of a request. With a trusted header (CF-Connecting-IP
@@ -53,15 +59,25 @@ func parse(s string) (netip.Addr, bool) {
 }
 
 // Prefix truncates addr to the prefix that may be stored: /24 for IPv4 (IPv4-mapped IPv6
-// included) and /48 for IPv6. It is the only truncation in the code base.
+// included) and /48 for IPv6.
 func Prefix(addr netip.Addr) (netip.Prefix, bool) {
+	return truncate(addr, ipv4PrefixBits, ipv6PrefixBits)
+}
+
+// LimitKey returns the block a rate limit counts by: the address itself for IPv4 (/32)
+// and its /64 for IPv6.
+func LimitKey(addr netip.Addr) (netip.Prefix, bool) {
+	return truncate(addr, ipv4LimitBits, ipv6LimitBits)
+}
+
+func truncate(addr netip.Addr, v4Bits, v6Bits int) (netip.Prefix, bool) {
 	if !addr.IsValid() {
 		return netip.Prefix{}, false
 	}
 	addr = addr.WithZone("").Unmap()
-	bits := ipv6PrefixBits
+	bits := v6Bits
 	if addr.Is4() {
-		bits = ipv4PrefixBits
+		bits = v4Bits
 	}
 	p, err := addr.Prefix(bits)
 	if err != nil {

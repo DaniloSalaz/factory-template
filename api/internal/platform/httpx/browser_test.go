@@ -149,6 +149,26 @@ func TestRateLimit(t *testing.T) {
 		t.Fatalf("another IP: status = %d, want 200", rec.Code)
 	}
 
+	t.Run("rotating IPv6 addresses inside one /64 shares the quota", func(t *testing.T) {
+		for i, remote := range []string{"[2001:db8:1:2::1]:1", "[2001:db8:1:2::ffff]:1"} {
+			if rec := do(remote); rec.Code != http.StatusOK {
+				t.Fatalf("request %d: status = %d, want 200", i+1, rec.Code)
+			}
+		}
+		if rec := do("[2001:db8:1:2:aaaa:bbbb:cccc:dddd]:1"); rec.Code != http.StatusTooManyRequests {
+			t.Fatalf("third address of the same /64: status = %d, want 429", rec.Code)
+		}
+		if rec := do("[2001:db8:1:3::1]:1"); rec.Code != http.StatusOK {
+			t.Fatalf("another /64: status = %d, want 200", rec.Code)
+		}
+	})
+
+	t.Run("IPv4 counts by the address", func(t *testing.T) {
+		if rec := do("198.51.100.3:1000"); rec.Code != http.StatusOK {
+			t.Fatalf("another IPv4 address in the same /24: status = %d, want 200", rec.Code)
+		}
+	})
+
 	failing := httpx.RateLimit(failingLimiter{}, logger)(okHandler())
 	rec = httptest.NewRecorder()
 	failing.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
