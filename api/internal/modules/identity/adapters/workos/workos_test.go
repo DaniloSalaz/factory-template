@@ -113,6 +113,17 @@ func TestExchangeCode(t *testing.T) {
 		}
 	})
 
+	t.Run("reports impersonation", func(t *testing.T) {
+		t.Parallel()
+		body := strings.Replace(resp("user_1", map[string]any{"sub": "user_1", "sid": "s", "auth_time": authTime.Unix()}),
+			`"refresh_token":"rt"`, `"refresh_token":"rt","impersonator":{"email":"admin@workos.test","reason":"support"}`, 1)
+		p, _, _ := fakeWorkOS(t, http.StatusOK, body)
+		a, err := p.ExchangeCode(t.Context(), "c", "v")
+		if err != nil || !a.Impersonated {
+			t.Fatalf("authentication = %+v, %v; want Impersonated", a, err)
+		}
+	})
+
 	t.Run("reports amr when present", func(t *testing.T) {
 		t.Parallel()
 		p, _, _ := fakeWorkOS(t, http.StatusOK, resp("user_1", map[string]any{"sub": "user_1", "sid": "s", "auth_time": authTime.Unix(), "amr": []string{"pwd", "mfa"}}))

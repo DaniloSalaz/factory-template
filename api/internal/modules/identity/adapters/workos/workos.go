@@ -124,6 +124,7 @@ func (p *Provider) ExchangeCode(ctx context.Context, code, codeVerifier string) 
 		DisplayName:   displayName(res.User.FirstName, res.User.LastName),
 		SessionID:     claims.SessionID,
 		Method:        method,
+		Impersonated:  res.Impersonator != nil,
 		MFA: domain.ProviderMFA{
 			AuthTime:        time.Unix(*claims.AuthTime, 0).UTC(),
 			CoveredByPolicy: coveredByMFAPolicy(method),

@@ -34,7 +34,9 @@ type Authentication struct {
 	SessionID string
 	// Method names how the user authenticated, for the audit trail.
 	Method string
-	MFA    domain.ProviderMFA
+	// Impersonated is true when someone else (a provider admin) signed in as the user.
+	Impersonated bool
+	MFA          domain.ProviderMFA
 }
 
 // Store runs the module's transactions.

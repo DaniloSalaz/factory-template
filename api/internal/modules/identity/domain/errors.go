@@ -40,6 +40,12 @@ func ErrEmailInUse() error {
 	return apperr.Conflict("auth.email_in_use", "The email address is already used by another account.")
 }
 
+// ErrImpersonationRefused is returned when the provider reports that someone signed in
+// as the user: impersonation for support is out of this version (design, section 12).
+func ErrImpersonationRefused() error {
+	return apperr.Forbidden("auth.impersonation_refused", "Signing in as another user is not allowed.")
+}
+
 // ErrMFAMissing is returned when the provider reports how the user authenticated and
 // MFA is required but was not part of it.
 func ErrMFAMissing() error {

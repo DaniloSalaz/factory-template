@@ -115,6 +115,10 @@ func (l *Login) Complete(ctx context.Context, cb Callback) (Completed, error) {
 		return Completed{}, fmt.Errorf("exchange code: %w", err)
 	}
 
+	// Before anything else: an impersonated login never reaches the user's account.
+	if authn.Impersonated {
+		return Completed{}, l.reject(ctx, cb, "impersonation", domain.ErrImpersonationRefused())
+	}
 	if !authn.EmailVerified {
 		return Completed{}, l.reject(ctx, cb, "email_unverified", domain.ErrEmailUnverified())
 	}

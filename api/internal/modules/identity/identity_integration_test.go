@@ -533,6 +533,29 @@ func TestLogin_DisabledUserLeavesOnlyLoginFailed(t *testing.T) {
 	}
 }
 
+func TestLogin_ImpersonationIsRefused(t *testing.T) {
+	e := newEnv(t, options{mfaRequired: true})
+	victim := e.person()
+	e.browser().login(victim)
+	userID := e.scalar(`SELECT user_id::text FROM user_identities WHERE subject = $1`, victim.Subject)
+	sessions := e.count(`SELECT count(*) FROM sessions WHERE user_id = $1`, userID)
+
+	impersonated := victim
+	impersonated.Impersonated = true
+	b := e.browser()
+	state := b.startLogin("/")
+	e.idp.Authenticate(state, "c", impersonated)
+	if res := b.callback(state, "c"); res.status != http.StatusForbidden || res.problemCode(t) != "auth.impersonation_refused" {
+		t.Fatalf("callback: %d %s", res.status, res.body)
+	}
+	if b.sessionToken() != "" || e.count(`SELECT count(*) FROM sessions WHERE user_id = $1`, userID) != sessions {
+		t.Fatal("an impersonated login created a session")
+	}
+	if got := e.scalar(`SELECT action || ' ' || (metadata->>'reason') FROM audit_log ORDER BY created_at DESC, id DESC LIMIT 1`); got != "auth.login_failed impersonation" {
+		t.Fatalf("last event = %s", got)
+	}
+}
+
 func TestLogin_UnverifiedEmailIsRejected(t *testing.T) {
 	e := newEnv(t, options{})
 	who := e.person()

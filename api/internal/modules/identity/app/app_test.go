@@ -293,6 +293,13 @@ func TestComplete_RejectionsWriteOnlyTheAudit(t *testing.T) {
 		action string
 	}{
 		{
+			name:   "impersonation",
+			authn:  func() app.Authentication { a := person(1); a.Impersonated = true; return a },
+			mfa:    true,
+			code:   "auth.impersonation_refused",
+			action: app.AuditLoginFailed,
+		},
+		{
 			name:   "unverified email",
 			authn:  func() app.Authentication { a := person(1); a.EmailVerified = false; return a },
 			code:   "auth.email_unverified",
