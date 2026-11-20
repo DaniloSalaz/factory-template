@@ -397,7 +397,7 @@ func TestComplete_EmailChange(t *testing.T) {
 		}
 	})
 
-	t.Run("keeps the old one if another user has it", func(t *testing.T) {
+	t.Run("keeps the old one, unverified, if another user has it", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t, false)
 		for _, n := range []int{1, 2} {
@@ -412,8 +412,18 @@ func TestComplete_EmailChange(t *testing.T) {
 		}
 		n := 0
 		for _, u := range f.store.snapshot().users {
-			if u.email == person(2).Email {
+			switch u.email {
+			case person(2).Email:
 				n++
+				if !u.verified {
+					t.Fatal("the other user's email lost its verification")
+				}
+			case person(1).Email:
+				if u.verified {
+					t.Fatal("the old email kept its verification although the provider moved away from it")
+				}
+			default:
+				t.Fatalf("unexpected email %s", u.email.Reveal())
 			}
 		}
 		if n != 1 {

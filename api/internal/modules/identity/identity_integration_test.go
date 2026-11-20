@@ -607,6 +607,24 @@ func TestLogin_EmailChangeTakesTheProvidersVerification(t *testing.T) {
 	}
 }
 
+func TestLogin_EmailChangeToATakenEmailUnverifiesTheOldOne(t *testing.T) {
+	e := newEnv(t, options{})
+	who, other := e.person(), e.person()
+	e.browser().login(who)
+	e.browser().login(other)
+	userID := e.scalar(`SELECT user_id::text FROM user_identities WHERE subject = $1`, who.Subject)
+
+	moved := who
+	moved.Email = other.Email
+	e.browser().login(moved)
+	if got := e.scalar(`SELECT email::text || ' ' || email_verified::text FROM users WHERE id = $1`, userID); got != who.Email.Reveal()+" false" {
+		t.Fatalf("user = %s, want the old email, unverified", got)
+	}
+	if got := e.scalar(`SELECT email_verified::text FROM users WHERE email = $1::text::extensions.citext`, other.Email.Reveal()); got != "true" {
+		t.Fatalf("the other user's verification changed: %s", got)
+	}
+}
+
 func TestSession_InvalidSessionsAre401(t *testing.T) {
 	e := newEnv(t, options{})
 

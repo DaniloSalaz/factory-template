@@ -219,7 +219,9 @@ func (l *Login) resolveUser(ctx context.Context, cb Callback, authn Authenticati
 }
 
 // syncEmail stores the provider's email if it changed and no other user has it, with
-// the provider's verification of that email (issue #4).
+// the provider's verification of that email (issue #4). If another user has it, the old
+// email stays but loses its verification: the provider no longer vouches for it, so it
+// must not open invitations sent to it.
 func (l *Login) syncEmail(ctx context.Context, r Repo, user User, authn Authentication) error {
 	if equalFoldEmail(user.Email.Reveal(), authn.Email.Reveal()) {
 		return nil
@@ -229,6 +231,9 @@ func (l *Login) syncEmail(ctx context.Context, r Repo, user User, authn Authenti
 		return fmt.Errorf("find user by new email: %w", err)
 	}
 	if taken && other.ID != user.ID {
+		if err := r.UpdateUserEmail(ctx, user.ID, user.Email, false); err != nil {
+			return fmt.Errorf("unverify old email: %w", err)
+		}
 		return nil
 	}
 	if err := r.UpdateUserEmail(ctx, user.ID, authn.Email, authn.EmailVerified); err != nil {
