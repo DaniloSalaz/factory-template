@@ -119,6 +119,9 @@ func (l *Login) Complete(ctx context.Context, cb Callback) (Completed, error) {
 	if authn.Impersonated {
 		return Completed{}, l.reject(ctx, cb, "impersonation", domain.ErrImpersonationRefused())
 	}
+	if !domain.FreshAuthentication(authn.MFA.AuthTime, intent.StartedAt) {
+		return Completed{}, l.reject(ctx, cb, "stale_auth", domain.ErrStaleAuthentication())
+	}
 	if !authn.EmailVerified {
 		return Completed{}, l.reject(ctx, cb, "email_unverified", domain.ErrEmailUnverified())
 	}

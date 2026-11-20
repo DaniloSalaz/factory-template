@@ -556,6 +556,38 @@ func TestLogin_ImpersonationIsRefused(t *testing.T) {
 	}
 }
 
+func TestLogin_StaleAuthenticationIsRejected(t *testing.T) {
+	e := newEnv(t, options{mfaRequired: true})
+
+	t.Run("older than the attempt, beyond the clock margin", func(t *testing.T) {
+		who := e.person()
+		b := e.browser()
+		state := b.startLogin("/")
+		who.MFA.AuthTime = e.clock.Now().Add(-domain.AuthClockSkew - time.Second)
+		e.idp.Authenticate(state, "c", who)
+		if res := b.callback(state, "c"); res.status != http.StatusUnauthorized || res.problemCode(t) != "auth.stale_authentication" {
+			t.Fatalf("callback: %d %s", res.status, res.body)
+		}
+		if n := e.count(`SELECT count(*) FROM user_identities WHERE subject = $1`, who.Subject); n != 0 {
+			t.Fatal("a stale authentication created the user")
+		}
+		if got := e.scalar(`SELECT action || ' ' || (metadata->>'reason') FROM audit_log ORDER BY created_at DESC, id DESC LIMIT 1`); got != "auth.login_failed stale_auth" {
+			t.Fatalf("last event = %s", got)
+		}
+	})
+
+	t.Run("within the clock margin", func(t *testing.T) {
+		who := e.person()
+		b := e.browser()
+		state := b.startLogin("/")
+		who.MFA.AuthTime = e.clock.Now().Add(-domain.AuthClockSkew + time.Second)
+		e.idp.Authenticate(state, "c2", who)
+		if res := b.callback(state, "c2"); res.status != http.StatusFound {
+			t.Fatalf("callback: %d %s", res.status, res.body)
+		}
+	})
+}
+
 func TestLogin_UnverifiedEmailIsRejected(t *testing.T) {
 	e := newEnv(t, options{})
 	who := e.person()

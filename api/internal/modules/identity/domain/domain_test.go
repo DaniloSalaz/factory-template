@@ -246,6 +246,24 @@ func TestMFAAuthTime(t *testing.T) {
 	}
 }
 
+func TestFreshAuthentication(t *testing.T) {
+	t.Parallel()
+	start := time.Unix(1_800_000_000, 0)
+	tests := map[time.Duration]bool{
+		time.Minute:       true,
+		0:                 true,
+		-59 * time.Second: true,
+		-60 * time.Second: true,
+		-61 * time.Second: false,
+		-time.Hour:        false,
+	}
+	for offset, want := range tests {
+		if got := FreshAuthentication(start.Add(offset), start); got != want {
+			t.Errorf("auth_time at start%+v: fresh = %v, want %v", offset, got, want)
+		}
+	}
+}
+
 func TestTokens(t *testing.T) {
 	t.Parallel()
 

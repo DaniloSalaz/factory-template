@@ -46,6 +46,12 @@ func ErrImpersonationRefused() error {
 	return apperr.Forbidden("auth.impersonation_refused", "Signing in as another user is not allowed.")
 }
 
+// ErrStaleAuthentication is returned when the provider reports an authentication older
+// than the login attempt: the user was not asked to authenticate again.
+func ErrStaleAuthentication() error {
+	return apperr.Unauthorized("auth.stale_authentication", "The identity provider did not authenticate you again; start the login again.")
+}
+
 // ErrMFAMissing is returned when the provider reports how the user authenticated and
 // MFA is required but was not part of it.
 func ErrMFAMissing() error {

@@ -24,6 +24,17 @@ type ProviderMFA struct {
 	HasAMR bool
 }
 
+// AuthClockSkew is how far the provider's clock may lag behind ours.
+const AuthClockSkew = 60 * time.Second
+
+// FreshAuthentication reports whether the provider authenticated the user during this
+// login, that is, after the intent started (less AuthClockSkew). Every login forces a
+// fresh authentication (max_age=0); if the provider ignored that, auth_time would be
+// older, and both auth_time and the inferred MFA would describe an earlier login.
+func FreshAuthentication(authTime, intentStartedAt time.Time) bool {
+	return !authTime.Before(intentStartedAt.Add(-AuthClockSkew))
+}
+
 // amrMFA is the RFC 8176 value for authentication with more than one factor.
 const amrMFA = "mfa"
 

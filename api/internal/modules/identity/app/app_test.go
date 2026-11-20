@@ -300,6 +300,12 @@ func TestComplete_RejectionsWriteOnlyTheAudit(t *testing.T) {
 			action: app.AuditLoginFailed,
 		},
 		{
+			name:   "authentication older than the attempt",
+			authn:  func() app.Authentication { a := person(1); a.MFA.AuthTime = time.Unix(1_800_000_000-61, 0); return a },
+			code:   "auth.stale_authentication",
+			action: app.AuditLoginFailed,
+		},
+		{
 			name:   "unverified email",
 			authn:  func() app.Authentication { a := person(1); a.EmailVerified = false; return a },
 			code:   "auth.email_unverified",
