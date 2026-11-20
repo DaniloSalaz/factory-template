@@ -1,7 +1,11 @@
 // Package schematest checks the database schema and its row-level security against a
-// real Postgres, bootstrapped and migrated like any environment. structure_test.go reads
-// the catalogs (pg_class, pg_policies, pg_proc), checks the rules of the design
-// (sections 7.3 and 7.4) and proves each check catches a misbuilt object.
+// real Postgres, bootstrapped and migrated like any environment:
+//
+//   - structure_test.go reads the catalogs (pg_class, pg_policies, pg_proc), checks the
+//     rules of the design (sections 7.3 and 7.4) and proves each check catches a
+//     misbuilt object;
+//   - behavior_test.go runs SQL as app_runtime and checks what RLS and the SECURITY
+//     DEFINER functions actually allow.
 package schematest
 
 import (
