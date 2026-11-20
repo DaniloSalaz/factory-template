@@ -18,22 +18,27 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-}
-
-func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	cfg, err := config.Load()
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		// The configured logger needs the config, so this one error uses a plain JSON logger.
+		slog.New(slog.NewJSONHandler(os.Stderr, nil)).ErrorContext(ctx, "load config", slog.Any("error", err))
+		stop()
+		os.Exit(1)
 	}
-
 	logger := logx.New(os.Stdout, cfg.Log).With(slog.String("env", string(cfg.Env)))
+
+	if err := run(ctx, cfg, logger); err != nil {
+		logger.ErrorContext(ctx, "api stopped with error", slog.Any("error", err))
+		stop()
+		os.Exit(1)
+	}
+	stop()
+}
+
+// run wires the application: database, module handlers, middlewares and server.
+func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	logger.InfoContext(ctx, "config loaded", slog.Any("config", cfg))
 
 	pool, err := db.NewPool(ctx, cfg.DB.URL.Reveal())
@@ -45,8 +50,16 @@ func run() error {
 	mux := http.NewServeMux()
 	health.New(health.Deps{DB: pool, Logger: logger}).Register(mux)
 
-	if err := httpx.NewServer(cfg.HTTP, mux, logger).Run(ctx); err != nil {
-		return fmt.Errorf("run server: %w", err)
+	handler := httpx.Chain(httpx.WithRouteFallback(mux, logger),
+		httpx.RequestID(),
+		httpx.AccessLog(logger, "/healthz", "/readyz"),
+		httpx.Recover(logger),
+		httpx.SecurityHeaders(),
+		httpx.BodyLimit(cfg.HTTP.MaxBodyBytes),
+	)
+
+	if err := httpx.NewServer(cfg.HTTP, handler, logger).Run(ctx); err != nil {
+		return fmt.Errorf("run http server: %w", err)
 	}
 	return nil
 }
