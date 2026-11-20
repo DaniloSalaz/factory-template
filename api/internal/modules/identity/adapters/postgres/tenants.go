@@ -128,14 +128,14 @@ func (r tenantRepo) MemberByUser(ctx context.Context, tenantID, userID string) (
 	return member(row.ID, row.UserID, row.Email, row.DisplayName, row.Role, row.CreatedAt.Time), true, nil
 }
 
-func (r tenantRepo) ChangeMemberRole(ctx context.Context, userID, role, expectedActorRole, expectedMemberRole string, ip netip.Prefix) error {
+func (r tenantRepo) ChangeMemberRole(ctx context.Context, userID, role, expectedActorRole, expectedMemberRole string, offerableRoles []string, ip netip.Prefix) error {
 	uid, err := parseUUID(userID)
 	if err != nil {
 		return err
 	}
 	if err := r.q.ChangeMemberRole(ctx, identitydb.ChangeMemberRoleParams{
 		Member: uid, Role: role, ExpectedActorRole: expectedActorRole, ExpectedMemberRole: expectedMemberRole,
-		IpPrefix: prefix(ip),
+		OfferableRoles: offerableRoles, IpPrefix: prefix(ip),
 	}); err != nil {
 		return fmt.Errorf("change member role: %w", err)
 	}

@@ -130,3 +130,29 @@ func TestCheckRemoval(t *testing.T) {
 		})
 	}
 }
+
+func TestCanOffer(t *testing.T) {
+	t.Parallel()
+
+	inviter := func(r Role) Role { r.CanInvite = true; return r }
+	tests := []struct {
+		name          string
+		actor, offers Role
+		want          bool
+	}{
+		{"owner offers owner", inviter(ownerRole), ownerRole, true},
+		{"owner offers admin", inviter(ownerRole), adminRole, true},
+		{"admin offers admin", inviter(adminRole), adminRole, true},
+		{"admin offers member", inviter(adminRole), memberRole, true},
+		{"admin does not offer owner", inviter(adminRole), ownerRole, false},
+		{"coowner does not offer owner", inviter(coowner), ownerRole, false},
+		{"member does not offer admin", inviter(memberRole), adminRole, false},
+		{"without members:invite nothing", adminRole, memberRole, false},
+		{"an unknown role is never offered", inviter(ownerRole), ghostRole, false},
+	}
+	for _, tc := range tests {
+		if got := CanOffer(tc.actor, tc.offers); got != tc.want {
+			t.Errorf("%s: CanOffer = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

@@ -67,9 +67,11 @@ func NormalizeTenantName(name string) (string, error) {
 // Role is a role as the hierarchy sees it: its permissions in the catalog (none if
 // unknown) and whether it is the platform's owner.
 type Role struct {
-	Name        string
-	Known       bool
-	Owner       bool
+	Name  string
+	Known bool
+	Owner bool
+	// CanInvite: the role holds members:invite.
+	CanInvite   bool
 	Permissions []string
 }
 
@@ -98,6 +100,14 @@ func CheckRoleChange(actor, target Member, to Role) error {
 		return ErrRoleNotAssignable()
 	}
 	return nil
+}
+
+// CanOffer reports whether a member with role actor may offer role in an invitation
+// (design, 5.6.1): actor holds members:invite, role exists and is included in actor's,
+// and owner is offered only by an owner. The same rule decides which pending invitations
+// survive their inviter's change of role (5.6.4).
+func CanOffer(actor, role Role) bool {
+	return actor.CanInvite && role.Known && included(role.Permissions, actor.Permissions) && (!role.Owner || actor.Owner)
 }
 
 // CheckRemoval decides whether actor may remove target: the same hierarchy as a role

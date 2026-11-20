@@ -176,3 +176,15 @@ func TestRole_MFASatisfied(t *testing.T) {
 		})
 	}
 }
+
+func TestCatalog_Names(t *testing.T) {
+	t.Parallel()
+
+	c, err := authz.NewCatalog(owner(), authz.Role{Name: "zeta"}, authz.Role{Name: "alpha"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Names(); !slices.Equal(got, []string{"alpha", "owner", "zeta"}) {
+		t.Fatalf("Names = %v", got)
+	}
+}

@@ -174,7 +174,8 @@ WHERE m.tenant_id = sqlc.arg(tenant_id) AND m.user_id = sqlc.arg(user_id);
 
 -- name: ChangeMemberRole :exec
 SELECT change_member_role(sqlc.arg(member)::uuid, sqlc.arg(role)::text, sqlc.arg(expected_actor_role)::text,
-                          sqlc.arg(expected_member_role)::text, sqlc.narg(ip_prefix)::cidr);
+                          sqlc.arg(expected_member_role)::text, sqlc.arg(offerable_roles)::text[],
+                          sqlc.narg(ip_prefix)::cidr);
 
 -- name: RemoveMember :exec
 SELECT remove_member(sqlc.arg(member)::uuid, sqlc.arg(expected_actor_role)::text,

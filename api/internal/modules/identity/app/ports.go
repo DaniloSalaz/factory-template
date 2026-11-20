@@ -156,7 +156,9 @@ type TenantRepo interface {
 	// ChangeMemberRole and RemoveMember refuse (membership.changed) if the actor's or the
 	// member's role is no longer the expected one, and never leave the tenant without an
 	// owner (membership.last_owner).
-	ChangeMemberRole(ctx context.Context, userID, role, expectedActorRole, expectedMemberRole string, ip netip.Prefix) error
+	// ChangeMemberRole also revokes the member's pending invitations whose role is not in
+	// offerableRoles.
+	ChangeMemberRole(ctx context.Context, userID, role, expectedActorRole, expectedMemberRole string, offerableRoles []string, ip netip.Prefix) error
 	RemoveMember(ctx context.Context, userID, expectedActorRole, expectedMemberRole string, ip netip.Prefix) error
 	// LeaveTenant removes the transaction user's own membership.
 	LeaveTenant(ctx context.Context, ip netip.Prefix) error

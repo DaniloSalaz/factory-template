@@ -24,6 +24,8 @@ type memTenants struct {
 	names   map[string]string
 	calls   []string
 	audits  []app.AuditEvent
+	// offerable is what the last ChangeMemberRole was told the new role may offer.
+	offerable []string
 	// fail, if set, is what the database functions return (last owner, changed role…).
 	fail error
 }
@@ -87,8 +89,9 @@ func (r memTenantRepo) MemberByUser(_ context.Context, tenantID, userID string) 
 	return m, ok, nil
 }
 
-func (r memTenantRepo) ChangeMemberRole(_ context.Context, userID, role, actorRole, memberRole string, _ netip.Prefix) error {
+func (r memTenantRepo) ChangeMemberRole(_ context.Context, userID, role, actorRole, memberRole string, offerable []string, _ netip.Prefix) error {
 	r.s.calls = append(r.s.calls, fmt.Sprintf("change %s %s expecting %s %s", userID, role, actorRole, memberRole))
+	r.s.offerable = offerable
 	return r.s.fail
 }
 
@@ -360,5 +363,45 @@ func TestTenants_Rename(t *testing.T) {
 	e := store.audits[0]
 	if e.Action != app.AuditTenantUpdated || e.TargetID != tenantA || e.Metadata["old_name"] != "Old" || e.Metadata["new_name"] != "New" {
 		t.Fatalf("audit = %+v", e)
+	}
+}
+
+// A role change tells the database which roles the new role may still offer: it keeps
+// those pending invitations and revokes the rest (design, 5.6.4).
+func TestMembers_ChangeRoleNamesTheOfferableRoles(t *testing.T) {
+	t.Parallel()
+
+	c, err := authz.NewCatalog(
+		authz.Role{Name: authz.RoleOwner, Permissions: authz.PlatformPermissions()},
+		authz.Role{Name: "admin", Permissions: []authctx.Permission{
+			authz.PermMembersRead, authz.PermMembersInvite, authz.PermMembersManage, authctx.PermScopeTenant,
+		}},
+		authz.Role{Name: "member", Permissions: []authctx.Permission{authz.PermMembersRead, authctx.PermScopeTenant}},
+		authz.Role{Name: "client"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := newMemTenants()
+	store.add(tenantA, ownerID, "owner")
+	store.add(tenantA, adminID, "member")
+	members := app.NewMembers(store, &fakeAuthorizer{}, c)
+	ctx := actingAs(t, c, ownerID, "owner")
+
+	for role, want := range map[string][]string{
+		"admin":  {"admin", "client", "member"},
+		"owner":  {"admin", "client", "member", "owner"},
+		"member": {},
+	} {
+		store.add(tenantA, adminID, "member")
+		if role == "member" {
+			store.add(tenantA, adminID, "admin")
+		}
+		if _, err := members.ChangeRole(ctx, adminID, role); err != nil {
+			t.Fatalf("to %s: %v", role, err)
+		}
+		if !slices.Equal(store.offerable, want) {
+			t.Fatalf("to %s: offerable = %v, want %v", role, store.offerable, want)
+		}
 	}
 }

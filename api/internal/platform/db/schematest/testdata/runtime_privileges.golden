@@ -60,7 +60,11 @@ app_runtime function public.auth_memberships_for_user() EXECUTE
 # the tenant row and refuse to leave it without an owner; they act only on
 # app.tenant_id and read the actor from app.user_id. lock_tenant_members, their helper,
 # is not executable by app_runtime.
-app_runtime function public.change_member_role(p_member uuid, p_role text, p_expected_actor_role text, p_expected_member_role text, p_ip_prefix cidr) EXECUTE
+# Migration 00006: change_member_role also takes the roles the member's new role may still
+# offer, and revokes their other pending invitations (design 5.6.4). remove_member,
+# leave_tenant and accept_invitation keep their signatures; revoke_inviter_invitations,
+# their helper, is not executable by app_runtime. Nothing changes on invitations.
+app_runtime function public.change_member_role(p_member uuid, p_role text, p_expected_actor_role text, p_expected_member_role text, p_offerable_roles text[], p_ip_prefix cidr) EXECUTE
 app_runtime function public.create_tenant(p_name text, p_slug text, p_max_tenants integer, p_ip_prefix cidr) EXECUTE
 app_runtime function public.leave_tenant(p_ip_prefix cidr) EXECUTE
 app_runtime function public.remove_member(p_member uuid, p_expected_actor_role text, p_expected_member_role text, p_ip_prefix cidr) EXECUTE

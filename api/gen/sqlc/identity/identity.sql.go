@@ -35,7 +35,8 @@ func (q *Queries) AuthMembership(ctx context.Context, tenantID pgtype.UUID) (Aut
 
 const changeMemberRole = `-- name: ChangeMemberRole :exec
 SELECT change_member_role($1::uuid, $2::text, $3::text,
-                          $4::text, $5::cidr)
+                          $4::text, $5::text[],
+                          $6::cidr)
 `
 
 type ChangeMemberRoleParams struct {
@@ -43,6 +44,7 @@ type ChangeMemberRoleParams struct {
 	Role               string
 	ExpectedActorRole  string
 	ExpectedMemberRole string
+	OfferableRoles     []string
 	IpPrefix           *netip.Prefix
 }
 
@@ -52,6 +54,7 @@ func (q *Queries) ChangeMemberRole(ctx context.Context, arg ChangeMemberRolePara
 		arg.Role,
 		arg.ExpectedActorRole,
 		arg.ExpectedMemberRole,
+		arg.OfferableRoles,
 		arg.IpPrefix,
 	)
 	return err
