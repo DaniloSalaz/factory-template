@@ -20,6 +20,8 @@ const (
 	KindUnauthorized
 	KindForbidden
 	KindRateLimited
+	KindBadRequest
+	KindUnavailable
 )
 
 // String returns the kind's name.
@@ -39,9 +41,12 @@ func (k Kind) String() string {
 		return "forbidden"
 	case KindRateLimited:
 		return "rate_limited"
-	default:
-		return fmt.Sprintf("kind(%d)", uint8(k))
+	case KindBadRequest:
+		return "bad_request"
+	case KindUnavailable:
+		return "unavailable"
 	}
+	return fmt.Sprintf("kind(%d)", uint8(k))
 }
 
 // FieldError describes why a single input field is invalid.
@@ -72,6 +77,13 @@ func (e *Error) Error() string {
 // Unwrap exposes the cause to errors.Is and errors.As.
 func (e *Error) Unwrap() error { return e.cause }
 
+// Is makes errors.Is match by Code, so a freshly built error can be compared with one
+// returned from deep in a call chain. Errors without a code never match this way.
+func (e *Error) Is(target error) bool {
+	t, ok := target.(*Error)
+	return ok && t.Code != "" && t.Code == e.Code
+}
+
 // The constructors return error rather than *Error so a nil *Error can never become a
 // non-nil error interface.
 
@@ -94,6 +106,12 @@ func Forbidden(code, msg string) error { return newError(KindForbidden, code, ms
 
 // RateLimited reports that the caller exceeded a quota.
 func RateLimited(code, msg string) error { return newError(KindRateLimited, code, msg) }
+
+// BadRequest reports a request that is malformed, as opposed to well-formed but invalid.
+func BadRequest(code, msg string) error { return newError(KindBadRequest, code, msg) }
+
+// Unavailable reports that a dependency is down; the caller may retry later.
+func Unavailable(code, msg string) error { return newError(KindUnavailable, code, msg) }
 
 // Wrap classifies err, keeping it as the cause. It returns nil when err is nil so it can
 // wrap a call result directly.

@@ -24,6 +24,8 @@ func TestConstructors(t *testing.T) {
 		{"unauthorized", apperr.Unauthorized("no_session", "login required"), apperr.KindUnauthorized, 0},
 		{"forbidden", apperr.Forbidden("not_owner", "not allowed"), apperr.KindForbidden, 0},
 		{"rate limited", apperr.RateLimited("too_many", "slow down"), apperr.KindRateLimited, 0},
+		{"bad request", apperr.BadRequest("malformed", "malformed body"), apperr.KindBadRequest, 0},
+		{"unavailable", apperr.Unavailable("db_down", "try later"), apperr.KindUnavailable, 0},
 	}
 
 	for _, tc := range tests {
@@ -111,6 +113,8 @@ func TestKindString(t *testing.T) {
 		{apperr.KindUnauthorized, "unauthorized"},
 		{apperr.KindForbidden, "forbidden"},
 		{apperr.KindRateLimited, "rate_limited"},
+		{apperr.KindBadRequest, "bad_request"},
+		{apperr.KindUnavailable, "unavailable"},
 		{apperr.Kind(99), "kind(99)"},
 	}
 	for _, tc := range tests {
@@ -120,5 +124,52 @@ func TestKindString(t *testing.T) {
 				t.Fatalf("String() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestKindInternalIsTheZeroValue(t *testing.T) {
+	t.Parallel()
+
+	var k apperr.Kind
+	if k != apperr.KindInternal {
+		t.Fatalf("zero Kind = %v, want internal", k)
+	}
+}
+
+func TestIs_MatchesByCode(t *testing.T) {
+	t.Parallel()
+
+	target := apperr.NotFound("user.not_found", "User not found.")
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"same instance", target, true},
+		{"other instance same code", apperr.NotFound("user.not_found", "different message"), true},
+		{"same code different kind", apperr.Conflict("user.not_found", "x"), true},
+		{"wrapped with fmt", fmt.Errorf("load profile: %w", apperr.NotFound("user.not_found", "x")), true},
+		{"wrapped twice", fmt.Errorf("a: %w", fmt.Errorf("b: %w", apperr.NotFound("user.not_found", "x"))), true},
+		{"as cause of another apperr", apperr.Wrap(apperr.NotFound("user.not_found", "x"), apperr.KindInternal, "outer", "x"), true},
+		{"different code", apperr.NotFound("order.not_found", "x"), false},
+		{"plain error", errors.New("user.not_found"), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := errors.Is(tc.err, target); got != tc.want {
+				t.Fatalf("errors.Is = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIs_EmptyCodeNeverMatches(t *testing.T) {
+	t.Parallel()
+
+	a := apperr.NotFound("", "x")
+	b := apperr.NotFound("", "x")
+	if errors.Is(a, b) {
+		t.Fatal("errors without code must not match each other by code")
 	}
 }
