@@ -112,3 +112,66 @@ cd web && npm run dev             # terminal 2: front en :5173
 5. Pulsa **Salir**: la API revoca la sesión (`revoked_at` deja de ser `NULL`), borra la
    cookie y el navegador pasa por el logout de AuthKit antes de volver al front.
 6. Pulsa **Entrar** de nuevo: AuthKit vuelve a pedir credenciales.
+
+## Prueba manual: `/me`, tenant y `X-Tenant-ID` ajeno
+
+Hasta que llegue `POST /tenants` (paso 5), los tenants de prueba se crean con SQL como el
+superusuario local `factory`, que salta RLS. **Nunca así en staging ni en producción.**
+
+1. Entra en el front como arriba y copia el valor de la cookie `__Host-session`
+   (DevTools → Application → Cookies):
+
+   ```sh
+   SESSION='<valor de la cookie>'
+   ```
+
+2. Crea un tenant tuyo (con rol `owner`) y otro ajeno, sin miembros. Cambia el email por el
+   de tu usuario:
+
+   ```sh
+   docker compose exec -T postgres psql -U factory -d factory -v ON_ERROR_STOP=1 \
+     -v email='tu@email.com' <<'SQL'
+   WITH t AS (INSERT INTO tenants (name, slug) VALUES ('Prueba', 'prueba') RETURNING id)
+   INSERT INTO memberships (tenant_id, user_id, role)
+   SELECT t.id, u.id, 'owner' FROM t, users u WHERE u.email = :'email'
+   RETURNING tenant_id AS mio;
+   INSERT INTO tenants (name, slug) VALUES ('Ajeno', 'ajeno') RETURNING id AS ajeno;
+   SQL
+   MIO='<uuid "mio">'; AJENO='<uuid "ajeno">'
+   ```
+
+3. `GET /me` devuelve tu usuario y solo tu membresía de `prueba` (no `ajeno`):
+
+   ```sh
+   curl -s localhost:8080/me -H "Cookie: __Host-session=$SESSION" | jq
+   ```
+
+4. `GET /tenant` con tu tenant: `200`, con `role: owner`, `scope: tenant` y los permisos
+   de `owner`. `owner` exige MFA de menos de 12 h: con `WORKOS_MFA_REQUIRED=true` y un
+   login con contraseña, `mfa_auth_time` está fijado. Si ves `403 auth.mfa_required`,
+   revisa la sección de MFA de arriba.
+
+   ```sh
+   curl -s localhost:8080/tenant -H "Cookie: __Host-session=$SESSION" -H "X-Tenant-ID: $MIO" | jq
+   ```
+
+5. Con el tenant ajeno, uno inventado o uno mal formado, el mismo
+   `403 auth.tenant_forbidden`, y en el log de la API un `Warn` "tenant refused" con
+   `requested_tenant_id` (salvo el mal formado). En `audit_log` no aparece nada:
+
+   ```sh
+   for t in "$AJENO" 0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f9999 no-es-un-uuid; do
+     curl -s -o /dev/null -w '%{http_code} ' localhost:8080/tenant \
+       -H "Cookie: __Host-session=$SESSION" -H "X-Tenant-ID: $t"
+   done; echo
+   ```
+
+6. El registro de acceso (`"msg":"http request"`) de las peticiones de los pasos 4 y 5
+   lleva `user_id`; el del paso 4, también `tenant_id`.
+7. Limpieza:
+
+   ```sh
+   docker compose exec -T postgres psql -U factory -d factory -c \
+     "DELETE FROM memberships WHERE tenant_id IN (SELECT id FROM tenants WHERE slug IN ('prueba','ajeno'));
+      DELETE FROM tenants WHERE slug IN ('prueba','ajeno');"
+   ```
