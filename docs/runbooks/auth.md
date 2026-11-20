@@ -14,6 +14,7 @@ Diseño: `docs/designs/auth-y-tenancy.md` (secciones 5.1, 5.2, 5.5, 5.7, 6 y 13)
 | `ALLOWED_ORIGINS` | `[env]` | Lista cerrada para CORS y CSRF; incluye `FRONTEND_ORIGIN`; sin comodines |
 | `TRUSTED_CLIENT_IP_HEADER` | `[env]` | Vacía en desarrollo; `CF-Connecting-IP` por defecto en staging y producción; nunca `X-Forwarded-For` |
 | `SESSION_IDLE_TTL` / `SESSION_ABSOLUTE_TTL` | `[env]` | 168h y 720h por defecto |
+| `FRONT_BASE_URL` | `[env]` | Base de los enlaces de invitación (`/invite#token=…`); por defecto `FRONTEND_ORIGIN` |
 | `TENANT_MAX_PER_USER` | `[env]` | Tenants que puede crear cada usuario (`POST /tenants`), también los que ya dejó; 5 por defecto, entre 1 y 1000 |
 
 ### Secretos con SOPS
@@ -469,6 +470,141 @@ api() {
     DELETE FROM users WHERE email LIKE '%.runbook@example.test';
     SQL
     ```
+
+## Prueba manual: invitaciones
+
+Diseño: 5.6 y 5.7. Solo en local. Hasta que llegue el email real, el adaptador de
+desarrollo escribe el enlace en el log de la API, y es la única vía de leer un token. La
+API no arranca con él fuera de desarrollo.
+
+Mismas reglas que en la sección anterior: **preparar** (sesiones, simular la MFA de la
+owner) con `factory`; **comprobar** con la API o con `app_runtime`. Usa sus funciones
+`psql_su`, `psql_app`, `api` y `new_session` (sus bloques de ayuda y del paso 1).
+
+Arranca la API guardando su log, y desde la raíz del repo en otra terminal:
+
+```sh
+mise run dev 2>&1 | tee /tmp/factory-api.log     # terminal 1
+```
+
+```sh
+API_LOG=${API_LOG:-/tmp/factory-api.log}
+# El enlace de la última invitación enviada, y su token. El email va enmascarado en el log.
+last_link()  { grep '"invitation link (development only)"' "$API_LOG" | tail -1 | sed -E 's/.*"link":"([^"]*)".*/\1/'; }
+last_token() { last_link | sed 's/.*#token=//'; }
+id_of()      { sed -nE '1s/.*"id":"([^"]*)".*/\1/p'; }   # api adds a status line
+```
+
+1. **Usuarias y tenant**: Ana crea el tenant (es owner; se simula su MFA como en la
+   sección anterior); Bea, Carla y Eva solo tienen sesión.
+
+   ```sh
+   ANA=$(new_session ana.runbook@example.test);   BEA=$(new_session bea.runbook@example.test)
+   CARLA=$(new_session carla.runbook@example.test); EVA=$(new_session eva.runbook@example.test)
+   BEA_ID=$(psql_su <<< "SELECT id FROM users WHERE email = 'bea.runbook@example.test'")
+   api POST /tenants "$ANA" "" '{"name":"Invitaciones","slug":"invitaciones-runbook"}'
+   T=$(psql_su <<< "SELECT id FROM tenants WHERE slug = 'invitaciones-runbook'")
+   psql_su -v token="$ANA" <<< "UPDATE sessions SET mfa_auth_time = now() WHERE token_hash = sha256(convert_to(:'token', 'UTF8'))"
+   ```
+
+2. **Invitar y ver el enlace en el log**: Ana invita a Bea como `admin` (`201`, sin token
+   en la respuesta). El enlace aparece en el log de la API con el email enmascarado.
+
+   ```sh
+   api POST /invitations "$ANA" "$T" '{"email":"bea.runbook@example.test","role":"admin"}'
+   grep '"invitation link (development only)"' "$API_LOG" | tail -1
+   ```
+
+3. **Aceptar con otra usuaria y con la buena**: Carla no puede usar el enlace de Bea (`403
+   invitation.email_mismatch`); Bea sí (`200`, con el `tenant_id` y el rol), y una segunda
+   vez da `409 invitation.already_accepted`.
+
+   ```sh
+   BEA_TOKEN=$(last_token)
+   api POST /invitations/accept "$CARLA" "" "{\"token\":\"$BEA_TOKEN\"}"
+   api POST /invitations/accept "$BEA" "" "{\"token\":\"$BEA_TOKEN\"}"
+   api POST /invitations/accept "$BEA" "" "{\"token\":\"$BEA_TOKEN\"}"
+   ```
+
+4. **Duplicados y reglas**: Bea, `admin`, no puede invitar a un `owner` (`403
+   invitation.role_not_offerable`). Invita a Carla y a Eva como `member`; repetir a Eva da
+   `409 invitation.pending`, e invitar a Bea, que ya es miembro, `409 invitation.already_member`.
+
+   ```sh
+   api POST /invitations "$BEA" "$T" '{"email":"x.runbook@example.test","role":"owner"}'
+   api POST /invitations "$BEA" "$T" '{"email":"carla.runbook@example.test","role":"member"}'
+   CARLA_TOKEN=$(last_token)
+   EVA_INV=$(api POST /invitations "$BEA" "$T" '{"email":"eva.runbook@example.test","role":"member"}' | id_of)
+   EVA_OLD=$(last_token)
+   api POST /invitations "$BEA" "$T" '{"email":"EVA.runbook@example.test","role":"member"}'
+   api POST /invitations "$ANA" "$T" '{"email":"bea.runbook@example.test","role":"member"}'
+   ```
+
+5. **Reenviar**: Ana reenvía la de Eva (`200`). Hay un enlace nuevo en el log y el antiguo
+   ya no vale (`404 invitation.not_found`).
+
+   ```sh
+   api POST "/invitations/$EVA_INV/resend" "$ANA" "$T"
+   EVA_NEW=$(last_token); [ "$EVA_NEW" != "$EVA_OLD" ] && echo "token rotado"
+   api POST /invitations/accept "$EVA" "" "{\"token\":\"$EVA_OLD\"}"
+   ```
+
+6. **Revocar**: Ana invita a otra dirección y la revoca (`204`). Revocarla otra vez da
+   `409 invitation.revoked`. La lista de pendientes (`GET /invitations`) solo trae las de
+   Carla y Eva.
+
+   ```sh
+   X_INV=$(api POST /invitations "$ANA" "$T" '{"email":"x.runbook@example.test","role":"member"}' | id_of)
+   api DELETE "/invitations/$X_INV" "$ANA" "$T"
+   api DELETE "/invitations/$X_INV" "$ANA" "$T"
+   api GET /invitations "$ANA" "$T"
+   ```
+
+7. **Degradar a quien invitó revoca sus pendientes**: Carla acepta la suya antes. Ana
+   degrada a Bea a `member`, que no tiene `members:invite`. La invitación pendiente de Eva,
+   emitida por Bea, queda revocada en la misma transacción, y su enlace nuevo da `409
+   invitation.revoked`.
+
+   ```sh
+   api POST /invitations/accept "$CARLA" "" "{\"token\":\"$CARLA_TOKEN\"}"
+   api PATCH "/tenant/members/$BEA_ID" "$ANA" "$T" '{"role":"member"}'
+   api POST /invitations/accept "$EVA" "" "{\"token\":\"$EVA_NEW\"}"
+   ```
+
+8. **Comprobación como `app_runtime`**, con las variables de `db.WithTenantTx`: el estado de
+   cada invitación y la auditoría. Ningún evento lleva el email ni el token.
+
+   ```sh
+   psql_app -v t="$T" -v u="$BEA_ID" <<'SQL'
+   BEGIN;
+   SELECT set_config('app.tenant_id', :'t', true), set_config('app.user_id', :'u', true),
+          set_config('app.scope', 'tenant', true) \g /dev/null
+   SELECT split_part(email::text, '@', 1) AS email, role,
+          CASE WHEN accepted_at IS NOT NULL THEN 'aceptada' WHEN revoked_at IS NOT NULL THEN 'revocada'
+               ELSE 'pendiente' END AS estado
+   FROM invitations ORDER BY created_at;
+   SELECT a.action, split_part(u.email::text, '@', 1) AS actor, a.metadata->>'role' AS role,
+          a.metadata->>'reason' AS reason, a.metadata::text LIKE '%@%' AS has_email
+   FROM audit_log a LEFT JOIN users u ON u.id = a.actor_user_id
+   WHERE a.action LIKE 'invitation.%' ORDER BY a.created_at;
+   COMMIT;
+   SQL
+   ```
+
+9. **Limpieza**, como `factory`, igual que en la sección anterior, con el slug
+   `invitaciones-runbook`:
+
+   ```sh
+   psql_su -v t="$T" <<'SQL'
+   DELETE FROM audit_log WHERE tenant_id = :'t';
+   DELETE FROM invitations WHERE tenant_id = :'t';
+   DELETE FROM memberships WHERE tenant_id = :'t';
+   DELETE FROM tenants WHERE id = :'t';
+   DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%.runbook@example.test');
+   DELETE FROM audit_log WHERE actor_user_id IN (SELECT id FROM users WHERE email LIKE '%.runbook@example.test');
+   DELETE FROM users WHERE email LIKE '%.runbook@example.test';
+   SQL
+   ```
 
 ## Prueba manual: MFA de un rol
 
