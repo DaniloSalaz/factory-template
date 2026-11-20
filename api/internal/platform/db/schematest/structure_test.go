@@ -445,9 +445,11 @@ func TestSchema_RuntimeWritePrivileges(t *testing.T) {
 		{"update session auth_time", `UPDATE sessions SET auth_time = now() WHERE id = $1`, []any{session}, denied},
 		{"update session absolute expiry", `UPDATE sessions SET absolute_expires_at = now() WHERE id = $1`, []any{session}, denied},
 		{"update session provider session", `UPDATE sessions SET provider_session_id = 'x' WHERE id = $1`, []any{session}, denied},
-		{"touch, step up and revoke session", `UPDATE sessions SET last_seen_at = now(), idle_expires_at = now(),
-			mfa_auth_time = now(), token_hash = sha256(uuidv7()::text::bytea), revoked_at = now(), updated_at = now()
-			WHERE id = $1`, []any{session}, ""},
+		// No step-up (design, 5.2): MFA time and token are fixed at login.
+		{"update session mfa_auth_time", `UPDATE sessions SET mfa_auth_time = now() WHERE id = $1`, []any{session}, denied},
+		{"update session token", `UPDATE sessions SET token_hash = sha256(uuidv7()::text::bytea) WHERE id = $1`, []any{session}, denied},
+		{"touch and revoke session", `UPDATE sessions SET last_seen_at = now(), idle_expires_at = now(),
+			revoked_at = now(), updated_at = now() WHERE id = $1`, []any{session}, ""},
 		{"delete session", `DELETE FROM sessions WHERE id = $1`, []any{session}, ""},
 	}
 	for _, tc := range tests {

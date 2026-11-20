@@ -28,9 +28,7 @@ app_runtime table public.sessions INSERT
 app_runtime table public.sessions SELECT
 app_runtime column public.sessions.idle_expires_at UPDATE
 app_runtime column public.sessions.last_seen_at UPDATE
-app_runtime column public.sessions.mfa_auth_time UPDATE
 app_runtime column public.sessions.revoked_at UPDATE
-app_runtime column public.sessions.token_hash UPDATE
 app_runtime column public.sessions.updated_at UPDATE
 
 app_runtime table public.tenants SELECT

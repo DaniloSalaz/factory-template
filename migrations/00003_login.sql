@@ -15,6 +15,12 @@ GRANT UPDATE (email_verified) ON users TO app_runtime;
 ALTER TABLE sessions ADD COLUMN provider_session_id text
   CONSTRAINT sessions_provider_session_id_not_empty CHECK (provider_session_id <> '');
 
+-- There is no MFA step-up (design, 5.2 and 13): WorkOS can neither require MFA on
+-- re-authentication nor report it, so a session's mfa_auth_time and token never change
+-- after login. What is not needed does not exist (principle 3).
+REVOKE UPDATE (mfa_auth_time, token_hash) ON sessions FROM app_runtime;
+
 -- +goose Down
+GRANT UPDATE (mfa_auth_time, token_hash) ON sessions TO app_runtime;
 ALTER TABLE sessions DROP COLUMN provider_session_id;
 REVOKE UPDATE (email_verified) ON users FROM app_runtime;
