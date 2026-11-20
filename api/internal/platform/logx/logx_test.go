@@ -141,6 +141,8 @@ func TestNew_RedactsSensitiveValues(t *testing.T) {
 		{"case and dash insensitive", func(l *slog.Logger) { l.Info("m", slog.String("Set-Cookie", raw)) }},
 		{"authorization header", func(l *slog.Logger) { l.Info("m", slog.String("Authorization", "Bearer "+raw)) }},
 		{"inside a group", func(l *slog.Logger) { l.Info("m", slog.Group("req", slog.String("api_key", raw))) }},
+		{"email inside a group", func(l *slog.Logger) { l.Info("m", slog.Group("user", slog.String("email", raw))) }},
+		{"camelCase key", func(l *slog.Logger) { l.Info("m", slog.String("userPassword", raw)) }},
 		{"logger.With", func(l *slog.Logger) { l.With(slog.String("token", raw)).Info("m") }},
 		{"context attrs", func(l *slog.Logger) {
 			l.InfoContext(logx.With(context.Background(), slog.String("database_url", raw)), "m")
@@ -170,10 +172,25 @@ func TestIsSensitiveKey(t *testing.T) {
 	}{
 		{"password", true},
 		{"PASSWORD", true},
-		{"api-key", true},
-		{"refresh_token", true},
+		{"user_email", true},
+		{"userPassword", true},
+		{"X-Api-Key", true},
+		{"x_api_key", true},
+		{"my_api_key", true},
+		{"APIKey", true},
+		{"Authorization", true},
+		{"customer_dni", true},
+		{"userAccessToken", true},
+		{"db_private_key", true},
+		{"set-cookie", true},
+		{"billing.iban", true},
+		{"shipping_address", true},
+		{"phoneNumber", true},
+		{"name", false},
+		{"api_version", false},
 		{"user_id", false},
 		{"passwordless", false},
+		{"keyboard", false},
 		{"", false},
 	}
 	for _, tc := range tests {
@@ -183,5 +200,30 @@ func TestIsSensitiveKey(t *testing.T) {
 				t.Fatalf("IsSensitiveKey(%q) = %v, want %v", tc.key, got, tc.want)
 			}
 		})
+	}
+}
+
+// Documents a slog property: context attributes are added to the record, so a logger
+// created with WithGroup nests them inside that group. AGENTS.md therefore forbids
+// WithGroup on the base logger.
+func TestWithGroup_NestsContextAttrs(t *testing.T) {
+	t.Parallel()
+
+	logger, buf := jsonLogger(slog.LevelInfo)
+	ctx := logx.WithRequestID(logx.With(t.Context(), slog.String("tenant", "t1")), "req-1")
+	logger.WithGroup("job").InfoContext(ctx, "m", slog.Int("attempt", 2))
+
+	line := decodeLines(t, buf)[0]
+	group, ok := line["job"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing job group: %v", line)
+	}
+	for _, k := range []string{"tenant", "request_id", "attempt"} {
+		if _, ok := group[k]; !ok {
+			t.Errorf("%s not inside the group: %v", k, line)
+		}
+		if _, ok := line[k]; ok {
+			t.Errorf("%s unexpectedly at top level: %v", k, line)
+		}
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/config"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
@@ -90,18 +91,61 @@ func (h *contextHandler) WithGroup(name string) slog.Handler {
 	return &contextHandler{inner: h.inner.WithGroup(name)}
 }
 
-// IsSensitiveKey reports whether values logged under key are redacted. Matching is exact
-// after lower-casing and treating "-" as "_", so it is predictable rather than clever.
+// IsSensitiveKey reports whether values logged under key are redacted. The key is split
+// into words (camelCase, "-" and "_" are boundaries, case is ignored) and it matches when
+// any run of consecutive words is a sensitive term: "X-Api-Key" matches "api_key",
+// "userPassword" matches "password", while "api_version" matches nothing.
 func IsSensitiveKey(key string) bool {
-	switch strings.ReplaceAll(strings.ToLower(key), "-", "_") {
-	case "password", "passwd", "secret", "client_secret",
-		"token", "access_token", "refresh_token", "id_token", "api_key", "apikey",
-		"authorization", "cookie", "set_cookie", "session", "private_key",
-		"database_url", "dsn", "card_number", "cvv":
+	words := keyWords(key)
+	for i := range words {
+		for j := i + 1; j <= len(words); j++ {
+			if isSensitiveTerm(strings.Join(words[i:j], "_")) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isSensitiveTerm(term string) bool {
+	switch term {
+	case "password", "passwd", "secret", "token", "authorization", "cookie", "session",
+		"apikey", "api_key", "private_key", "database_url", "dsn", "card_number", "cvv",
+		"email", "phone", "dni", "nie", "nif", "iban", "address":
 		return true
 	default:
 		return false
 	}
+}
+
+// keyWords lower-cases key and splits it into words. An upper-case letter starts a word
+// after a lower-case letter or digit, or when it ends an acronym ("APIKey" -> api, key).
+func keyWords(key string) []string {
+	runes := []rune(key)
+	var words []string
+	var cur []rune
+	flush := func() {
+		if len(cur) > 0 {
+			words = append(words, string(cur))
+			cur = cur[:0]
+		}
+	}
+	for i, r := range runes {
+		switch {
+		case r == '_' || r == '-' || r == '.' || r == ' ':
+			flush()
+			continue
+		case unicode.IsUpper(r) && i > 0:
+			prev := runes[i-1]
+			nextIsLower := i+1 < len(runes) && unicode.IsLower(runes[i+1])
+			if unicode.IsLower(prev) || unicode.IsDigit(prev) || (unicode.IsUpper(prev) && nextIsLower) {
+				flush()
+			}
+		}
+		cur = append(cur, unicode.ToLower(r))
+	}
+	flush()
+	return words
 }
 
 func redact(_ []string, a slog.Attr) slog.Attr {
