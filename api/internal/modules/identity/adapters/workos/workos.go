@@ -206,9 +206,21 @@ func displayName(first, last *string) string {
 // classify maps SDK errors to apperr. The SDK error is replaced by a summary built from
 // its typed fields: its message can quote the response body, so it is never kept.
 func classify(err error) error {
+	// The user still has a step to finish at WorkOS: tell them which, not "invalid code".
+	var emailErr *sdk.EmailVerificationRequiredError
+	if errors.As(err, &emailErr) {
+		return apperr.Wrap(summarize(emailErr.APIError), apperr.KindForbidden, "auth.email_verification_required",
+			"Verify your email address with the identity provider, then sign in again.")
+	}
+	var mfaErr *sdk.MFAEnrollmentError
+	if errors.As(err, &mfaErr) {
+		return apperr.Wrap(summarize(mfaErr.APIError), apperr.KindForbidden, "auth.mfa_enrollment_required",
+			"Set up multi-factor authentication with the identity provider, then sign in again.")
+	}
+
 	var apiErr *sdk.APIError
 	if errors.As(err, &apiErr) {
-		summary := fmt.Errorf("workos: status %d, code %q, request %s", apiErr.StatusCode, apiErr.ErrorCode+apiErr.Code, apiErr.RequestID)
+		summary := summarize(apiErr)
 		if apiErr.StatusCode >= http.StatusBadRequest && apiErr.StatusCode < http.StatusInternalServerError &&
 			apiErr.StatusCode != http.StatusTooManyRequests && apiErr.StatusCode != http.StatusUnauthorized {
 			return apperr.Wrap(summary, apperr.KindBadRequest, "auth.code_invalid", "The authorization code is invalid or expired.")
@@ -219,6 +231,14 @@ func classify(err error) error {
 		return unavailable(errors.New("workos: request cancelled or timed out"))
 	}
 	return unavailable(errors.New("workos: request failed"))
+}
+
+// summarize keeps only the typed fields of an SDK error, never its message or body.
+func summarize(apiErr *sdk.APIError) error {
+	if apiErr == nil {
+		return errors.New("workos: error without details")
+	}
+	return fmt.Errorf("workos: status %d, code %q, request %s", apiErr.StatusCode, apiErr.ErrorCode+apiErr.Code, apiErr.RequestID)
 }
 
 func unavailable(cause error) error {

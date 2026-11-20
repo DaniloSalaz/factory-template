@@ -209,6 +209,28 @@ func TestExchangeCode_ErrorsNeverCarryTheAPIKey(t *testing.T) {
 	}
 }
 
+func TestExchangeCode_PendingStepsHaveTheirOwnCodes(t *testing.T) {
+	t.Parallel()
+	tests := map[string]string{
+		`{"code":"email_verification_required","message":"Email ana@example.test must be verified ` + testKey + `","email":"ana@example.test"}`: "auth.email_verification_required",
+		`{"code":"mfa_enrollment","message":"User must enroll in MFA ` + testKey + `","user":{"id":"user_1"}}`:                                  "auth.mfa_enrollment_required",
+	}
+	for body, code := range tests {
+		t.Run(code, func(t *testing.T) {
+			t.Parallel()
+			p, _, _ := fakeWorkOS(t, http.StatusForbidden, body)
+			_, err := p.ExchangeCode(t.Context(), "c", "v")
+			e, ok := apperr.As(err)
+			if !ok || e.Code != code || e.Kind != apperr.KindForbidden || e.Message == "" {
+				t.Fatalf("err = %v, want %s (403) with a message", err, code)
+			}
+			if strings.Contains(err.Error(), testKey) || strings.Contains(err.Error(), "ana@example.test") {
+				t.Fatalf("the error leaks the response body: %v", err)
+			}
+		})
+	}
+}
+
 func TestLogoutURL(t *testing.T) {
 	t.Parallel()
 	p, _, _ := fakeWorkOS(t, http.StatusOK, "{}")
