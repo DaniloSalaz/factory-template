@@ -138,6 +138,10 @@ func invitationsCatalog(t *testing.T) *authz.Catalog {
 			authz.PermMembersRead, authz.PermMembersInvite, authz.PermMembersManage, authctx.PermScopeTenant,
 		}},
 		authz.Role{Name: "member", Permissions: []authctx.Permission{authz.PermMembersRead, authctx.PermScopeTenant}},
+		// Invites, but holds less than admin: it may offer member, never admin.
+		authz.Role{Name: "recruiter", Permissions: []authctx.Permission{
+			authz.PermMembersRead, authz.PermMembersInvite, authctx.PermScopeTenant,
+		}},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -161,6 +165,7 @@ func newInvFixture(t *testing.T) *invFixture {
 	store.add(tenantA, ownerID, "owner")
 	store.add(tenantA, adminID, "admin")
 	store.add(tenantA, member2, "member")
+	store.add(tenantA, stranger, "recruiter")
 	store.memberEmails = map[string][]string{tenantA: {"member@example.com"}}
 	f := &invFixture{store: store, sender: &memSender{}, c: c, logs: &bytes.Buffer{}, now: time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)}
 	auth := &fakeAuthorizer{}
@@ -183,6 +188,8 @@ func TestInvitations_Create(t *testing.T) {
 		{"admin invites an admin", adminID, "admin", "new@example.com", "admin", nil},
 		{"owner invites an owner", ownerID, "owner", "new@example.com", "owner", nil},
 		{"admin cannot invite an owner", adminID, "admin", "new@example.com", "owner", domain.ErrInvitationRoleNotOfferable()},
+		{"recruiter invites a member", stranger, "recruiter", "new@example.com", "member", nil},
+		{"recruiter cannot invite an admin", stranger, "recruiter", "new@example.com", "admin", domain.ErrInvitationRoleNotOfferable()},
 		{"member cannot invite", member2, "member", "new@example.com", "member", authz.ErrDenied()},
 		{"an unknown role", ownerID, "owner", "new@example.com", "ghost", domain.ErrInvitationUnknownRole()},
 		{"an invalid email", ownerID, "owner", "Ana <ana@example.com>", "member", domain.ErrInvitationEmailInvalid()},
