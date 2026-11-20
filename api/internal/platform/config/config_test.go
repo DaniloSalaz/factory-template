@@ -65,7 +65,8 @@ func TestLoad_Valid(t *testing.T) {
 					c.Auth.SessionIdleTTL == 7*24*time.Hour && c.Auth.SessionAbsoluteTTL == 30*24*time.Hour &&
 					c.Web.TrustedClientIPHeader == "" &&
 					c.WorkOS.APIKey.Reveal() == testAPIKey &&
-					c.Tenancy.MaxTenantsPerUser == 5
+					c.Tenancy.MaxTenantsPerUser == 5 &&
+					c.Web.FrontBaseURL == "http://localhost:5173"
 			},
 		},
 		{
@@ -92,6 +93,11 @@ func TestLoad_Valid(t *testing.T) {
 				return c.Web.FrontendOrigin == "https://app.example.com" &&
 					slices.Equal(c.Web.AllowedOrigins, []string{"https://app.example.com", "https://admin.example.com"})
 			},
+		},
+		{
+			name:    "front base url with a path",
+			environ: with(map[string]string{"FRONT_BASE_URL": "https://example.com/app/"}),
+			want:    func(c Config) bool { return c.Web.FrontBaseURL == "https://example.com/app" },
 		},
 		{
 			name: "overrides",
@@ -176,6 +182,11 @@ func TestLoad_Invalid(t *testing.T) {
 				"APP_ENV": "staging", "WORKOS_CLIENT_ID": "wrong", "WORKOS_REDIRECT_URI": "http://api.example.com/auth/callback",
 			}),
 			wantVars: []string{"WORKOS_CLIENT_ID must start with client_", "WORKOS_REDIRECT_URI must use https outside development"},
+		},
+		{
+			name:     "front base url with a fragment",
+			environ:  with(map[string]string{"FRONT_BASE_URL": "http://localhost:5173/#x"}),
+			wantVars: []string{"FRONT_BASE_URL must be an absolute http(s) URL"},
 		},
 		{
 			name:     "no tenant may be created",

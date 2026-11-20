@@ -11,6 +11,7 @@ import (
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/authz"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/clientip"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/ratelimit"
 )
 
 // Authorizer is the permission check of the use cases (authz.Authorizer).
@@ -23,11 +24,13 @@ type Tenants struct {
 	store      TenantStore
 	authz      Authorizer
 	maxPerUser int
+	limiter    ratelimit.Limiter
 }
 
-// NewTenants builds Tenants. maxPerUser is how many tenants a user may create.
-func NewTenants(store TenantStore, authorizer Authorizer, maxPerUser int) *Tenants {
-	return &Tenants{store: store, authz: authorizer, maxPerUser: maxPerUser}
+// NewTenants builds Tenants. maxPerUser is how many tenants a user may create in all;
+// limiter caps how often they may try (design, section 6).
+func NewTenants(store TenantStore, authorizer Authorizer, maxPerUser int, limiter ratelimit.Limiter) *Tenants {
+	return &Tenants{store: store, authz: authorizer, maxPerUser: maxPerUser, limiter: limiter}
 }
 
 // CreatedTenant is a tenant just created, with its creator as owner.
@@ -39,6 +42,9 @@ type CreatedTenant struct {
 // Create creates a tenant with user as its owner. It needs no permission and no MFA:
 // if the owner role requires MFA, acting in the tenant does, from the next request.
 func (t *Tenants) Create(ctx context.Context, user authctx.User, name, slug string) (CreatedTenant, error) {
+	if err := allow(ctx, t.limiter, "tenant:"+user.ID()); err != nil {
+		return CreatedTenant{}, err
+	}
 	name, err := domain.NormalizeTenantName(name)
 	if err != nil {
 		return CreatedTenant{}, err
@@ -111,6 +117,17 @@ const (
 	MaxMembersPage     = 100
 )
 
+// pageSize returns limit within 1..MaxMembersPage; 0 or less means DefaultMembersPage.
+func pageSize(limit int) int {
+	switch {
+	case limit <= 0:
+		return DefaultMembersPage
+	case limit > MaxMembersPage:
+		return MaxMembersPage
+	}
+	return limit
+}
+
 // MemberPage is a page of members; Next is the cursor of the next page, "" on the last.
 type MemberPage struct {
 	Members []Member
@@ -131,12 +148,7 @@ func (m *Members) List(ctx context.Context, cursor string, limit int) (MemberPag
 	if err != nil {
 		return MemberPage{}, err
 	}
-	switch {
-	case limit <= 0:
-		limit = DefaultMembersPage
-	case limit > MaxMembersPage:
-		limit = MaxMembersPage
-	}
+	limit = pageSize(limit)
 	var page MemberPage
 	err = m.store.InTenant(ctx, p, func(ctx context.Context, r TenantRepo) error {
 		// One more than the page tells whether another page follows.

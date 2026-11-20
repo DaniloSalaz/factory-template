@@ -36,6 +36,12 @@ const (
 	mfaRateWindow = 15 * time.Minute
 )
 
+// Requests per user (design, section 6): creating a tenant, five an hour.
+const (
+	tenantRateLimit  = 5
+	tenantRateWindow = time.Hour
+)
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 
@@ -74,10 +80,11 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 
 	idm, err := identity.New(identity.Deps{
 		DB: db.New(pool), Logger: logger, Web: cfg.Web, Auth: cfg.Auth, WorkOS: cfg.WorkOS,
-		RateLimiter:    ratelimit.NewMemory(authRateLimit, authRateWindow, nil),
-		MFARateLimiter: ratelimit.NewMemory(mfaRateLimit, mfaRateWindow, nil),
-		Catalog:        catalog,
-		Tenancy:        cfg.Tenancy,
+		RateLimiter:       ratelimit.NewMemory(authRateLimit, authRateWindow, nil),
+		MFARateLimiter:    ratelimit.NewMemory(mfaRateLimit, mfaRateWindow, nil),
+		Catalog:           catalog,
+		Tenancy:           cfg.Tenancy,
+		TenantRateLimiter: ratelimit.NewMemory(tenantRateLimit, tenantRateWindow, nil),
 	})
 	if err != nil {
 		return fmt.Errorf("wire identity module: %w", err)

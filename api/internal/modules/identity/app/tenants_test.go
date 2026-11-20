@@ -15,6 +15,7 @@ import (
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/authz"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/ratelimit"
 )
 
 // memTenants is a fake app.TenantStore: the members of each tenant, by user id, and
@@ -26,6 +27,10 @@ type memTenants struct {
 	audits  []app.AuditEvent
 	// offerable is what the last ChangeMemberRole was told the new role may offer.
 	offerable []string
+	// The invitation side (invitations_test.go).
+	invitations  map[string]*memInvitation
+	memberEmails map[string][]string
+	onShareLock  func()
 	// fail, if set, is what the database functions return (last owner, changed role…).
 	fail error
 }
@@ -311,7 +316,7 @@ func TestTenants_Create(t *testing.T) {
 	t.Parallel()
 
 	store := newMemTenants()
-	tenants := app.NewTenants(store, &fakeAuthorizer{}, 5)
+	tenants := app.NewTenants(store, &fakeAuthorizer{}, 5, ratelimit.NewMemory(5, time.Hour, nil))
 	u := user(t, time.Time{})
 
 	got, err := tenants.Create(t.Context(), u, "  Acme  ", "acme")
@@ -336,6 +341,13 @@ func TestTenants_Create(t *testing.T) {
 	if want := []string{"create Acme acme 5"}; !slices.Equal(store.calls, want) {
 		t.Fatalf("calls = %v, want %v", store.calls, want)
 	}
+	// Four attempts so far, valid or not, count against the five an hour.
+	if _, err := tenants.Create(t.Context(), u, "Acme", "acme-5"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tenants.Create(t.Context(), u, "Acme", "acme-6"); apperr.KindOf(err) != apperr.KindRateLimited {
+		t.Fatalf("sixth attempt = %v, want rate limited", err)
+	}
 }
 
 func TestTenants_Rename(t *testing.T) {
@@ -344,7 +356,7 @@ func TestTenants_Rename(t *testing.T) {
 	c := membersCatalog(t)
 	store := newMemTenants()
 	store.names[tenantA] = "Old"
-	tenants := app.NewTenants(store, &fakeAuthorizer{}, 5)
+	tenants := app.NewTenants(store, &fakeAuthorizer{}, 5, ratelimit.NewMemory(5, time.Hour, nil))
 
 	if _, err := tenants.Rename(actingAs(t, c, member2, "member"), "New"); !errors.Is(err, authz.ErrDenied()) {
 		t.Fatalf("member renames = %v, want %v", err, authz.ErrDenied())

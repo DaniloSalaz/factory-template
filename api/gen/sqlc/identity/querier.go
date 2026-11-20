@@ -12,12 +12,14 @@ import (
 )
 
 type Querier interface {
+	AcceptInvitation(ctx context.Context, arg AcceptInvitationParams) (AcceptInvitationRow, error)
 	// The acting user's membership in a tenant (tenant middleware, design 5.4.2). No row:
 	// no membership, or no such tenant.
 	AuthMembership(ctx context.Context, tenantID pgtype.UUID) (AuthMembershipRow, error)
 	ChangeMemberRole(ctx context.Context, arg ChangeMemberRoleParams) error
 	ConsumeMFAChallenge(ctx context.Context, arg ConsumeMFAChallengeParams) (ConsumeMFAChallengeRow, error)
 	CreateIdentity(ctx context.Context, arg CreateIdentityParams) error
+	CreateInvitation(ctx context.Context, arg CreateInvitationParams) (CreateInvitationRow, error)
 	CreateMFAChallenge(ctx context.Context, arg CreateMFAChallengeParams) (CreateMFAChallengeRow, error)
 	// A new session has no MFA: only mark_session_mfa gives it one (design, 5.2).
 	CreateSession(ctx context.Context, arg CreateSessionParams) (pgtype.UUID, error)
@@ -26,9 +28,13 @@ type Querier interface {
 	// memberships directly.
 	CreateTenant(ctx context.Context, arg CreateTenantParams) (CreateTenantRow, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (pgtype.UUID, error)
+	EmailIsMember(ctx context.Context, arg EmailIsMemberParams) (bool, error)
 	// The user's subject at a provider (WorkOS: the user id its MFA API takes).
 	IdentitySubject(ctx context.Context, arg IdentitySubjectParams) (string, error)
+	InvitationByID(ctx context.Context, arg InvitationByIDParams) (InvitationByIDRow, error)
 	LeaveTenant(ctx context.Context, ipPrefix *netip.Prefix) error
+	// Pending invitations, expired ones included, in creation order (UUIDv7).
+	ListInvitations(ctx context.Context, arg ListInvitationsParams) ([]ListInvitationsRow, error)
 	// A page of the tenant's members in membership order (UUIDv7, so by creation), which is
 	// unique and stable. Under RLS; the WHERE on tenant_id is defence in depth.
 	ListMembers(ctx context.Context, arg ListMembersParams) ([]ListMembersRow, error)
@@ -41,6 +47,7 @@ type Querier interface {
 	MemberByUser(ctx context.Context, arg MemberByUserParams) (MemberByUserRow, error)
 	// The acting user's own memberships, never anyone else's (GET /me).
 	MembershipsForUser(ctx context.Context) ([]MembershipsForUserRow, error)
+	PendingInvitationByEmail(ctx context.Context, arg PendingInvitationByEmailParams) (PendingInvitationByEmailRow, error)
 	// Events without a tenant: login and logout never have one (record_audit, TN031).
 	RecordAudit(ctx context.Context, arg RecordAuditParams) error
 	// Events of the transaction's tenant; record_audit refuses any other (TN030).
@@ -49,13 +56,20 @@ type Querier interface {
 	RemoveMFAFactor(ctx context.Context, factorID pgtype.UUID) (RemoveMFAFactorRow, error)
 	RemoveMember(ctx context.Context, arg RemoveMemberParams) error
 	RenameTenant(ctx context.Context, arg RenameTenantParams) (RenameTenantRow, error)
+	RevokeInvitation(ctx context.Context, id pgtype.UUID) error
 	RevokeSession(ctx context.Context, id pgtype.UUID) error
 	RevokeSessionByHash(ctx context.Context, tokenHash []byte) error
 	RevokeUserSessions(ctx context.Context, userID pgtype.UUID) (int64, error)
 	// The distinct roles stored in any tenant, without tenant data (design, section 8).
 	RolesInUse(ctx context.Context) ([]string, error)
+	RotateInvitation(ctx context.Context, arg RotateInvitationParams) error
 	SessionByHash(ctx context.Context, tokenHash []byte) (SessionByHashRow, error)
 	SetLastLogin(ctx context.Context, id pgtype.UUID) error
+	// Invitations (design 5.6, migration 00006), under RLS in the tenant's transaction; the
+	// WHERE on tenant_id is defence in depth. Accepting is accept_invitation.
+	// Before writing an invitation: a concurrent role change (FOR UPDATE) waits for this
+	// transaction, or this one for it.
+	ShareLockTenant(ctx context.Context, id pgtype.UUID) error
 	// Under RLS, inside the tenant's own transaction; the WHERE is defence in depth.
 	TenantByID(ctx context.Context, id pgtype.UUID) (TenantByIDRow, error)
 	// The WHERE on last_seen_at makes concurrent touches of the same session a no-op.

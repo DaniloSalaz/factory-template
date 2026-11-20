@@ -54,6 +54,8 @@ type Deps struct {
 	Catalog *authz.Catalog
 	// Tenancy limits how many tenants a user may create.
 	Tenancy config.Tenancy
+	// TenantRateLimiter limits POST /tenants per user (design, section 6).
+	TenantRateLimiter ratelimit.Limiter
 	// Provider replaces WorkOS; only tests set it.
 	Provider Provider
 	// Now is the clock; nil means time.Now.
@@ -82,6 +84,9 @@ type Module struct {
 func New(deps Deps) (*Module, error) {
 	if deps.Catalog == nil || deps.DB == nil || deps.Logger == nil || deps.RateLimiter == nil || deps.MFARateLimiter == nil {
 		return nil, errors.New("identity: Catalog, DB, Logger, RateLimiter and MFARateLimiter are required")
+	}
+	if deps.TenantRateLimiter == nil {
+		return nil, errors.New("identity: TenantRateLimiter is required")
 	}
 	if deps.Tenancy.MaxTenantsPerUser < 1 {
 		return nil, errors.New("identity: Tenancy.MaxTenantsPerUser must be at least 1")
@@ -113,7 +118,7 @@ func New(deps Deps) (*Module, error) {
 		handler: identityhttp.NewHandler(identityhttp.UseCases{
 			Login: login, Sessions: sessions, Accounts: app.NewAccounts(store, deps.Catalog),
 			MFA:     app.NewMFA(idp, idp.Name(), store, deps.Catalog, deps.MFARateLimiter, deps.Now),
-			Tenants: app.NewTenants(tenantStore, authorizer, deps.Tenancy.MaxTenantsPerUser),
+			Tenants: app.NewTenants(tenantStore, authorizer, deps.Tenancy.MaxTenantsPerUser, deps.TenantRateLimiter),
 			Members: app.NewMembers(tenantStore, authorizer, deps.Catalog),
 		}, deps.Logger),
 		sessions: sessions,

@@ -93,6 +93,9 @@ type Log struct {
 type Web struct {
 	// FrontendOrigin is the origin return_to must resolve to after login (design, 5.1.1).
 	FrontendOrigin string `env:"FRONTEND_ORIGIN"`
+	// FrontBaseURL is where invitation links point: FrontBaseURL/invite#token=… (design,
+	// 5.6.3). By default FrontendOrigin; it may add a path if the front end lives under one.
+	FrontBaseURL string `env:"FRONT_BASE_URL"`
 	// AllowedOrigins are the only origins accepted by CORS and by the CSRF Origin check.
 	AllowedOrigins []string `env:"ALLOWED_ORIGINS" envSeparator:","`
 	// TrustedClientIPHeader is the header that carries the client IP: CF-Connecting-IP by
@@ -179,6 +182,10 @@ func (c *Config) applyDerivedDefaults() {
 	if o, ok := normalizeOrigin(c.Web.FrontendOrigin); ok {
 		c.Web.FrontendOrigin = o
 	}
+	if c.Web.FrontBaseURL == "" {
+		c.Web.FrontBaseURL = c.Web.FrontendOrigin
+	}
+	c.Web.FrontBaseURL = strings.TrimRight(c.Web.FrontBaseURL, "/")
 	for i, raw := range c.Web.AllowedOrigins {
 		if o, ok := normalizeOrigin(strings.TrimSpace(raw)); ok {
 			c.Web.AllowedOrigins[i] = o
@@ -269,6 +276,14 @@ func (c Config) validateWeb(add func(v, reason string)) {
 		add("ALLOWED_ORIGINS", "must be a comma-separated list of origins, without wildcards or paths")
 	case frontendOK && !slices.Contains(c.Web.AllowedOrigins, c.Web.FrontendOrigin):
 		add("ALLOWED_ORIGINS", "must include FRONTEND_ORIGIN")
+	}
+
+	switch u, err := url.Parse(c.Web.FrontBaseURL); {
+	case c.Web.FrontBaseURL == "":
+		// Defaults to FRONTEND_ORIGIN, whose own error is already reported.
+	case err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") ||
+		u.User != nil || u.RawQuery != "" || u.Fragment != "" || strings.HasSuffix(u.Path, "/invite"):
+		add("FRONT_BASE_URL", "must be an absolute http(s) URL without credentials, query or fragment")
 	}
 
 	h := c.Web.TrustedClientIPHeader
@@ -423,11 +438,11 @@ func describeType(t reflect.Type) string {
 func (c Config) String() string {
 	return fmt.Sprintf(
 		"Config{Env:%s HTTP:{Port:%d ReadHeaderTimeout:%s ReadTimeout:%s WriteTimeout:%s IdleTimeout:%s ShutdownTimeout:%s MaxHeaderBytes:%d MaxBodyBytes:%d} DB:{URL:%s} Log:{Level:%s Format:%s} "+
-			"Web:{FrontendOrigin:%s AllowedOrigins:%v TrustedClientIPHeader:%s} Auth:{SessionIdleTTL:%s SessionAbsoluteTTL:%s} "+
+			"Web:{FrontendOrigin:%s FrontBaseURL:%s AllowedOrigins:%v TrustedClientIPHeader:%s} Auth:{SessionIdleTTL:%s SessionAbsoluteTTL:%s} "+
 			"WorkOS:{ClientID:%s APIKey:%s RedirectURI:%s} Tenancy:{MaxTenantsPerUser:%d}}",
 		c.Env, c.HTTP.Port, c.HTTP.ReadHeaderTimeout, c.HTTP.ReadTimeout, c.HTTP.WriteTimeout,
 		c.HTTP.IdleTimeout, c.HTTP.ShutdownTimeout, c.HTTP.MaxHeaderBytes, c.HTTP.MaxBodyBytes, c.DB.URL, c.Log.Level, c.Log.Format,
-		c.Web.FrontendOrigin, c.Web.AllowedOrigins, c.Web.TrustedClientIPHeader, c.Auth.SessionIdleTTL, c.Auth.SessionAbsoluteTTL,
+		c.Web.FrontendOrigin, c.Web.FrontBaseURL, c.Web.AllowedOrigins, c.Web.TrustedClientIPHeader, c.Auth.SessionIdleTTL, c.Auth.SessionAbsoluteTTL,
 		c.WorkOS.ClientID, c.WorkOS.APIKey, c.WorkOS.RedirectURI, c.Tenancy.MaxTenantsPerUser,
 	)
 }
@@ -453,6 +468,7 @@ func (c Config) LogValue() slog.Value {
 		slog.Group("log", slog.String("level", c.Log.Level.String()), slog.String("format", string(c.Log.Format))),
 		slog.Group("web",
 			slog.String("frontend_origin", c.Web.FrontendOrigin),
+			slog.String("front_base_url", c.Web.FrontBaseURL),
 			slog.Any("allowed_origins", c.Web.AllowedOrigins),
 			slog.String("trusted_client_ip_header", c.Web.TrustedClientIPHeader),
 		),

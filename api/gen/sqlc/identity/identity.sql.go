@@ -12,6 +12,29 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const acceptInvitation = `-- name: AcceptInvitation :one
+SELECT r.membership_id::uuid AS membership_id, r.tenant_id::uuid AS tenant_id, r.role::text AS role
+FROM accept_invitation($1::bytea, $2::cidr) AS r(membership_id, tenant_id, role)
+`
+
+type AcceptInvitationParams struct {
+	TokenHash []byte
+	IpPrefix  *netip.Prefix
+}
+
+type AcceptInvitationRow struct {
+	MembershipID pgtype.UUID
+	TenantID     pgtype.UUID
+	Role         string
+}
+
+func (q *Queries) AcceptInvitation(ctx context.Context, arg AcceptInvitationParams) (AcceptInvitationRow, error) {
+	row := q.db.QueryRow(ctx, acceptInvitation, arg.TokenHash, arg.IpPrefix)
+	var i AcceptInvitationRow
+	err := row.Scan(&i.MembershipID, &i.TenantID, &i.Role)
+	return i, err
+}
+
 const authMembership = `-- name: AuthMembership :one
 SELECT m.role::text AS role, m.tenant_status::text AS tenant_status,
        m.user_disabled::boolean AS user_disabled
@@ -105,6 +128,58 @@ func (q *Queries) CreateIdentity(ctx context.Context, arg CreateIdentityParams) 
 		arg.Email,
 	)
 	return err
+}
+
+const createInvitation = `-- name: CreateInvitation :one
+INSERT INTO invitations (tenant_id, email, role, token_hash, invited_by, expires_at)
+VALUES ($1, $2::text::extensions.citext, $3, $4,
+        $5, $6)
+RETURNING id, tenant_id, email::text AS email, role, invited_by, expires_at, created_at, accepted_at, revoked_at
+`
+
+type CreateInvitationParams struct {
+	TenantID  pgtype.UUID
+	Email     string
+	Role      string
+	TokenHash []byte
+	InvitedBy pgtype.UUID
+	ExpiresAt pgtype.Timestamptz
+}
+
+type CreateInvitationRow struct {
+	ID         pgtype.UUID
+	TenantID   pgtype.UUID
+	Email      string
+	Role       string
+	InvitedBy  pgtype.UUID
+	ExpiresAt  pgtype.Timestamptz
+	CreatedAt  pgtype.Timestamptz
+	AcceptedAt pgtype.Timestamptz
+	RevokedAt  pgtype.Timestamptz
+}
+
+func (q *Queries) CreateInvitation(ctx context.Context, arg CreateInvitationParams) (CreateInvitationRow, error) {
+	row := q.db.QueryRow(ctx, createInvitation,
+		arg.TenantID,
+		arg.Email,
+		arg.Role,
+		arg.TokenHash,
+		arg.InvitedBy,
+		arg.ExpiresAt,
+	)
+	var i CreateInvitationRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Email,
+		&i.Role,
+		&i.InvitedBy,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.AcceptedAt,
+		&i.RevokedAt,
+	)
+	return i, err
 }
 
 const createMFAChallenge = `-- name: CreateMFAChallenge :one
@@ -223,6 +298,25 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (pgtype.
 	return id, err
 }
 
+const emailIsMember = `-- name: EmailIsMember :one
+SELECT EXISTS (
+  SELECT 1 FROM memberships m JOIN users u ON u.id = m.user_id
+  WHERE m.tenant_id = $1 AND u.email = $2::text::extensions.citext
+)::boolean AS member
+`
+
+type EmailIsMemberParams struct {
+	TenantID pgtype.UUID
+	Email    string
+}
+
+func (q *Queries) EmailIsMember(ctx context.Context, arg EmailIsMemberParams) (bool, error) {
+	row := q.db.QueryRow(ctx, emailIsMember, arg.TenantID, arg.Email)
+	var member bool
+	err := row.Scan(&member)
+	return member, err
+}
+
 const identitySubject = `-- name: IdentitySubject :one
 SELECT i.subject FROM user_identities i WHERE i.user_id = $1 AND i.provider = $2
 `
@@ -240,6 +334,48 @@ func (q *Queries) IdentitySubject(ctx context.Context, arg IdentitySubjectParams
 	return subject, err
 }
 
+const invitationByID = `-- name: InvitationByID :one
+SELECT i.id, i.tenant_id, i.email::text AS email, i.role, i.invited_by, i.expires_at, i.created_at,
+       i.accepted_at, i.revoked_at
+FROM invitations i
+WHERE i.tenant_id = $1 AND i.id = $2
+FOR UPDATE
+`
+
+type InvitationByIDParams struct {
+	TenantID pgtype.UUID
+	ID       pgtype.UUID
+}
+
+type InvitationByIDRow struct {
+	ID         pgtype.UUID
+	TenantID   pgtype.UUID
+	Email      string
+	Role       string
+	InvitedBy  pgtype.UUID
+	ExpiresAt  pgtype.Timestamptz
+	CreatedAt  pgtype.Timestamptz
+	AcceptedAt pgtype.Timestamptz
+	RevokedAt  pgtype.Timestamptz
+}
+
+func (q *Queries) InvitationByID(ctx context.Context, arg InvitationByIDParams) (InvitationByIDRow, error) {
+	row := q.db.QueryRow(ctx, invitationByID, arg.TenantID, arg.ID)
+	var i InvitationByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Email,
+		&i.Role,
+		&i.InvitedBy,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.AcceptedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
 const leaveTenant = `-- name: LeaveTenant :exec
 SELECT leave_tenant($1::cidr)
 `
@@ -247,6 +383,65 @@ SELECT leave_tenant($1::cidr)
 func (q *Queries) LeaveTenant(ctx context.Context, ipPrefix *netip.Prefix) error {
 	_, err := q.db.Exec(ctx, leaveTenant, ipPrefix)
 	return err
+}
+
+const listInvitations = `-- name: ListInvitations :many
+SELECT i.id, i.tenant_id, i.email::text AS email, i.role, i.invited_by, i.expires_at, i.created_at,
+       i.accepted_at, i.revoked_at
+FROM invitations i
+WHERE i.tenant_id = $1 AND i.accepted_at IS NULL AND i.revoked_at IS NULL
+  AND ($2::uuid IS NULL OR i.id > $2::uuid)
+ORDER BY i.id
+LIMIT $3
+`
+
+type ListInvitationsParams struct {
+	TenantID pgtype.UUID
+	After    pgtype.UUID
+	PageSize int32
+}
+
+type ListInvitationsRow struct {
+	ID         pgtype.UUID
+	TenantID   pgtype.UUID
+	Email      string
+	Role       string
+	InvitedBy  pgtype.UUID
+	ExpiresAt  pgtype.Timestamptz
+	CreatedAt  pgtype.Timestamptz
+	AcceptedAt pgtype.Timestamptz
+	RevokedAt  pgtype.Timestamptz
+}
+
+// Pending invitations, expired ones included, in creation order (UUIDv7).
+func (q *Queries) ListInvitations(ctx context.Context, arg ListInvitationsParams) ([]ListInvitationsRow, error) {
+	rows, err := q.db.Query(ctx, listInvitations, arg.TenantID, arg.After, arg.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInvitationsRow
+	for rows.Next() {
+		var i ListInvitationsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Email,
+			&i.Role,
+			&i.InvitedBy,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.AcceptedAt,
+			&i.RevokedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listMembers = `-- name: ListMembers :many
@@ -476,6 +671,48 @@ func (q *Queries) MembershipsForUser(ctx context.Context) ([]MembershipsForUserR
 	return items, nil
 }
 
+const pendingInvitationByEmail = `-- name: PendingInvitationByEmail :one
+SELECT i.id, i.tenant_id, i.email::text AS email, i.role, i.invited_by, i.expires_at, i.created_at,
+       i.accepted_at, i.revoked_at
+FROM invitations i
+WHERE i.tenant_id = $1 AND i.email = $2::text::extensions.citext
+  AND i.accepted_at IS NULL AND i.revoked_at IS NULL
+`
+
+type PendingInvitationByEmailParams struct {
+	TenantID pgtype.UUID
+	Email    string
+}
+
+type PendingInvitationByEmailRow struct {
+	ID         pgtype.UUID
+	TenantID   pgtype.UUID
+	Email      string
+	Role       string
+	InvitedBy  pgtype.UUID
+	ExpiresAt  pgtype.Timestamptz
+	CreatedAt  pgtype.Timestamptz
+	AcceptedAt pgtype.Timestamptz
+	RevokedAt  pgtype.Timestamptz
+}
+
+func (q *Queries) PendingInvitationByEmail(ctx context.Context, arg PendingInvitationByEmailParams) (PendingInvitationByEmailRow, error) {
+	row := q.db.QueryRow(ctx, pendingInvitationByEmail, arg.TenantID, arg.Email)
+	var i PendingInvitationByEmailRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Email,
+		&i.Role,
+		&i.InvitedBy,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.AcceptedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
 const recordAudit = `-- name: RecordAudit :exec
 SELECT record_audit(NULL::uuid, $1, $2, $3,
                     $4, $5)
@@ -621,6 +858,15 @@ func (q *Queries) RenameTenant(ctx context.Context, arg RenameTenantParams) (Ren
 	return i, err
 }
 
+const revokeInvitation = `-- name: RevokeInvitation :exec
+UPDATE invitations SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL
+`
+
+func (q *Queries) RevokeInvitation(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, revokeInvitation, id)
+	return err
+}
+
 const revokeSession = `-- name: RevokeSession :exec
 UPDATE sessions SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL
 `
@@ -676,6 +922,22 @@ func (q *Queries) RolesInUse(ctx context.Context) ([]string, error) {
 	return items, nil
 }
 
+const rotateInvitation = `-- name: RotateInvitation :exec
+UPDATE invitations SET token_hash = $1, expires_at = $2
+WHERE id = $3
+`
+
+type RotateInvitationParams struct {
+	TokenHash []byte
+	ExpiresAt pgtype.Timestamptz
+	ID        pgtype.UUID
+}
+
+func (q *Queries) RotateInvitation(ctx context.Context, arg RotateInvitationParams) error {
+	_, err := q.db.Exec(ctx, rotateInvitation, arg.TokenHash, arg.ExpiresAt, arg.ID)
+	return err
+}
+
 const sessionByHash = `-- name: SessionByHash :one
 SELECT s.id, s.user_id, s.mfa_auth_time, s.last_seen_at, s.idle_expires_at,
        s.absolute_expires_at, s.revoked_at, s.provider_session_id,
@@ -720,6 +982,20 @@ UPDATE users SET last_login_at = now() WHERE id = $1
 
 func (q *Queries) SetLastLogin(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, setLastLogin, id)
+	return err
+}
+
+const shareLockTenant = `-- name: ShareLockTenant :exec
+
+SELECT 1 FROM tenants t WHERE t.id = $1 FOR KEY SHARE
+`
+
+// Invitations (design 5.6, migration 00006), under RLS in the tenant's transaction; the
+// WHERE on tenant_id is defence in depth. Accepting is accept_invitation.
+// Before writing an invitation: a concurrent role change (FOR UPDATE) waits for this
+// transaction, or this one for it.
+func (q *Queries) ShareLockTenant(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, shareLockTenant, id)
 	return err
 }
 

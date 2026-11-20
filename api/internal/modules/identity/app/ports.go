@@ -162,6 +162,71 @@ type TenantRepo interface {
 	RemoveMember(ctx context.Context, userID, expectedActorRole, expectedMemberRole string, ip netip.Prefix) error
 	// LeaveTenant removes the transaction user's own membership.
 	LeaveTenant(ctx context.Context, ip netip.Prefix) error
+
+	// TenantByID returns the transaction's tenant.
+	TenantByID(ctx context.Context, id string) (t Tenant, found bool, err error)
+	// ShareLockTenant takes FOR KEY SHARE on the tenant row: a concurrent change of roles
+	// (which locks it FOR UPDATE) waits for this transaction, or this one for it, so an
+	// invitation is never written on a role that is changing (migration 00006).
+	ShareLockTenant(ctx context.Context, tenantID string) error
+	// EmailIsMember reports whether a member of the tenant has email.
+	EmailIsMember(ctx context.Context, tenantID string, email pii.Email) (bool, error)
+	// PendingInvitationByEmail returns the tenant's not accepted, not revoked invitation
+	// to email, expired or not.
+	PendingInvitationByEmail(ctx context.Context, tenantID string, email pii.Email) (inv Invitation, found bool, err error)
+	// CreateInvitation inserts an invitation; a pending one for the same email answers
+	// domain.ErrInvitationPending.
+	CreateInvitation(ctx context.Context, inv NewInvitation) (Invitation, error)
+	// InvitationByID returns and locks one of the tenant's invitations.
+	InvitationByID(ctx context.Context, tenantID, id string) (inv Invitation, found bool, err error)
+	// RotateInvitation gives an invitation a new token and expiry.
+	RotateInvitation(ctx context.Context, id string, tokenHash []byte, expiresAt time.Time) error
+	// RevokeInvitation revokes an invitation.
+	RevokeInvitation(ctx context.Context, id string) error
+	// ListInvitations returns up to limit pending (not accepted, not revoked) invitations
+	// after the invitation after ("" for the first page), oldest first.
+	ListInvitations(ctx context.Context, tenantID, after string, limit int) ([]Invitation, error)
+	// AcceptInvitation accepts, as the transaction's user, the invitation of tokenHash;
+	// the database revalidates everything (design 5.6.5).
+	AcceptInvitation(ctx context.Context, tokenHash []byte, ip netip.Prefix) (AcceptedInvitation, error)
+}
+
+// InvitationSender delivers an invitation's link to the invitee (design, 5.6.6). It is
+// called after the transaction commits; if it fails the invitation stays, and resending
+// it is the remedy. The link carries the token: it never reaches a log, a response or
+// the audit trail, except in the development adapter, whose whole job is to log it.
+type InvitationSender interface {
+	Send(ctx context.Context, email pii.Email, link pii.Secret, tenantName, role string) error
+}
+
+// NewInvitation is an invitation to create. Only the token's hash is stored.
+type NewInvitation struct {
+	TenantID  string
+	Email     pii.Email
+	Role      string
+	TokenHash []byte
+	InvitedBy string
+	ExpiresAt time.Time
+}
+
+// Invitation is an invitation as members with members:invite see it.
+type Invitation struct {
+	ID         string
+	TenantID   string
+	Email      pii.Email
+	Role       string
+	InvitedBy  string // "" once the inviter's user is deleted
+	ExpiresAt  time.Time
+	CreatedAt  time.Time
+	AcceptedAt time.Time // zero: not accepted
+	RevokedAt  time.Time // zero: not revoked
+}
+
+// AcceptedInvitation is the membership an accepted invitation created.
+type AcceptedInvitation struct {
+	MembershipID string
+	TenantID     string
+	Role         string
 }
 
 // Member is a member of a tenant, as other members see them.
@@ -297,6 +362,12 @@ const (
 	// mfa.factor_removed is recorded by a database trigger, whoever removes the factor.
 
 	AuditTenantUpdated = "tenant.updated"
+
+	AuditInvitationCreated = "invitation.created"
+	AuditInvitationResent  = "invitation.resent"
+	AuditInvitationRevoked = "invitation.revoked"
+	// invitation.accepted and membership.created are recorded by accept_invitation, and
+	// the automatic revocations by the member functions.
 	// tenant.created, membership.created, membership.role_changed, membership.removed
 	// and membership.left are recorded by the database functions that make the change.
 )

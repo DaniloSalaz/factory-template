@@ -180,14 +180,15 @@ func newEnv(t *testing.T, opts options) *env {
 
 	m, err := identity.New(identity.Deps{
 		DB: db.New(pool), Logger: logger,
-		Web:            config.Web{FrontendOrigin: frontOrigin, AllowedOrigins: []string{frontOrigin}},
-		Auth:           config.Auth{SessionIdleTTL: idleTTL, SessionAbsoluteTTL: absoluteTTL},
-		WorkOS:         config.WorkOS{ClientID: "client_test", APIKey: pii.Secret(apiKey)},
-		RateLimiter:    ratelimit.NewMemory(opts.rateLimit, time.Minute, nil),
-		MFARateLimiter: ratelimit.NewMemory(5, 15*time.Minute, clk.Now),
-		Catalog:        opts.catalog,
-		Tenancy:        config.Tenancy{MaxTenantsPerUser: opts.maxTenants},
-		Provider:       idp, Now: clk.Now,
+		Web:               config.Web{FrontendOrigin: frontOrigin, AllowedOrigins: []string{frontOrigin}},
+		Auth:              config.Auth{SessionIdleTTL: idleTTL, SessionAbsoluteTTL: absoluteTTL},
+		WorkOS:            config.WorkOS{ClientID: "client_test", APIKey: pii.Secret(apiKey)},
+		RateLimiter:       ratelimit.NewMemory(opts.rateLimit, time.Minute, nil),
+		MFARateLimiter:    ratelimit.NewMemory(5, 15*time.Minute, clk.Now),
+		Catalog:           opts.catalog,
+		Tenancy:           config.Tenancy{MaxTenantsPerUser: opts.maxTenants},
+		TenantRateLimiter: ratelimit.NewMemory(1000, time.Hour, nil),
+		Provider:          idp, Now: clk.Now,
 	})
 	if err != nil {
 		t.Fatalf("identity.New: %v", err)
@@ -1027,6 +1028,7 @@ func TestNew_StartsWithAnyCatalog(t *testing.T) {
 				WorkOS:      config.WorkOS{APIKey: pii.Secret(apiKey)},
 				RateLimiter: ratelimit.NewMemory(1, time.Minute, nil), MFARateLimiter: ratelimit.NewMemory(1, time.Minute, nil),
 				Catalog: testCatalog(t, ownerMFA), Provider: fakeidp.New(), Tenancy: config.Tenancy{MaxTenantsPerUser: 1},
+				TenantRateLimiter: ratelimit.NewMemory(1, time.Minute, nil),
 			})
 			if err != nil {
 				t.Fatalf("New = %v", err)
