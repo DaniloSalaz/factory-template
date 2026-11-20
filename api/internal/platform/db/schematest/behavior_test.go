@@ -177,40 +177,55 @@ func TestRLS_FailsClosedWithoutTenant(t *testing.T) {
 	t.Parallel()
 
 	s := seedTwoTenants(t)
-	// 42704: the variable does not exist in a new session. 22P02: in a reused session it
-	// is back to '' after the transaction that set it, and the uuid cast fails.
+	// Typically 42704 in a new session (the variable does not exist) and 22P02 in a reused
+	// one (it is back to '' and the uuid cast fails). Which of the two is not the
+	// contract; failing without returning a single row is.
 	failClosed := []string{"42704", "22P02"}
+
+	// selectAll reads every row rather than a count, so rows streamed before a late
+	// error are caught too.
+	selectAll := func(t *testing.T, conn *pgx.Conn, vars []setting, table string) (int, error) {
+		t.Helper()
+		var n int
+		err := inTx(t, conn, vars, func(tx pgx.Tx) error {
+			rows, err := tx.Query(t.Context(), `SELECT tenant_id FROM `+table)
+			if err != nil {
+				return err
+			}
+			defer rows.Close()
+			for rows.Next() {
+				n++
+			}
+			return rows.Err()
+		})
+		return n, err
+	}
+	wantFailClosed := func(t *testing.T, n int, err error) {
+		t.Helper()
+		if !slices.Contains(failClosed, sqlState(err)) {
+			t.Errorf("got error %v (SQLSTATE %q), want one of %v", err, sqlState(err), failClosed)
+		}
+		if n != 0 {
+			t.Errorf("returned %d rows before failing, want 0", n)
+		}
+	}
 
 	for _, table := range rlsTables {
 		t.Run(table+"/new connection", func(t *testing.T) {
 			t.Parallel()
 
-			conn := connect(t, testDB.RuntimeURL)
-			err := inTx(t, conn, nil, func(tx pgx.Tx) error {
-				_, err := tx.Exec(t.Context(), `SELECT count(*) FROM `+table)
-				return err
-			})
-			if !slices.Contains(failClosed, sqlState(err)) {
-				t.Fatalf("SELECT without app.tenant_id: got %v, want one of %v", err, failClosed)
-			}
+			n, err := selectAll(t, connect(t, testDB.RuntimeURL), nil, table)
+			wantFailClosed(t, n, err)
 		})
 		t.Run(table+"/reused connection", func(t *testing.T) {
 			t.Parallel()
 
 			conn := connect(t, testDB.RuntimeURL)
-			if err := inTx(t, conn, tenantVars(s.a, s.ownerA.id, "tenant"), func(tx pgx.Tx) error {
-				_, err := tx.Exec(t.Context(), `SELECT count(*) FROM `+table)
-				return err
-			}); err != nil {
-				t.Fatalf("SELECT with app.tenant_id: %v", err)
+			if n, err := selectAll(t, conn, tenantVars(s.a, s.ownerA.id, "tenant"), table); err != nil || n == 0 {
+				t.Fatalf("SELECT with app.tenant_id: %d rows, %v; want rows and no error", n, err)
 			}
-			err := inTx(t, conn, nil, func(tx pgx.Tx) error {
-				_, err := tx.Exec(t.Context(), `SELECT count(*) FROM `+table)
-				return err
-			})
-			if !slices.Contains(failClosed, sqlState(err)) {
-				t.Fatalf("SELECT after a transaction that set app.tenant_id: got %v, want one of %v", err, failClosed)
-			}
+			n, err := selectAll(t, conn, nil, table)
+			wantFailClosed(t, n, err)
 		})
 	}
 }
