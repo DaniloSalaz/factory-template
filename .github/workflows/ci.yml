@@ -1,0 +1,165 @@
+# CI runs the same mise tasks as `mise run ci` locally, with the tool versions pinned in
+# mise.toml. See docs/runbooks/ci.md.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  # Superseded PR runs are cancelled; every push to main is checked to the end.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  MISE_VERSION: 2026.11.10
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: go golangci-lint actionlint shellcheck
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.cache/golangci-lint
+          key: lint-${{ runner.os }}-${{ hashFiles('api/go.sum', 'api/.golangci.yml') }}
+          restore-keys: lint-${{ runner.os }}-
+      - run: mise run lint:go
+      - run: mise run lint:actions
+      - run: mise run arch
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: go
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('api/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+      # Integration tests start Postgres with Testcontainers on the runner's Docker.
+      - run: mise run test
+
+  generate:
+    name: generate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: go node sqlc oapi-codegen
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.npm
+          key: generate-${{ runner.os }}-${{ hashFiles('api/go.sum', 'web/package-lock.json') }}
+          restore-keys: generate-${{ runner.os }}-
+      - run: mise run generate:check
+
+  security:
+    name: security
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # gitleaks scans the whole history
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: go go:golang.org/x/vuln/cmd/govulncheck gitleaks trivy
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/go/pkg/mod
+          key: go-mod-${{ runner.os }}-${{ hashFiles('api/go.sum') }}
+          restore-keys: go-mod-${{ runner.os }}-
+      - run: mise run security:govulncheck
+      - run: mise run security:gitleaks
+      - run: mise run security:trivy
+
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: node
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
+      # npm ci, Biome, tsc (noEmit is set in tsconfig) and the production build.
+      # There are no web tests yet; add `npm test` to web:check when there are.
+      - run: mise run web:check
+
+  docker:
+    name: docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: trivy
+      # Builds the image without publishing it, then scans it.
+      - run: mise run docker:scan
+
+  # The only required status check on main: new jobs only need adding to `needs`.
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [lint, test, generate, security, web, docker]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every job to succeed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: $RESULTS"
+          for result in $RESULTS; do
+            if [ "$result" != "success" ]; then
+              echo "::error::A required job finished with '$result'."
+              exit 1
+            fi
+          done
