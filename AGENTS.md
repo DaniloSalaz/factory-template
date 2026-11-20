@@ -52,6 +52,7 @@ Ejemplo vivo: `api/internal/modules/health`.
 - Los tipos de `pii` se serializan enmascarados: no van en argumentos de trabajos de cola, columnas `jsonb` ni respuestas de la API. En esas fronteras usa `Reveal()`.
 - Un `*apperr.Error` no se modifica después de crearlo.
 - No uses `WithGroup` en el logger base (mete dentro del grupo los atributos del contexto); agrupa con `slog.Group` en cada registro.
+- Nunca uses un nombre sensible (email, token, password…) como nombre de grupo de slog: slog no enmascara los grupos por su nombre.
 - Cada cambio va con su test (unitario con fakes de puertos; integración con Testcontainers).
 - Comentarios solo para explicar el porqué, no el qué.
 - Antes de dar algo por terminado: `mise run generate && mise run lint && mise run test` sin errores ni diff en generado.
