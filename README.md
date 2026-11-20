@@ -12,9 +12,14 @@ PostgreSQL 18 y frontend React + TypeScript + Vite. Las convenciones están en [
 mise install
 mise run up        # Postgres 18; en un volumen nuevo crea roles y extensiones
 mise run migrate   # migraciones goose, como app_owner
-mise run dev       # API en http://localhost:8080, como app_runtime
+mise run dev       # API en http://localhost:8080, como app_runtime (descifra secrets.env)
 curl localhost:8080/readyz
+cd web && npm run dev   # front en http://localhost:5173, con proxy de /auth y /api a la API
 ```
+
+`mise run dev` necesita tu clave age para descifrar `secrets.env` (`SOPS_AGE_KEY_FILE`,
+o la ruta por defecto de sops). El login con WorkOS se configura y se prueba como
+explica [docs/runbooks/auth.md](docs/runbooks/auth.md).
 
 La API conecta como `app_runtime`, sujeto a row-level security; las migraciones, como
 `app_owner`. `MIGRATIONS_DATABASE_URL` equivale a acceso total a los datos: nunca se la
@@ -30,8 +35,9 @@ des a la API. Si tu volumen de Postgres es anterior a los roles, recréalo una v
 
 ## Configuración
 Los valores de desarrollo están en `[env]` de `mise.toml`. Para cambiarlos, copia
-`.env.example` a `.env`. Los secretos de entornos reales irán cifrados con SOPS + age en
-`config/` (pon tu clave pública en `.sops.yaml`).
+`.env.example` a `.env`. Los secretos (`WORKOS_API_KEY`) van cifrados con SOPS + age en
+`secrets.env` (`sops edit secrets.env`; la clave pública está en `.sops.yaml`). mise no
+descifra ficheros dotenv, así que `mise run dev` usa `sops exec-env`.
 
 ## Decisiones
 - [ADR 0001 — Stack y arquitectura](docs/adr/0001-stack-y-arquitectura.md)

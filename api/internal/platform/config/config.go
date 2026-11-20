@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -52,10 +53,13 @@ func (f LogFormat) Valid() bool { return f == LogFormatJSON || f == LogFormatTex
 
 // Config is the typed process configuration.
 type Config struct {
-	Env  Environment `env:"APP_ENV"`
-	HTTP HTTP
-	DB   DB
-	Log  Log
+	Env    Environment `env:"APP_ENV"`
+	HTTP   HTTP
+	DB     DB
+	Log    Log
+	Web    Web
+	Auth   Auth
+	WorkOS WorkOS
 }
 
 // HTTP configures the HTTP server.
@@ -84,6 +88,39 @@ type Log struct {
 	Format LogFormat  `env:"LOG_FORMAT" envDefault:"json"`
 }
 
+// Web describes the browser side: where the front end lives and who may call the API.
+type Web struct {
+	// FrontendOrigin is the origin return_to must resolve to after login (design, 5.1.1).
+	FrontendOrigin string `env:"FRONTEND_ORIGIN"`
+	// AllowedOrigins are the only origins accepted by CORS and by the CSRF Origin check.
+	AllowedOrigins []string `env:"ALLOWED_ORIGINS" envSeparator:","`
+	// TrustedClientIPHeader is the header that carries the client IP (CF-Connecting-IP
+	// behind Cloudflare Tunnel). Empty means RemoteAddr. X-Forwarded-For is never trusted.
+	TrustedClientIPHeader string `env:"TRUSTED_CLIENT_IP_HEADER"`
+}
+
+// Auth configures sessions (design, section 6).
+type Auth struct {
+	SessionIdleTTL     time.Duration `env:"SESSION_IDLE_TTL"     envDefault:"168h"`
+	SessionAbsoluteTTL time.Duration `env:"SESSION_ABSOLUTE_TTL" envDefault:"720h"`
+}
+
+// WorkOS configures the WorkOS AuthKit identity provider.
+type WorkOS struct {
+	ClientID    string     `env:"WORKOS_CLIENT_ID"`
+	APIKey      pii.Secret `env:"WORKOS_API_KEY"`
+	RedirectURI string     `env:"WORKOS_REDIRECT_URI"`
+	// MFARequired states that MFA is set to "Required" in this environment's WorkOS
+	// dashboard. WorkOS reports no MFA claim, so this is the only evidence the app has
+	// that a login included MFA (design, 5.2 and 13); docs/runbooks/auth.md says how to
+	// check that it matches the dashboard.
+	MFARequired bool `env:"WORKOS_MFA_REQUIRED" envDefault:"false"`
+}
+
+// DefaultProductionClientIPHeader is the client IP header in production, where the API
+// is reachable only through Cloudflare Tunnel (design, section 3).
+const DefaultProductionClientIPHeader = "CF-Connecting-IP"
+
 // VarError reports a problem with one environment variable. It never carries the value.
 type VarError struct {
 	Var    string
@@ -109,6 +146,7 @@ func load(environ map[string]string) (Config, error) {
 			reported[e.Var] = true
 		}
 	}
+	cfg.applyDerivedDefaults()
 	// A variable that failed to parse also fails validation as a zero value; report it once.
 	for _, e := range cfg.validate() {
 		if !reported[e.Var] {
@@ -120,6 +158,22 @@ func load(environ map[string]string) (Config, error) {
 		return Config{}, fmt.Errorf("invalid configuration: %w", errors.Join(errs...))
 	}
 	return cfg, nil
+}
+
+// applyDerivedDefaults fills defaults that depend on other variables, which envDefault
+// cannot express, and normalises origins so they compare exactly.
+func (c *Config) applyDerivedDefaults() {
+	if c.Web.TrustedClientIPHeader == "" && c.Env == EnvProduction {
+		c.Web.TrustedClientIPHeader = DefaultProductionClientIPHeader
+	}
+	if o, ok := normalizeOrigin(c.Web.FrontendOrigin); ok {
+		c.Web.FrontendOrigin = o
+	}
+	for i, raw := range c.Web.AllowedOrigins {
+		if o, ok := normalizeOrigin(strings.TrimSpace(raw)); ok {
+			c.Web.AllowedOrigins[i] = o
+		}
+	}
 }
 
 // Validate checks every field and returns all problems joined, or nil.
@@ -177,7 +231,109 @@ func (c Config) validate() []*VarError {
 	if !c.Log.Format.Valid() {
 		add("LOG_FORMAT", "must be one of json, text")
 	}
+
+	c.validateWeb(add)
+	c.validateAuth(add)
+	c.validateWorkOS(add)
 	return errs
+}
+
+func (c Config) validateWeb(add func(v, reason string)) {
+	frontendOK := false
+	switch {
+	case c.Web.FrontendOrigin == "":
+		add("FRONTEND_ORIGIN", "is required")
+	case !isOrigin(c.Web.FrontendOrigin):
+		add("FRONTEND_ORIGIN", "must be an origin such as https://app.example.com, without path")
+	default:
+		frontendOK = true
+	}
+
+	switch {
+	case len(c.Web.AllowedOrigins) == 0:
+		add("ALLOWED_ORIGINS", "is required")
+	case !all(c.Web.AllowedOrigins, isOrigin):
+		add("ALLOWED_ORIGINS", "must be a comma-separated list of origins, without wildcards or paths")
+	case frontendOK && !slices.Contains(c.Web.AllowedOrigins, c.Web.FrontendOrigin):
+		add("ALLOWED_ORIGINS", "must include FRONTEND_ORIGIN")
+	}
+
+	h := c.Web.TrustedClientIPHeader
+	switch {
+	case h != "" && !isHeaderName(h):
+		add("TRUSTED_CLIENT_IP_HEADER", "must be a header name")
+	case strings.EqualFold(h, "X-Forwarded-For"):
+		add("TRUSTED_CLIENT_IP_HEADER", "must not be X-Forwarded-For, which the client controls")
+	}
+}
+
+func (c Config) validateAuth(add func(v, reason string)) {
+	if c.Auth.SessionIdleTTL <= 0 {
+		add("SESSION_IDLE_TTL", "must be greater than zero")
+	}
+	switch {
+	case c.Auth.SessionAbsoluteTTL <= 0:
+		add("SESSION_ABSOLUTE_TTL", "must be greater than zero")
+	case c.Auth.SessionAbsoluteTTL < c.Auth.SessionIdleTTL:
+		add("SESSION_ABSOLUTE_TTL", "must not be shorter than SESSION_IDLE_TTL")
+	}
+}
+
+func (c Config) validateWorkOS(add func(v, reason string)) {
+	switch {
+	case c.WorkOS.ClientID == "":
+		add("WORKOS_CLIENT_ID", "is required")
+	case !strings.HasPrefix(c.WorkOS.ClientID, "client_"):
+		add("WORKOS_CLIENT_ID", "must start with client_")
+	}
+	if c.WorkOS.APIKey == "" {
+		add("WORKOS_API_KEY", "is required")
+	}
+
+	switch u, err := url.Parse(c.WorkOS.RedirectURI); {
+	case c.WorkOS.RedirectURI == "":
+		add("WORKOS_REDIRECT_URI", "is required")
+	case err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http"):
+		add("WORKOS_REDIRECT_URI", "must be an absolute http(s) URL")
+	case u.Scheme != "https" && (c.Env == EnvStaging || c.Env == EnvProduction):
+		add("WORKOS_REDIRECT_URI", "must use https outside development")
+	}
+}
+
+// normalizeOrigin returns scheme://host[:port] in lower case, or false when raw is not
+// a bare http(s) origin.
+func normalizeOrigin(raw string) (string, bool) {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+		u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" ||
+		strings.Contains(u.Host, "*") {
+		return "", false
+	}
+	return strings.ToLower(u.Scheme + "://" + u.Host), true
+}
+
+func isOrigin(s string) bool {
+	o, ok := normalizeOrigin(s)
+	return ok && o == s
+}
+
+func isHeaderName(s string) bool {
+	for _, c := range []byte(s) {
+		ok := c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-'
+		if !ok {
+			return false
+		}
+	}
+	return s != ""
+}
+
+func all[T any](xs []T, pred func(T) bool) bool {
+	for _, x := range xs {
+		if !pred(x) {
+			return false
+		}
+	}
+	return true
 }
 
 // sanitizeParseError turns caarlos0/env errors into VarErrors using only their typed
@@ -253,9 +409,13 @@ func describeType(t reflect.Type) string {
 // String renders the configuration with secrets masked.
 func (c Config) String() string {
 	return fmt.Sprintf(
-		"Config{Env:%s HTTP:{Port:%d ReadHeaderTimeout:%s ReadTimeout:%s WriteTimeout:%s IdleTimeout:%s ShutdownTimeout:%s MaxHeaderBytes:%d MaxBodyBytes:%d} DB:{URL:%s} Log:{Level:%s Format:%s}}",
+		"Config{Env:%s HTTP:{Port:%d ReadHeaderTimeout:%s ReadTimeout:%s WriteTimeout:%s IdleTimeout:%s ShutdownTimeout:%s MaxHeaderBytes:%d MaxBodyBytes:%d} DB:{URL:%s} Log:{Level:%s Format:%s} "+
+			"Web:{FrontendOrigin:%s AllowedOrigins:%v TrustedClientIPHeader:%s} Auth:{SessionIdleTTL:%s SessionAbsoluteTTL:%s} "+
+			"WorkOS:{ClientID:%s APIKey:%s RedirectURI:%s MFARequired:%t}}",
 		c.Env, c.HTTP.Port, c.HTTP.ReadHeaderTimeout, c.HTTP.ReadTimeout, c.HTTP.WriteTimeout,
 		c.HTTP.IdleTimeout, c.HTTP.ShutdownTimeout, c.HTTP.MaxHeaderBytes, c.HTTP.MaxBodyBytes, c.DB.URL, c.Log.Level, c.Log.Format,
+		c.Web.FrontendOrigin, c.Web.AllowedOrigins, c.Web.TrustedClientIPHeader, c.Auth.SessionIdleTTL, c.Auth.SessionAbsoluteTTL,
+		c.WorkOS.ClientID, c.WorkOS.APIKey, c.WorkOS.RedirectURI, c.WorkOS.MFARequired,
 	)
 }
 
@@ -278,6 +438,21 @@ func (c Config) LogValue() slog.Value {
 		),
 		slog.Group("db", slog.String("url", c.DB.URL.String())),
 		slog.Group("log", slog.String("level", c.Log.Level.String()), slog.String("format", string(c.Log.Format))),
+		slog.Group("web",
+			slog.String("frontend_origin", c.Web.FrontendOrigin),
+			slog.Any("allowed_origins", c.Web.AllowedOrigins),
+			slog.String("trusted_client_ip_header", c.Web.TrustedClientIPHeader),
+		),
+		slog.Group("auth",
+			slog.Duration("session_idle_ttl", c.Auth.SessionIdleTTL),
+			slog.Duration("session_absolute_ttl", c.Auth.SessionAbsoluteTTL),
+		),
+		slog.Group("workos",
+			slog.String("client_id", c.WorkOS.ClientID),
+			slog.Any("api_key", c.WorkOS.APIKey),
+			slog.String("redirect_uri", c.WorkOS.RedirectURI),
+			slog.Bool("mfa_required", c.WorkOS.MFARequired),
+		),
 	)
 }
 
