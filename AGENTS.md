@@ -49,6 +49,9 @@ Ejemplo vivo: `api/internal/modules/health`.
 - Errores de negocio con `apperr` (`NotFound`, `Validation`, `Wrap`…). Los handlers nunca escriben errores a mano: usan `httpx.WriteProblem` (RFC 9457).
 - `os.Getenv` (y cualquier lectura del entorno) solo en `platform/config`; el resto recibe `config.Config`.
 - Datos personales o secretos en logs, siempre con los tipos de `pii` (`Email`, `Phone`, `Secret`); el request ID se lee y escribe solo con `logx`.
+- Los tipos de `pii` se serializan enmascarados: no van en argumentos de trabajos de cola, columnas `jsonb` ni respuestas de la API. En esas fronteras usa `Reveal()`.
+- Un `*apperr.Error` no se modifica después de crearlo.
+- No uses `WithGroup` en el logger base (mete dentro del grupo los atributos del contexto); agrupa con `slog.Group` en cada registro.
 - Cada cambio va con su test (unitario con fakes de puertos; integración con Testcontainers).
 - Comentarios solo para explicar el porqué, no el qué.
 - Antes de dar algo por terminado: `mise run generate && mise run lint && mise run test` sin errores ni diff en generado.
