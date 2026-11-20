@@ -39,11 +39,11 @@ type DB struct {
 	AdminURL   string // app_admin: administration commands
 }
 
-// Start runs a database for the duration of t.
-func Start(t testing.TB) *DB {
+// Start runs a database for the duration of t. See New for extraMigrations.
+func Start(t testing.TB, extraMigrations ...string) *DB {
 	t.Helper()
 
-	db, err := New(t.Context())
+	db, err := New(t.Context(), extraMigrations...)
 	if db != nil {
 		testcontainers.CleanupContainer(t, db.Container)
 	}
@@ -55,7 +55,11 @@ func Start(t testing.TB) *DB {
 
 // New runs a database until the returned container is terminated. TestMain uses it to
 // share one database between the tests of a package.
-func New(ctx context.Context) (*DB, error) {
+//
+// extraMigrations are directories of test-only migrations (example tables, say), applied
+// as app_owner after migrations/ in the order given. Each one keeps its own goose
+// version table, so its numbering is independent of the real migrations.
+func New(ctx context.Context, extraMigrations ...string) (*DB, error) {
 	root, err := repoRoot()
 	if err != nil {
 		return nil, err
@@ -101,17 +105,23 @@ func New(ctx context.Context) (*DB, error) {
 	if err := migrate(ctx, db.OwnerURL, filepath.Join(root, "migrations")); err != nil {
 		return db, err
 	}
+	for i, dir := range extraMigrations {
+		table := fmt.Sprintf("goose_testdata_%d_version", i+1)
+		if err := migrate(ctx, db.OwnerURL, dir, goose.WithTableName(table)); err != nil {
+			return db, fmt.Errorf("test migrations %s: %w", dir, err)
+		}
+	}
 	return db, nil
 }
 
-func migrate(ctx context.Context, ownerURL, dir string) error {
+func migrate(ctx context.Context, ownerURL, dir string, opts ...goose.ProviderOption) error {
 	sqlDB, err := sql.Open("pgx", ownerURL)
 	if err != nil {
 		return fmt.Errorf("open migrations connection: %w", err)
 	}
 	defer func() { _ = sqlDB.Close() }()
 
-	provider, err := goose.NewProvider(goose.DialectPostgres, sqlDB, os.DirFS(dir))
+	provider, err := goose.NewProvider(goose.DialectPostgres, sqlDB, os.DirFS(dir), opts...)
 	if err != nil {
 		return fmt.Errorf("goose provider: %w", err)
 	}
