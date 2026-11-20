@@ -45,7 +45,7 @@ func run() error {
 	mux := http.NewServeMux()
 	health.New(health.Deps{DB: pool, Logger: logger}).Register(mux)
 
-	if err := httpx.Run(ctx, logger, httpx.ServerConfig{Addr: cfg.HTTP.Addr(), ShutdownTimeout: cfg.HTTP.ShutdownTimeout}, mux); err != nil {
+	if err := httpx.NewServer(cfg.HTTP, mux, logger).Run(ctx); err != nil {
 		return fmt.Errorf("run server: %w", err)
 	}
 	return nil

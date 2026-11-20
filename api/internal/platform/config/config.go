@@ -66,6 +66,7 @@ type HTTP struct {
 	WriteTimeout      time.Duration `env:"HTTP_WRITE_TIMEOUT"       envDefault:"15s"`
 	IdleTimeout       time.Duration `env:"HTTP_IDLE_TIMEOUT"        envDefault:"60s"`
 	ShutdownTimeout   time.Duration `env:"HTTP_SHUTDOWN_TIMEOUT"    envDefault:"10s"`
+	MaxHeaderBytes    int           `env:"HTTP_MAX_HEADER_BYTES"    envDefault:"1048576"`
 }
 
 // Addr returns the listen address for the configured port on all interfaces.
@@ -143,6 +144,9 @@ func (c Config) validate() []*VarError {
 
 	if c.HTTP.Port < 1 || c.HTTP.Port > 65535 {
 		add("HTTP_PORT", "must be between 1 and 65535")
+	}
+	if c.HTTP.MaxHeaderBytes <= 0 {
+		add("HTTP_MAX_HEADER_BYTES", "must be greater than zero")
 	}
 	for _, d := range []struct {
 		name  string
@@ -245,9 +249,9 @@ func describeType(t reflect.Type) string {
 // String renders the configuration with secrets masked.
 func (c Config) String() string {
 	return fmt.Sprintf(
-		"Config{Env:%s HTTP:{Port:%d ReadHeaderTimeout:%s ReadTimeout:%s WriteTimeout:%s IdleTimeout:%s ShutdownTimeout:%s} DB:{URL:%s} Log:{Level:%s Format:%s}}",
+		"Config{Env:%s HTTP:{Port:%d ReadHeaderTimeout:%s ReadTimeout:%s WriteTimeout:%s IdleTimeout:%s ShutdownTimeout:%s MaxHeaderBytes:%d} DB:{URL:%s} Log:{Level:%s Format:%s}}",
 		c.Env, c.HTTP.Port, c.HTTP.ReadHeaderTimeout, c.HTTP.ReadTimeout, c.HTTP.WriteTimeout,
-		c.HTTP.IdleTimeout, c.HTTP.ShutdownTimeout, c.DB.URL, c.Log.Level, c.Log.Format,
+		c.HTTP.IdleTimeout, c.HTTP.ShutdownTimeout, c.HTTP.MaxHeaderBytes, c.DB.URL, c.Log.Level, c.Log.Format,
 	)
 }
 
@@ -265,6 +269,7 @@ func (c Config) LogValue() slog.Value {
 			slog.Duration("write_timeout", c.HTTP.WriteTimeout),
 			slog.Duration("idle_timeout", c.HTTP.IdleTimeout),
 			slog.Duration("shutdown_timeout", c.HTTP.ShutdownTimeout),
+			slog.Int("max_header_bytes", c.HTTP.MaxHeaderBytes),
 		),
 		slog.Group("db", slog.String("url", c.DB.URL.String())),
 		slog.Group("log", slog.String("level", c.Log.Level.String()), slog.String("format", string(c.Log.Format))),

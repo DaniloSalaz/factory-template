@@ -50,7 +50,8 @@ func TestLoad_Valid(t *testing.T) {
 				return c.Env == EnvDevelopment && c.HTTP.Port == 8080 && c.HTTP.Addr() == ":8080" &&
 					c.HTTP.ReadHeaderTimeout == 5*time.Second && c.HTTP.ReadTimeout == 15*time.Second &&
 					c.HTTP.WriteTimeout == 15*time.Second && c.HTTP.IdleTimeout == time.Minute &&
-					c.HTTP.ShutdownTimeout == 10*time.Second && c.Log.Level == slog.LevelInfo &&
+					c.HTTP.ShutdownTimeout == 10*time.Second && c.HTTP.MaxHeaderBytes == 1<<20 &&
+					c.Log.Level == slog.LevelInfo &&
 					c.Log.Format == LogFormatJSON
 			},
 		},
@@ -119,9 +120,10 @@ func TestLoad_Invalid(t *testing.T) {
 			name: "out of range and unsupported values",
 			environ: with(map[string]string{
 				"APP_ENV": "qa-env", "HTTP_PORT": "70000", "HTTP_IDLE_TIMEOUT": "0s", "LOG_FORMAT": "xmlish",
-				"DATABASE_URL": "mysql://root:" + testDBPassword + "@db/app",
+				"HTTP_MAX_HEADER_BYTES": "-1",
+				"DATABASE_URL":          "mysql://root:" + testDBPassword + "@db/app",
 			}),
-			wantVars: []string{"APP_ENV must be one of", "HTTP_PORT must be between", "HTTP_IDLE_TIMEOUT must be greater", "LOG_FORMAT must be one of", "DATABASE_URL must be a postgres"},
+			wantVars: []string{"APP_ENV must be one of", "HTTP_PORT must be between", "HTTP_IDLE_TIMEOUT must be greater", "HTTP_MAX_HEADER_BYTES must be greater", "LOG_FORMAT must be one of", "DATABASE_URL must be a postgres"},
 			secrets:  []string{"qa-env", "70000", "xmlish", testDBPassword},
 		},
 	}

@@ -5,51 +5,75 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
+
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/config"
 )
 
-// ServerConfig configures Run.
-type ServerConfig struct {
-	Addr            string
-	ShutdownTimeout time.Duration
+// Server is an HTTP server with configured timeouts and graceful shutdown.
+type Server struct {
+	srv             *http.Server
+	logger          *slog.Logger
+	shutdownTimeout time.Duration
 }
 
-// Run serves handler until ctx is cancelled, then drains in-flight requests within ShutdownTimeout.
-func Run(ctx context.Context, logger *slog.Logger, cfg ServerConfig, handler http.Handler) error {
-	srv := &http.Server{
-		Addr:              cfg.Addr,
-		Handler:           handler,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      15 * time.Second,
-		IdleTimeout:       60 * time.Second,
-		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
+// NewServer builds a Server for h. It does not start listening; call Run.
+func NewServer(cfg config.HTTP, h http.Handler, logger *slog.Logger) *Server {
+	return &Server{
+		srv: &http.Server{
+			Addr:              cfg.Addr(),
+			Handler:           h,
+			ReadHeaderTimeout: cfg.ReadHeaderTimeout,
+			ReadTimeout:       cfg.ReadTimeout,
+			WriteTimeout:      cfg.WriteTimeout,
+			IdleTimeout:       cfg.IdleTimeout,
+			MaxHeaderBytes:    cfg.MaxHeaderBytes,
+			ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
+		},
+		logger:          logger,
+		shutdownTimeout: cfg.ShutdownTimeout,
 	}
+}
 
+// Run listens and serves until ctx is cancelled, then stops accepting connections and
+// waits for in-flight requests up to the shutdown timeout. It returns an error if the
+// server cannot start, fails while serving, or does not drain in time.
+func (s *Server) Run(ctx context.Context) error {
+	var lc net.ListenConfig
+	ln, err := lc.Listen(ctx, "tcp", s.srv.Addr)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", s.srv.Addr, err)
+	}
+	return s.serve(ctx, ln)
+}
+
+func (s *Server) serve(ctx context.Context, ln net.Listener) error {
 	errCh := make(chan error, 1)
 	go func() {
-		logger.InfoContext(ctx, "http server listening", slog.String("addr", cfg.Addr))
-		errCh <- srv.ListenAndServe()
+		s.logger.InfoContext(ctx, "http server listening", slog.String("addr", ln.Addr().String()))
+		errCh <- s.srv.Serve(ln)
 	}()
 
 	select {
 	case err := <-errCh:
-		return fmt.Errorf("http server: %w", err)
+		return fmt.Errorf("serve http: %w", err)
 	case <-ctx.Done():
 	}
 
-	logger.InfoContext(ctx, "shutting down http server", slog.Duration("timeout", cfg.ShutdownTimeout))
-	// ctx is already cancelled, so shutdown needs its own deadline detached from it.
-	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.ShutdownTimeout)
+	s.logger.InfoContext(ctx, "shutting down http server", slog.Duration("timeout", s.shutdownTimeout))
+	// ctx is already cancelled, so the drain deadline must not inherit its cancellation.
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.shutdownTimeout)
 	defer cancel()
 
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("shutdown http server: %w", err)
+	if err := s.srv.Shutdown(shutdownCtx); err != nil {
+		closeErr := s.srv.Close()
+		return fmt.Errorf("shutdown http server: %w", errors.Join(err, closeErr))
 	}
-	if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("http server: %w", err)
+	if err := <-errCh; !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("serve http: %w", err)
 	}
-	logger.InfoContext(ctx, "http server stopped")
+	s.logger.InfoContext(ctx, "http server stopped")
 	return nil
 }
