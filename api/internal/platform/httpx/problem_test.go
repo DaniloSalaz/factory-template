@@ -74,6 +74,16 @@ func TestWriteProblem(t *testing.T) {
 			leak:    "connection refused",
 		},
 		{
+			name: "body too large",
+			err:  fmt.Errorf("read body: %w", &http.MaxBytesError{Limit: 1024}),
+			want: httpx.Problem{Type: "about:blank", Title: "Request Entity Too Large", Status: 413, Detail: "The request body exceeds the limit of 1024 bytes.", Code: "request_too_large"},
+		},
+		{
+			name: "body too large wins over the BadRequest that wraps it",
+			err:  apperr.Wrap(&http.MaxBytesError{Limit: 1024}, apperr.KindBadRequest, "invalid_request", "bad"),
+			want: httpx.Problem{Type: "about:blank", Title: "Request Entity Too Large", Status: 413, Detail: "The request body exceeds the limit of 1024 bytes.", Code: "request_too_large"},
+		},
+		{
 			name:    "plain error is a generic 500",
 			err:     errors.New("boom"),
 			want:    httpx.Problem{Type: "about:blank", Title: "Internal Server Error", Status: 500, Detail: "An unexpected error occurred.", Code: "internal"},

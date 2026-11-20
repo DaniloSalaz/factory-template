@@ -3,6 +3,8 @@ package httpx
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -74,6 +76,19 @@ func ResponseErrorHandler(logger *slog.Logger) func(http.ResponseWriter, *http.R
 }
 
 func problemFor(err error) Problem {
+	// Checked first: the generated server wraps body read errors in a BadRequest, which
+	// would otherwise hide the more precise 413.
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		return Problem{
+			Type:   "about:blank",
+			Title:  http.StatusText(http.StatusRequestEntityTooLarge),
+			Status: http.StatusRequestEntityTooLarge,
+			Detail: fmt.Sprintf("The request body exceeds the limit of %d bytes.", tooLarge.Limit),
+			Code:   "request_too_large",
+		}
+	}
+
 	e, ok := apperr.As(err)
 	status := http.StatusInternalServerError
 	if ok {
