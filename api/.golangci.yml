@@ -32,17 +32,16 @@ linters:
       rules:
         domain-is-pure:
           files: ["**/internal/modules/*/domain/**"]
+          # Strict: only the stdlib and the stdlib-only error vocabulary; deny still wins.
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/DaniloSalaz/factory-template/api/internal/platform/apperr
           deny:
             - pkg: net/http
               desc: domain must not depend on transport
             - pkg: database/sql
               desc: domain must not depend on persistence
-            - pkg: github.com/jackc
-              desc: domain must not depend on persistence
-            - pkg: github.com/DaniloSalaz/factory-template/api/gen
-              desc: domain must not depend on generated code
-            - pkg: github.com/DaniloSalaz/factory-template/api/internal/platform
-              desc: domain must not depend on platform
     sloglint:
       kv-only: false
       attr-only: true
