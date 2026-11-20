@@ -5,7 +5,9 @@
 //     rules of the design (sections 7.3 and 7.4) and proves each check catches a
 //     misbuilt object;
 //   - behavior_test.go runs SQL as app_runtime and checks what RLS and the SECURITY
-//     DEFINER functions actually allow.
+//     DEFINER functions actually allow;
+//   - privileges_test.go compares every privilege of app_runtime with
+//     testdata/runtime_privileges.golden.
 package schematest
 
 import (
