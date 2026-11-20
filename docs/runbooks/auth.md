@@ -12,7 +12,7 @@ Diseño: `docs/designs/auth-y-tenancy.md` (secciones 5.1, 5.2, 5.5, 6 y 13).
 | `WORKOS_MFA_REQUIRED` | `[env]` | `true` solo si el panel tiene la MFA en **Required** (ver abajo) |
 | `FRONTEND_ORIGIN` | `[env]` | Origen al que debe resolver `return_to` |
 | `ALLOWED_ORIGINS` | `[env]` | Lista cerrada para CORS y CSRF; incluye `FRONTEND_ORIGIN`; sin comodines |
-| `TRUSTED_CLIENT_IP_HEADER` | `[env]` | Vacía en desarrollo; `CF-Connecting-IP` por defecto en producción; nunca `X-Forwarded-For` |
+| `TRUSTED_CLIENT_IP_HEADER` | `[env]` | Vacía en desarrollo; `CF-Connecting-IP` por defecto en staging y producción; nunca `X-Forwarded-For` |
 | `SESSION_IDLE_TTL` / `SESSION_ABSOLUTE_TTL` | `[env]` | 168h y 720h por defecto |
 
 ### Secretos con SOPS

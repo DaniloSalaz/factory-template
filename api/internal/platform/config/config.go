@@ -94,8 +94,9 @@ type Web struct {
 	FrontendOrigin string `env:"FRONTEND_ORIGIN"`
 	// AllowedOrigins are the only origins accepted by CORS and by the CSRF Origin check.
 	AllowedOrigins []string `env:"ALLOWED_ORIGINS" envSeparator:","`
-	// TrustedClientIPHeader is the header that carries the client IP (CF-Connecting-IP
-	// behind Cloudflare Tunnel). Empty means RemoteAddr. X-Forwarded-For is never trusted.
+	// TrustedClientIPHeader is the header that carries the client IP: CF-Connecting-IP by
+	// default in staging and production, behind Cloudflare Tunnel. Empty (development)
+	// means RemoteAddr. X-Forwarded-For is never trusted.
 	TrustedClientIPHeader string `env:"TRUSTED_CLIENT_IP_HEADER"`
 }
 
@@ -117,9 +118,11 @@ type WorkOS struct {
 	MFARequired bool `env:"WORKOS_MFA_REQUIRED" envDefault:"false"`
 }
 
-// DefaultProductionClientIPHeader is the client IP header in production, where the API
-// is reachable only through Cloudflare Tunnel (design, section 3).
-const DefaultProductionClientIPHeader = "CF-Connecting-IP"
+// DefaultDeployedClientIPHeader is the client IP header in staging and production, where
+// the API is reachable only through Cloudflare Tunnel (design, section 3). Without it,
+// every request would carry the tunnel's address: one rate-limit quota for everyone and
+// the wrong ip_prefix in sessions and the audit log.
+const DefaultDeployedClientIPHeader = "CF-Connecting-IP"
 
 // VarError reports a problem with one environment variable. It never carries the value.
 type VarError struct {
@@ -163,8 +166,8 @@ func load(environ map[string]string) (Config, error) {
 // applyDerivedDefaults fills defaults that depend on other variables, which envDefault
 // cannot express, and normalises origins so they compare exactly.
 func (c *Config) applyDerivedDefaults() {
-	if c.Web.TrustedClientIPHeader == "" && c.Env == EnvProduction {
-		c.Web.TrustedClientIPHeader = DefaultProductionClientIPHeader
+	if c.Web.TrustedClientIPHeader == "" && (c.Env == EnvStaging || c.Env == EnvProduction) {
+		c.Web.TrustedClientIPHeader = DefaultDeployedClientIPHeader
 	}
 	if o, ok := normalizeOrigin(c.Web.FrontendOrigin); ok {
 		c.Web.FrontendOrigin = o

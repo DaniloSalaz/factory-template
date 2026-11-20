@@ -68,6 +68,13 @@ func TestLoad_Valid(t *testing.T) {
 			},
 		},
 		{
+			name: "staging trusts CF-Connecting-IP by default",
+			environ: with(map[string]string{
+				"APP_ENV": "staging", "WORKOS_REDIRECT_URI": "https://api.example.com/auth/callback",
+			}),
+			want: func(c Config) bool { return c.Web.TrustedClientIPHeader == "CF-Connecting-IP" },
+		},
+		{
 			name: "production trusts CF-Connecting-IP by default",
 			environ: with(map[string]string{
 				"APP_ENV": "production", "WORKOS_REDIRECT_URI": "https://api.example.com/auth/callback",

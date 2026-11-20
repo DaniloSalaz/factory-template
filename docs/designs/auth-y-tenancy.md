@@ -44,7 +44,7 @@ RLS protege contra **omisiones** del código. No protege contra una aplicación 
 - Las previsualizaciones van en **otro dominio registrable** (`x-preview.com`), con su propia API y base de datos.
 - `ALLOWED_ORIGINS` de producción: lista cerrada, sin comodines.
 - Elimina los registros DNS de `x.com` que apunten a servicios que ya no uses.
-- La API solo es accesible por Cloudflare Tunnel; la IP del cliente se toma de `CF-Connecting-IP` (`TRUSTED_CLIENT_IP_HEADER`), nunca de `X-Forwarded-For`.
+- La API solo es accesible por Cloudflare Tunnel, en staging y en producción; la IP del cliente se toma de `CF-Connecting-IP` (`TRUSTED_CLIENT_IP_HEADER`, que lo tiene por defecto en esos dos entornos), nunca de `X-Forwarded-For`.
 - Las extensiones de Postgres (`citext`, `pgcrypto`, `pg_trgm`) se instalan en un esquema propio, `extensions`.
 
 ## 4. Modelo de datos
