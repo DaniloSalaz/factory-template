@@ -30,7 +30,7 @@ RLS protege contra **omisiones** del código. No protege contra una aplicación 
 | Identidades externas | `user_identities`, sin vinculación automática por email | Vincular por email verificado: permite robar cuentas |
 | Sesión | BFF: cookie `HttpOnly` opaca, sesión en Postgres | Tokens en el navegador |
 | Elección del tenant | Cabecera `X-Tenant-ID` | Subdominio |
-| Aislamiento | RLS en todas las tablas con `tenant_id`, con alcance declarado y comprobado por test | Alcance opcional |
+| Aislamiento | RLS en todas las tablas con `tenant_id` y en `tenants` (por su `id`), con alcance declarado y comprobado por test | Alcance opcional |
 | Escritura de tenants y membresías | Solo con funciones `SECURITY DEFINER` (`create_tenant_with_owner`, `accept_invitation`); `app_runtime` no tiene `INSERT` en ninguna de las dos ni `DELETE` en `tenants`, y en `tenants` solo actualiza `name` | `INSERT` directo filtrado por RLS: un fallo del código podría crear un tenant sin owner o una membresía sin invitación |
 | Rol `owner` | Reservado por la plataforma; solo un owner concede owner | Tratarlo con la regla general de inclusión |
 | Invitaciones de quien pierde permisos | Se revocan al degradar, expulsar o deshabilitar a quien invitó | Revalidar a quien invitó al aceptar |
@@ -51,21 +51,21 @@ RLS protege contra **omisiones** del código. No protege contra una aplicación 
 
 Claves primarias UUIDv7; todas las tablas con `created_at`, y las mutables con `updated_at`.
 
-### 4.1 Tablas de identidad, sin `tenant_id`
+### 4.1 Tablas de identidad, sin RLS
 
-Sin RLS. Solo las consultas del módulo `identity` las tocan; un test de arquitectura lo comprueba sobre sqlc (no detecta consultas escritas a mano con pgx: eso queda para la revisión de código).
+Sin `tenant_id` ni RLS. Solo las consultas del módulo `identity` las tocan; un test de arquitectura lo comprueba sobre sqlc (no detecta consultas escritas a mano con pgx: eso queda para la revisión de código).
 
 - **users**: `id`, `email` (citext, único), `email_verified`, `display_name`, `last_login_at`, `disabled_at`. Un **usuario de sistema** reservado (UUID fijo `00000000-0000-7000-8000-000000000001`, sin identidades ni login) para los trabajos de sistema. Se crea deshabilitado, con `email = 'system@system.invalid'` (dominio reservado, RFC 2606) y `email_verified = false`: cualquier función que exija un usuario activo y verificado lo rechaza sin caso especial.
 - **user_identities**: `id`, `user_id`, `provider`, `subject`, `email_at_link`, `linked_at`. Único `(provider, subject)`.
-- **tenants**: `id`, `slug` (único), `name`, `status` (`active` | `suspended`).
 - **sessions**: `id`, `token_hash` (único), `user_id`, `auth_time`, `mfa_auth_time` (nullable), `last_seen_at`, `idle_expires_at`, `absolute_expires_at`, `ip_prefix`, `user_agent`, `revoked_at`.
 
-### 4.2 Tablas de plataforma con `tenant_id`
+### 4.2 Tablas de plataforma bajo RLS
 
-Todas con RLS, la política estándar y su alcance declarado:
+Todas con RLS, la política estándar y su alcance declarado. `tenants` no tiene `tenant_id`: su política compara su propio `id` con `app.tenant_id`, así que la aplicación solo lee y renombra el tenant actual. Los flujos sin tenant (middleware de tenant, `/me`, `POST /tenants`, aceptar invitación, trabajos de sistema) leen `tenants` a través de las funciones `SECURITY DEFINER` (sección 7.4).
 
 | Tabla | Alcance | Qué ve un usuario con alcance `own` |
 | --- | --- | --- |
+| **tenants**: `id`, `slug` (único), `name`, `status` (`active` \| `suspended`) | `tenant-shared`, con `tenant_isolation` sobre `id` | El tenant actual |
 | **memberships**: `id`, `tenant_id`, `user_id` (FK `ON DELETE RESTRICT`), `role`; único `(tenant_id, user_id)` | `own_scope`: `scope = 'tenant' OR user_id = app.user_id`; además `own_write` (sección 7.3) | Solo su propia membresía; puede borrarla (abandonar el tenant), pero no modificarla |
 | **invitations**: `id`, `tenant_id`, `email` (citext), `role`, `token_hash`, `invited_by` (nullable, FK `ON DELETE SET NULL`), `expires_at`, `accepted_at`, `revoked_at`; único parcial `(tenant_id, email) WHERE accepted_at IS NULL AND revoked_at IS NULL` | `own_scope`: `scope = 'tenant'` | Nada |
 | **audit_log**: `id`, `tenant_id` (nullable), `actor_user_id` (nullable, FK `ON DELETE SET NULL`), `action`, `target_type`, `target_id`, `metadata` (jsonb sin datos personales), `ip_prefix`, `created_at` | `own_scope`: `scope = 'tenant'` | Nada |
@@ -123,7 +123,7 @@ Las tres viven en `platform/db`. Las dos últimas solo pueden llamar a funciones
 ### 5.4 Cada petición autenticada
 
 1. **Sesión**: busca el hash con un join a `users`. `401` si está revocada o caducada (inactividad comparada con el `last_seen_at` **anterior**) o si el usuario está deshabilitado. Después actualiza `last_seen_at`, como mucho una vez cada 5 minutos.
-2. **Tenant**: valida que `X-Tenant-ID` es un UUID y, con `WithUserTx`, llama a `auth_membership(tenant_id)`: rol, estado del tenant y del usuario. Si algo falla, el mismo `403 auth.tenant_forbidden`.
+2. **Tenant**: valida que `X-Tenant-ID` es un UUID y, con `WithUserTx`, llama a `auth_membership(tenant_id)`: rol, estado del tenant y del usuario. Si algo falla, el mismo `403 auth.tenant_forbidden`. Su evento de auditoría va sin tenant (sección 7.4, `TN031`): así nadie llena el registro de otro tenant enviando su `X-Tenant-ID`.
 3. **MFA del rol**: si el rol la requiere y `mfa_auth_time` es nulo o más antiguo que la antigüedad máxima del rol: `403 auth.mfa_required`.
 4. **Principal** en el contexto (`platform/authctx`): `UserID`, `TenantID`, `Role`, `Permissions`, `Scope`. `user_id` y `tenant_id`, a los logs.
 5. **Caso de uso**: `authz.Require(ctx, perm.X)`.
@@ -137,7 +137,7 @@ Todas las respuestas llevan `Cache-Control: no-store`.
 
 - `POST /auth/logout`: revoca la sesión, borra la cookie y cierra la sesión de AuthKit. `POST /auth/logout-all`: revoca todas las del usuario.
 - **Deshabilitar a un usuario** (comando de administración): en una transacción, revoca sus sesiones y **sus invitaciones pendientes**. Si es el último owner de algún tenant, exige confirmación explícita.
-- **Crear un tenant**: `POST /tenants` (sesión, sin tenant, si `TENANT_SIGNUP_ENABLED`) llama a `create_tenant_with_owner(name, slug)`. Slug ocupado: `409 tenant.slug_taken` (revela que existe, y se acepta: un slug no da acceso a nada).
+- **Crear un tenant**: `POST /tenants` (sesión, sin tenant, si `TENANT_SIGNUP_ENABLED`) llama a `create_tenant_with_owner(name, slug, ip_prefix)`, que registra `tenant.created` y `membership.created` en la misma transacción. Slug ocupado: `409 tenant.slug_taken` (revela que existe, y se acepta: un slug no da acceso a nada).
 
 ### 5.6 Invitaciones
 
@@ -145,14 +145,14 @@ Todas las respuestas llevan `Cache-Control: no-store`.
 2. **Duplicados**: ya es miembro → `409 invitation.already_member`. Pendiente sin caducar → `409 invitation.pending`, con opción de reenviar (rota el token y renueva la caducidad). Pendiente caducada → se revoca y se crea la nueva.
 3. **Token**: un solo uso (se guarda su hash), 7 días, en el fragmento del enlace (`/invite#token=…`), con `Referrer-Policy: no-referrer` en la página. Antes del login, el front lo guarda en `sessionStorage`, borra el fragmento y lo recupera al volver. Nunca va en `return_to`.
 4. **Revocación automática**: cuando quien invitó es degradado a un rol que ya no incluye el ofrecido o pierde `members:invite`, es expulsado, abandona el tenant o es deshabilitado, **sus invitaciones pendientes se revocan en la misma transacción**. Así una invitación pendiente siempre está respaldada por alguien que aún podría emitirla, sin revalidarlo al aceptar. Se registra `invitation.revoked` con el motivo.
-5. **Aceptar**: el front llama a `POST /invitations/accept` con el token en el cuerpo (sesión, sin tenant). Con `WithUserTx`, una sola función, `accept_invitation(token_hash)`, que revalida todo por sí misma:
+5. **Aceptar**: el front llama a `POST /invitations/accept` con el token en el cuerpo (sesión, sin tenant). Con `WithUserTx`, una sola función, `accept_invitation(token_hash, ip_prefix)`, que revalida todo por sí misma:
    - rechaza a un usuario actual inexistente o deshabilitado;
    - bloquea la invitación con `FOR UPDATE`;
    - comprueba que no está usada, revocada ni caducada y que el tenant está activo;
    - compara su email con el email del usuario actual, leído de `users` a partir de `app.user_id`, y lo rechaza si ese email no está verificado;
    - comprueba que el usuario no es ya miembro;
    - crea la membresía y marca la invitación como aceptada.
-6. Registra `invitation.accepted` y `membership.created`.
+6. La misma función registra `invitation.accepted` y `membership.created`: sin `app.tenant_id`, `record_audit` no admite eventos del tenant (`TN031`).
 
 Caso límite aceptado: si un despliegue cambia los permisos de un rol, las invitaciones ya emitidas por ese rol no se revisan. Caducan en 7 días como máximo.
 
@@ -160,7 +160,7 @@ Caso límite aceptado: si un despliegue cambia los permisos de un rol, las invit
 
 `PATCH` y `DELETE /members/{membership_id}` exigen `members:manage`. Dentro de la transacción del caso de uso:
 
-1. **Relee y bloquea** (`FOR UPDATE`) la membresía del actor; si ya no tiene `members:manage`: `403`.
+1. **Relee y bloquea** (`FOR UPDATE`) la membresía del actor; si ya no tiene `members:manage`: `403`. `DELETE /members/me` no usa este paso: con alcance `own`, `own_write` también se aplica a `SELECT … FOR UPDATE` e impide bloquear la propia fila, que no aparecería. Abandonar no depende del rol del actor, así que no necesita releerlo.
 2. Bloquea las membresías de los owners del tenant.
 3. Aplica las reglas:
    - **Sobre otros**: solo sobre miembros cuyo rol esté **estrictamente incluido** en el del actor. Un owner puede actuar sobre otros owners.
@@ -192,12 +192,14 @@ Comando de administración, con `app_admin`:
 
 ### 7.1 Roles de base de datos
 
-- `app_owner`: dueño de las tablas; solo migraciones.
-- `app_runtime`: la aplicación; sin `BYPASSRLS` y sin ser dueño de nada. Permisos de tabla:
-  - `users`, `user_identities`, `sessions`: `SELECT`, `INSERT`, `UPDATE`, `DELETE`.
-  - `tenants`: `SELECT` y `UPDATE` solo de las columnas `name` y `updated_at`; sin `INSERT` (se crean con `create_tenant_with_owner`) ni `DELETE` (sección 12). El estado (`status`) solo lo cambia `app_admin`.
-  - `memberships`: `SELECT`, `UPDATE`, `DELETE`, filtrados por RLS; sin `INSERT` (solo `create_tenant_with_owner` y `accept_invitation`).
-  - `invitations`: `SELECT`, `INSERT`, `UPDATE`, `DELETE`, filtrados por RLS.
+- `app_owner`: dueño de las tablas; solo migraciones. Puede desactivar RLS como dueño y hacer `SET ROLE app_security` (`BYPASSRLS`), así que sus credenciales (`MIGRATIONS_DATABASE_URL`) equivalen a acceso total a los datos.
+- `app_runtime`: la aplicación; sin `BYPASSRLS` y sin ser dueño de nada. Nunca un `UPDATE` sin columnas: cada tabla lista las que la aplicación cambia. La lista completa está fijada en `runtime_privileges.golden` (sección 11). Permisos de tabla:
+  - `users`: `SELECT`, `INSERT` y `UPDATE (email, last_login_at, updated_at)`; sin `DELETE` (solo `app_admin`, sección 5.8). `email` cambia en el login si cambió en el proveedor (5.1.7). `email_verified` no cambia tras el alta (el login rechaza emails sin verificar) y `disabled_at` es de `app_admin`.
+  - `user_identities`: `SELECT`, `INSERT`; ni `UPDATE` (una identidad vinculada es inmutable) ni `DELETE` (solo `app_admin`).
+  - `sessions`: `SELECT`, `INSERT`, `DELETE` y `UPDATE (last_seen_at, idle_expires_at, revoked_at, mfa_auth_time, token_hash, updated_at)`: el toque de cada petición (5.4.1), la revocación (5.1.8, 5.5) y el step-up (5.2.3). `auth_time`, `absolute_expires_at` y el usuario no cambian.
+  - `tenants`: `SELECT` y `UPDATE (name, updated_at)`, filtrados por RLS; sin `INSERT` (se crean con `create_tenant_with_owner`) ni `DELETE` (sección 12). El estado (`status`) solo lo cambia `app_admin`.
+  - `memberships`: `SELECT`, `DELETE` y `UPDATE (role, updated_at)`, filtrados por RLS; sin `INSERT` (solo `create_tenant_with_owner` y `accept_invitation`). Sin `UPDATE` de `user_id`: pasar una membresía a otro usuario lo admitiría sin invitación.
+  - `invitations`: `SELECT`, `INSERT`, `DELETE` y `UPDATE (token_hash, expires_at, revoked_at, updated_at)`, filtrados por RLS: reenviar rota el token y la caducidad (5.6.2) y revocar fija `revoked_at` (5.6.4). `accepted_at` solo lo fija `accept_invitation`; `email`, `role` e `invited_by` se fijan al crearla.
   - `audit_log`: solo `SELECT`; escribe con `record_audit()`.
 - `app_security`: `BYPASSRLS`, sin login; dueño de las funciones de la sección 7.4. Sus permisos de tabla, en la misma sección.
 - `app_admin`: `BYPASSRLS`; solo comandos de administración, auditados. Lee y escribe en todas las tablas salvo `audit_log`, donde solo lee.
@@ -210,7 +212,7 @@ Sin variables, cualquier consulta a una tabla con RLS falla y no devuelve filas.
 
 ### 7.3 Políticas y alcance
 
-**Política estándar**, permisiva y `FOR ALL`, en toda tabla con `tenant_id`:
+**Política estándar**, permisiva y `FOR ALL`, en toda tabla con `tenant_id` (en `tenants`, sobre `id`):
 
 ```sql
 CREATE POLICY tenant_isolation ON <tabla> FOR ALL
@@ -252,9 +254,9 @@ CREATE POLICY own_write ON memberships AS RESTRICTIVE FOR UPDATE
 
 Un `UPDATE` con alcance `own` no ve ninguna fila y no afecta a ninguna.
 
-**El test de las migraciones**, leyendo `pg_class` y `pg_policies` tras migrar, comprueba en cada tabla con `tenant_id`:
+**El test de las migraciones**, leyendo `pg_class` y `pg_policies` tras migrar, comprueba en cada tabla con `tenant_id` y en `tenants` (con `id` como columna):
 - `relrowsecurity` y `relforcerowsecurity` activos;
-- `tenant_isolation` existe, es permisiva, `FOR ALL`, y su expresión usa `app.tenant_id`;
+- `tenant_isolation` existe, es permisiva, `FOR ALL`, y su expresión compara la columna (`tenant_id`, o `id` en `tenants`) con `app.tenant_id`;
 - o bien el comentario `scope: tenant-shared`, o bien `own_scope` restrictiva y `FOR ALL`;
 - ninguna política usa `current_setting(…, true)` ni `NULLIF`;
 - ninguna política permisiva adicional además de `tenant_isolation` (las restrictivas adicionales se admiten, con las mismas comprobaciones de expresión).
@@ -267,13 +269,15 @@ Todas: propiedad de `app_security`, `SET search_path = pg_catalog, extensions, p
 | --- | --- | --- |
 | `auth_membership(tenant_id)` | — | Rol del usuario actual en el tenant, estado del tenant y del usuario |
 | `auth_memberships_for_user()` | — | Tenants y roles del usuario actual (`/me`) |
-| `create_tenant_with_owner(name, slug)` | Usuario actual existe y no está deshabilitado | Tenant y membresía `owner` del usuario actual |
-| `accept_invitation(token_hash)` | Todo lo de la sección 5.6.5, con `FOR UPDATE` | Membresía creada e invitación aceptada |
+| `create_tenant_with_owner(name, slug, ip_prefix)` | Usuario actual existe y no está deshabilitado | Tenant y membresía `owner` del usuario actual; registra `tenant.created` y `membership.created` |
+| `accept_invitation(token_hash, ip_prefix)` | Todo lo de la sección 5.6.5, con `FOR UPDATE` | Membresía creada e invitación aceptada; registra `invitation.accepted` y `membership.created` |
 | `tenant_status(tenant_id)` | — | Estado del tenant (trabajos de sistema) |
 | `roles_in_use()` | — | Roles distintos en `memberships`, sin datos de tenants |
-| `record_audit(…)` | Si `app.tenant_id` está fijado, el tenant del evento es ese o nulo (`TN030`) | Inserta en `audit_log`; actor nulo si no hay `app.user_id` |
+| `record_audit(…)` | Con `app.tenant_id` fijado, el tenant del evento es ese o nulo (`TN030`); sin él (o vacío), nulo (`TN031`) | Inserta en `audit_log`; actor nulo si no hay `app.user_id` |
 
 Ya no existe ninguna función que devuelva datos de **otro** miembro.
+
+**Auditoría sin tenant en la transacción.** Un evento solo entra en el registro de un tenant desde una transacción de ese tenant: en `WithUserTx` y `WithAnonTx`, o en una conexión reutilizada, `record_audit` solo acepta eventos sin tenant. Las dos funciones que crean membresías sin `app.tenant_id` escriben sus eventos ellas mismas, en la misma transacción. `ip_prefix` es siempre la IP del cliente ya truncada por quien llama, nunca la dirección completa.
 
 **Permisos de tabla de `app_security`**, los justos para estas funciones y nada más:
 
@@ -283,7 +287,7 @@ Ya no existe ninguna función que devuelva datos de **otro** miembro.
 | `tenants` | `SELECT`, `INSERT` | Estado del tenant; `create_tenant_with_owner` |
 | `memberships` | `SELECT`, `INSERT` | `auth_membership*`, `roles_in_use`; crear la membresía |
 | `invitations` | `SELECT`, `UPDATE (accepted_at)` | `SELECT … FOR UPDATE` y marcarla aceptada |
-| `audit_log` | `INSERT` | `record_audit` (el id se genera en la función, sin `SELECT`) |
+| `audit_log` | `INSERT` | `record_audit`, `create_tenant_with_owner` y `accept_invitation` (sin `SELECT`: el id lo genera la función o la columna) |
 
 **Códigos de error** (clase `TN`, definidos por la implementación; Go los traduce a `apperr`):
 
@@ -300,6 +304,7 @@ Ya no existe ninguna función que devuelva datos de **otro** miembro.
 | `TN016` | El usuario ya es miembro del tenant |
 | `TN020` | El slug del tenant ya existe |
 | `TN030` | El tenant del evento de auditoría no coincide con `app.tenant_id` |
+| `TN031` | El evento de auditoría tiene tenant, pero `app.tenant_id` no está fijado |
 
 **Test de funciones**: todas tienen `search_path` fijo, `EXECUTE` revocado a `PUBLIC`, propietario `app_security` y ningún parámetro llamado `user_id`.
 
@@ -313,7 +318,7 @@ Ya no existe ninguna función que devuelva datos de **otro** miembro.
 ### 7.6 Trabajos de River
 
 - Los argumentos llevan `tenant_id` y `user_id`.
-- **Trabajo de usuario**: el worker llama a `auth_membership(tenant_id)` con `WithUserTx`. Sin membresía, con el usuario deshabilitado o el tenant suspendido: se cancela sin reintentos y registra `job.cancelled` con el motivo. Si sigue, construye el `Principal` con los permisos actuales y usa `WithTenantTx`.
+- **Trabajo de usuario**: el worker llama a `auth_membership(tenant_id)` con `WithUserTx`. Sin membresía, con el usuario deshabilitado o el tenant suspendido: se cancela sin reintentos y registra `job.cancelled` con el motivo, con `WithTenantTx` y el usuario de sistema: desde `WithUserTx` el evento no podría llevar el tenant (`TN031`). Si sigue, construye el `Principal` con los permisos actuales y usa `WithTenantTx`.
 - **Trabajo de sistema**: no tiene membresía y no llama a `auth_membership`. El worker comprueba el tenant con `tenant_status(tenant_id)` y construye un `Principal` con el usuario de sistema, alcance `tenant` y un conjunto de permisos explícito definido en código. **No hay ningún caso especial para el usuario de sistema dentro de las funciones de la BD.** Se audita.
 
 ## 8. Permisos
@@ -363,9 +368,10 @@ Los `{id}` son de la membresía o de la invitación, nunca del usuario. El rol `
 ## 11. Pruebas obligatorias
 
 **Estructura de la BD** (test de migraciones y de funciones, sección 7.3 y 7.4)
-- Cada tabla con `tenant_id`: RLS activo y forzado, `tenant_isolation` permisiva y `FOR ALL`, alcance declarado; si es `own_scope`, restrictiva y `FOR ALL`; ninguna otra política permisiva.
+- Cada tabla con `tenant_id`, y `tenants` por su `id`: RLS activo y forzado, `tenant_isolation` permisiva y `FOR ALL`, alcance declarado; si es `own_scope`, restrictiva y `FOR ALL`; ninguna otra política permisiva.
 - Una tabla de prueba con `own_scope` permisiva hace fallar el test (el test se prueba a sí mismo).
 - Funciones: `search_path`, `EXECUTE` revocado a `PUBLIC`, propietario y sin parámetro `user_id`.
+- Foto de permisos: todos los de `app_runtime` (de tabla, de columna y de ejecución, también los heredados de `PUBLIC`) coinciden con `testdata/runtime_privileges.golden`. Cambiar ese fichero es una decisión de seguridad que se justifica en el PR.
 
 **Aislamiento**
 - Para cada endpoint con tenant: un usuario de A recibe `403` con el tenant B y no ve ni modifica datos de B forzando IDs.

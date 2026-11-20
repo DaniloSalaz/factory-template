@@ -13,11 +13,14 @@ Los crea `infra/db/bootstrap.sql`, no las migraciones: los roles son del clúste
 | `app_admin` | sí | sí | Comandos de administración (deshabilitar o borrar usuarios), auditados |
 
 `app_owner` es miembro de `app_security` con `SET` y sin `INHERIT`: puede asignarle la
-propiedad de una función (`ALTER FUNCTION … OWNER TO app_security`) pero no hereda sus
-privilegios.
+propiedad de una función (`ALTER FUNCTION … OWNER TO app_security`) sin heredar sus
+privilegios en cada consulta. Pero con un `SET ROLE app_security` explícito obtiene
+`BYPASSRLS`, y como dueño de las tablas puede desactivar RLS o concederse cualquier
+permiso.
 
-La API **nunca** recibe `MIGRATIONS_DATABASE_URL`: con las credenciales de `app_owner`
-se puede desactivar RLS.
+**`MIGRATIONS_DATABASE_URL` equivale a acceso total a los datos de todos los tenants.**
+Trátala como la credencial de un superusuario: solo la reciben las migraciones, nunca la
+API, los workers ni los logs.
 
 ## Bootstrap
 
@@ -52,7 +55,11 @@ su migración dice quién la usa y cómo. En la misma migración que crea la tab
    `tenant_isolation` y su alcance declarado (diseño, sección 7.3). El test de esquema
    (`api/internal/platform/db/schematest`) falla si falta algo.
 2. `GRANT` a `app_runtime` solo de los privilegios que la aplicación necesita (por ejemplo,
-   sin `DELETE` en tablas de solo inserción).
+   sin `DELETE` en tablas de solo inserción). `UPDATE` siempre por columnas
+   (`GRANT UPDATE (col, …)`), nunca de toda la tabla. Añade los permisos nuevos a
+   `api/internal/platform/db/schematest/testdata/runtime_privileges.golden`, a mano, y
+   justifícalos en el PR: es una decisión de seguridad, y el test falla mostrando el diff
+   hasta que el fichero coincide.
 3. `GRANT` a `app_admin` si los comandos de administración la tocan.
 4. Si una función `SECURITY DEFINER` la usa, `GRANT` a `app_security` de lo justo.
 

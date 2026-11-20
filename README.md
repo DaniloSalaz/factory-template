@@ -17,7 +17,8 @@ curl localhost:8080/readyz
 ```
 
 La API conecta como `app_runtime`, sujeto a row-level security; las migraciones, como
-`app_owner`. Si tu volumen de Postgres es anterior a los roles, recréalo una vez con
+`app_owner`. `MIGRATIONS_DATABASE_URL` equivale a acceso total a los datos: nunca se la
+des a la API. Si tu volumen de Postgres es anterior a los roles, recréalo una vez con
 `docker compose down -v` (o ejecuta `mise run db:bootstrap`). Detalles en
 [docs/runbooks/database.md](docs/runbooks/database.md).
 

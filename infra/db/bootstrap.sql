@@ -26,8 +26,11 @@ FROM unnest(ARRAY['app_owner', 'app_runtime', 'app_security', 'app_admin']) AS r
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r)
 \gexec
 
--- app_owner: owns the schema objects and runs migrations. No BYPASSRLS: as table
--- owner it is still subject to RLS because every RLS table uses FORCE.
+-- app_owner: owns the schema objects and runs migrations. No BYPASSRLS attribute, and
+-- FORCE keeps RLS on for its ordinary queries, but that is no boundary: as the owner it
+-- can disable RLS or grant itself anything, and it can SET ROLE app_security, which
+-- bypasses RLS. Its credentials (MIGRATIONS_DATABASE_URL) give full access to the data
+-- and never reach the application.
 ALTER ROLE app_owner WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
   PASSWORD :'app_owner_password';
 
@@ -46,7 +49,8 @@ ALTER ROLE app_admin WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATIO
 
 -- Migrations create the functions as app_owner and then hand them to app_security.
 -- ALTER ... OWNER requires being able to SET ROLE to the new owner; INHERIT FALSE
--- keeps app_owner from silently gaining app_security's privileges.
+-- keeps app_owner from silently gaining app_security's privileges, although an explicit
+-- SET ROLE still can (see app_owner above).
 GRANT app_security TO app_owner WITH INHERIT FALSE, SET TRUE;
 
 -- Database access: only the application roles may connect.
