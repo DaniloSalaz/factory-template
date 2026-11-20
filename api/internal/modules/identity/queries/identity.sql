@@ -81,3 +81,14 @@ FROM auth_membership(sqlc.arg(tenant_id)::uuid) AS m(role, tenant_status, user_d
 -- name: RecordTenantAudit :exec
 SELECT record_audit(sqlc.arg(tenant_id)::uuid, sqlc.arg(action), sqlc.narg(target_type), sqlc.narg(target_id),
                     sqlc.arg(metadata), sqlc.narg(ip_prefix));
+
+-- name: UserByID :one
+SELECT u.id, u.email::text AS email, u.display_name
+FROM users u
+WHERE u.id = $1;
+
+-- The acting user's own memberships, never anyone else's (GET /me).
+-- name: MembershipsForUser :many
+SELECT m.tenant_id::uuid AS tenant_id, m.tenant_slug::text AS tenant_slug, m.tenant_name::text AS tenant_name,
+       m.tenant_status::text AS tenant_status, m.role::text AS role
+FROM auth_memberships_for_user() AS m(tenant_id, tenant_slug, tenant_name, tenant_status, role);

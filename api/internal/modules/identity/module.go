@@ -101,7 +101,7 @@ func New(deps Deps) (*Module, error) {
 	}, deps.Now)
 	sessions := app.NewSessions(idp, store, policy, deps.Now)
 	return &Module{
-		handler:  identityhttp.NewHandler(login, sessions, deps.Logger),
+		handler:  identityhttp.NewHandler(login, sessions, app.NewAccounts(store), deps.Logger),
 		sessions: sessions,
 		tenancy:  app.NewTenancy(store, deps.Catalog, deps.Now),
 		authz:    authz.NewAuthorizer(app.NewDenialAuditor(store), deps.Logger),

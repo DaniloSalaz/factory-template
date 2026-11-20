@@ -160,6 +160,28 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/InternalError"
+  /me:
+    get:
+      operationId: getMe
+      summary: The current user and their memberships
+      description: >-
+        The session's user and every tenant they belong to, with its role, suspended
+        tenants included (acting in one answers 403 auth.tenant_forbidden). Needs no
+        X-Tenant-ID: the front end uses it to pick one.
+      tags: [identity]
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Me"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   securitySchemes:
     session:
@@ -176,6 +198,48 @@ components:
       in: header
       name: X-Tenant-ID
   schemas:
+    Me:
+      type: object
+      additionalProperties: false
+      required: [user, memberships]
+      properties:
+        user:
+          $ref: "#/components/schemas/CurrentUser"
+        memberships:
+          type: array
+          items:
+            $ref: "#/components/schemas/Membership"
+    CurrentUser:
+      type: object
+      additionalProperties: false
+      required: [id, email, display_name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        display_name:
+          type: string
+    Membership:
+      type: object
+      additionalProperties: false
+      required: [tenant_id, tenant_slug, tenant_name, tenant_status, role]
+      properties:
+        tenant_id:
+          description: The value to send as X-Tenant-ID.
+          type: string
+          format: uuid
+        tenant_slug:
+          type: string
+        tenant_name:
+          type: string
+        tenant_status:
+          type: string
+          enum: [active, suspended]
+        role:
+          description: The member's role in the app's role catalog.
+          type: string
     Logout:
       type: object
       additionalProperties: false

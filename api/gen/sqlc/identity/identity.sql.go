@@ -114,6 +114,47 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (pgtype.
 	return id, err
 }
 
+const membershipsForUser = `-- name: MembershipsForUser :many
+SELECT m.tenant_id::uuid AS tenant_id, m.tenant_slug::text AS tenant_slug, m.tenant_name::text AS tenant_name,
+       m.tenant_status::text AS tenant_status, m.role::text AS role
+FROM auth_memberships_for_user() AS m(tenant_id, tenant_slug, tenant_name, tenant_status, role)
+`
+
+type MembershipsForUserRow struct {
+	TenantID     pgtype.UUID
+	TenantSlug   string
+	TenantName   string
+	TenantStatus string
+	Role         string
+}
+
+// The acting user's own memberships, never anyone else's (GET /me).
+func (q *Queries) MembershipsForUser(ctx context.Context) ([]MembershipsForUserRow, error) {
+	rows, err := q.db.Query(ctx, membershipsForUser)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MembershipsForUserRow
+	for rows.Next() {
+		var i MembershipsForUserRow
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.TenantSlug,
+			&i.TenantName,
+			&i.TenantStatus,
+			&i.Role,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const recordAudit = `-- name: RecordAudit :exec
 SELECT record_audit(NULL::uuid, $1, $2, $3,
                     $4, $5)
@@ -320,6 +361,25 @@ func (q *Queries) UserByEmail(ctx context.Context, email string) (UserByEmailRow
 	row := q.db.QueryRow(ctx, userByEmail, email)
 	var i UserByEmailRow
 	err := row.Scan(&i.ID, &i.Email, &i.Disabled)
+	return i, err
+}
+
+const userByID = `-- name: UserByID :one
+SELECT u.id, u.email::text AS email, u.display_name
+FROM users u
+WHERE u.id = $1
+`
+
+type UserByIDRow struct {
+	ID          pgtype.UUID
+	Email       string
+	DisplayName string
+}
+
+func (q *Queries) UserByID(ctx context.Context, id pgtype.UUID) (UserByIDRow, error) {
+	row := q.db.QueryRow(ctx, userByID, id)
+	var i UserByIDRow
+	err := row.Scan(&i.ID, &i.Email, &i.DisplayName)
 	return i, err
 }
 

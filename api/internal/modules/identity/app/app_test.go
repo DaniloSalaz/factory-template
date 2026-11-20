@@ -249,6 +249,28 @@ func (r *memRepo) RolesInUse(context.Context) ([]string, error) {
 	return slices.Clone(r.st.rolesInUse), nil
 }
 
+func (r *memRepo) UserByID(_ context.Context, id string) (app.Profile, bool, error) {
+	u, ok := r.st.users[id]
+	if !ok {
+		return app.Profile{}, false, nil
+	}
+	return app.Profile{ID: id, Email: u.email}, true, nil
+}
+
+func (r *memRepo) MembershipsForUser(context.Context) ([]app.TenantMembership, error) {
+	var out []app.TenantMembership
+	for _, tenant := range slices.Sorted(maps.Keys(r.st.memberships)) {
+		if m, ok := r.st.memberships[tenant][r.actor]; ok {
+			status := "active"
+			if !m.TenantActive {
+				status = "suspended"
+			}
+			out = append(out, app.TenantMembership{TenantID: tenant, TenantStatus: status, Role: m.Role})
+		}
+	}
+	return out, nil
+}
+
 func (r *memRepo) Membership(_ context.Context, tenantID string) (app.Membership, bool, error) {
 	m, ok := r.st.memberships[tenantID][r.actor]
 	return m, ok, nil

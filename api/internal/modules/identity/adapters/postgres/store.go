@@ -258,6 +258,36 @@ func (r repo) RecordTenantAudit(ctx context.Context, tenantID string, e app.Audi
 	return nil
 }
 
+func (r repo) UserByID(ctx context.Context, id string) (app.Profile, bool, error) {
+	uid, err := parseUUID(id)
+	if err != nil {
+		return app.Profile{}, false, err
+	}
+	row, err := r.q.UserByID(ctx, uid)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return app.Profile{}, false, nil
+	}
+	if err != nil {
+		return app.Profile{}, false, fmt.Errorf("user by id: %w", err)
+	}
+	return app.Profile{ID: row.ID.String(), Email: pii.Email(row.Email), DisplayName: row.DisplayName}, true, nil
+}
+
+func (r repo) MembershipsForUser(ctx context.Context) ([]app.TenantMembership, error) {
+	rows, err := r.q.MembershipsForUser(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("memberships for user: %w", err)
+	}
+	out := make([]app.TenantMembership, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, app.TenantMembership{
+			TenantID: row.TenantID.String(), TenantSlug: row.TenantSlug, TenantName: row.TenantName,
+			TenantStatus: row.TenantStatus, Role: row.Role,
+		})
+	}
+	return out, nil
+}
+
 // tenantActive is the tenants.status of a tenant that may be used.
 const tenantActive = "active"
 

@@ -6,6 +6,35 @@
  * OpenAPI spec version: 0.1.0
  */
 import { apiFetch } from '../api/fetcher';
+export interface CurrentUser {
+  id: string;
+  email: string;
+  display_name: string;
+}
+
+export type MembershipTenantStatus = typeof MembershipTenantStatus[keyof typeof MembershipTenantStatus];
+
+
+export const MembershipTenantStatus = {
+  active: 'active',
+  suspended: 'suspended',
+} as const;
+
+export interface Membership {
+  /** The value to send as X-Tenant-ID. */
+  tenant_id: string;
+  tenant_slug: string;
+  tenant_name: string;
+  tenant_status: MembershipTenantStatus;
+  /** The member's role in the app's role catalog. */
+  role: string;
+}
+
+export interface Me {
+  user: CurrentUser;
+  memberships: Membership[];
+}
+
 export interface Logout {
   /**
      * Where to send the browser to end the AuthKit session too; null if there is none.
@@ -455,6 +484,55 @@ export const authLogoutAll = async ( options?: Parameters<typeof apiFetch>[1]): 
   {
     ...options,
     method: 'POST'
+
+
+  }
+);}
+
+
+
+export type getMeResponse200 = {
+  data: Me
+  status: 200
+}
+
+export type getMeResponse401 = {
+  data: UnauthorizedResponse
+  status: 401
+}
+
+export type getMeResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type getMeResponseSuccess = (getMeResponse200) & {
+  headers: Headers;
+};
+export type getMeResponseError = (getMeResponse401 | getMeResponse500) & {
+  headers: Headers;
+};
+
+export type getMeResponse = (getMeResponseSuccess | getMeResponseError)
+
+export const getGetMeUrl = () => {
+
+
+
+
+  return `/me`
+}
+
+/**
+ * The session's user and every tenant they belong to, with its role, suspended tenants included (acting in one answers 403 auth.tenant_forbidden). Needs no X-Tenant-ID: the front end uses it to pick one.
+ * @summary The current user and their memberships
+ */
+export const getMe = async ( options?: Parameters<typeof apiFetch>[1]): Promise<getMeResponse> => {
+
+  return apiFetch<getMeResponse>(getGetMeUrl(),
+  {
+    ...options,
+    method: 'GET'
 
 
   }

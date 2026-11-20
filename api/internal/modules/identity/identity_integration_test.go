@@ -1307,3 +1307,60 @@ func TestAuthorizer_DeniedIsAuditedInTheTenant(t *testing.T) {
 		t.Fatalf("one denial, %d events", n)
 	}
 }
+
+func TestMe_OnlyTheCurrentUsersMemberships(t *testing.T) {
+	e := newEnv(t, options{})
+	who, other := e.person(), e.person()
+	b := e.browser()
+	b.login(who)
+	e.browser().login(other)
+	mine, shared, foreign := e.tenant(), e.tenant(), e.tenant()
+	e.member(who, mine, "member")
+	e.member(who, shared, "owner")
+	e.member(other, shared, "member")
+	e.member(other, foreign, "admin")
+	e.exec(`UPDATE tenants SET status = 'suspended' WHERE id = $1`, mine)
+
+	res := b.do(http.MethodGet, "/me", "")
+	if res.status != http.StatusOK {
+		t.Fatalf("/me: %d %s", res.status, res.body)
+	}
+	var me struct {
+		User struct {
+			ID          string `json:"id"`
+			Email       string `json:"email"`
+			DisplayName string `json:"display_name"`
+		} `json:"user"`
+		Memberships []struct {
+			TenantID     string `json:"tenant_id"`
+			TenantSlug   string `json:"tenant_slug"`
+			TenantName   string `json:"tenant_name"`
+			TenantStatus string `json:"tenant_status"`
+			Role         string `json:"role"`
+		} `json:"memberships"`
+	}
+	if err := json.Unmarshal(res.body, &me); err != nil {
+		t.Fatal(err)
+	}
+	if me.User.ID != e.userID(who) || me.User.Email != who.Email.Reveal() || me.User.DisplayName != who.DisplayName {
+		t.Fatalf("user = %+v", me.User)
+	}
+	got := map[string]string{}
+	for _, m := range me.Memberships {
+		if m.TenantSlug == "" || m.TenantName == "" {
+			t.Fatalf("membership without its tenant: %+v", m)
+		}
+		got[m.TenantID] = m.Role + "/" + m.TenantStatus
+	}
+	want := map[string]string{mine: "member/suspended", shared: "owner/active"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("memberships = %v, want %v (never another user's)", got, want)
+	}
+
+	if res := e.browser().do(http.MethodGet, "/me", ""); res.status != http.StatusUnauthorized {
+		t.Fatalf("/me without a session: %d", res.status)
+	}
+	if res := b.doHeaders(http.MethodGet, "/me", "", http.Header{"X-Tenant-Id": {foreign}}); res.status != http.StatusOK {
+		t.Fatalf("/me needs no tenant and ignores X-Tenant-ID: %d", res.status)
+	}
+}

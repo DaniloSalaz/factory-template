@@ -76,6 +76,26 @@ type Repo interface {
 	// Membership returns the transaction user's membership in tenantID (a UUID); found
 	// is false without one or without such a tenant.
 	Membership(ctx context.Context, tenantID string) (m Membership, found bool, err error)
+	// UserByID returns a user's profile.
+	UserByID(ctx context.Context, id string) (p Profile, found bool, err error)
+	// MembershipsForUser returns the transaction user's memberships, and only theirs.
+	MembershipsForUser(ctx context.Context) ([]TenantMembership, error)
+}
+
+// Profile is what a user may see of themselves.
+type Profile struct {
+	ID          string
+	Email       pii.Email
+	DisplayName string
+}
+
+// TenantMembership is one of the acting user's tenants, with their role in it.
+type TenantMembership struct {
+	TenantID     string
+	TenantSlug   string
+	TenantName   string
+	TenantStatus string
+	Role         string
 }
 
 // Membership is the acting user's membership in a tenant, with the state of both.

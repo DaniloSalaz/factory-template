@@ -2,6 +2,7 @@ package app_test
 
 import (
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -180,5 +181,35 @@ func TestDenialAuditor_RecordsInThePrincipalsTenant(t *testing.T) {
 	if a.Action != authz.AuditDenied || a.tenant != tenantA || a.actor != memberID ||
 		a.TargetID != string(authz.PermAuditRead) || a.Metadata["role"] != "member" {
 		t.Fatalf("event = %+v", a)
+	}
+}
+
+func TestAccounts_MeOnlyHasTheUsersOwnMemberships(t *testing.T) {
+	t.Parallel()
+
+	store := newMemStore()
+	store.st.users[memberID] = memUser{email: "me@example.test"}
+	store.st.memberships = map[string]map[string]app.Membership{
+		tenantA:   {memberID: {Role: "member", TenantActive: true}, otherID: {Role: "owner", TenantActive: true}},
+		tenantB:   {otherID: {Role: "member", TenantActive: true}},
+		suspended: {memberID: {Role: "client"}},
+	}
+	me, err := app.NewAccounts(store).Me(t.Context(), memberID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if me.User.ID != memberID || me.User.Email.Reveal() != "me@example.test" {
+		t.Fatalf("user = %+v", me.User)
+	}
+	want := []app.TenantMembership{
+		{TenantID: tenantA, TenantStatus: "active", Role: "member"},
+		{TenantID: suspended, TenantStatus: "suspended", Role: "client"},
+	}
+	if !slices.Equal(me.Memberships, want) {
+		t.Fatalf("memberships = %+v, want %+v", me.Memberships, want)
+	}
+
+	if _, err := app.NewAccounts(store).Me(t.Context(), otherID); !errors.Is(err, domain.ErrSessionInvalid()) {
+		t.Fatalf("a user that no longer exists: %v, want auth.session_invalid", err)
 	}
 }

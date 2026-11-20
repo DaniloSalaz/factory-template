@@ -17,6 +17,8 @@ type Querier interface {
 	CreateIdentity(ctx context.Context, arg CreateIdentityParams) error
 	CreateSession(ctx context.Context, arg CreateSessionParams) (pgtype.UUID, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (pgtype.UUID, error)
+	// The acting user's own memberships, never anyone else's (GET /me).
+	MembershipsForUser(ctx context.Context) ([]MembershipsForUserRow, error)
 	// Events without a tenant: login and logout never have one (record_audit, TN031).
 	RecordAudit(ctx context.Context, arg RecordAuditParams) error
 	// Events of the transaction's tenant; record_audit refuses any other (TN030).
@@ -33,6 +35,7 @@ type Querier interface {
 	// A new email always comes with the provider's verification of it (issue #4).
 	UpdateUserEmail(ctx context.Context, arg UpdateUserEmailParams) error
 	UserByEmail(ctx context.Context, email string) (UserByEmailRow, error)
+	UserByID(ctx context.Context, id pgtype.UUID) (UserByIDRow, error)
 	// Identity tables have no RLS (design, 4.1): only these queries touch them. citext
 	// columns are cast to text so sqlc maps them to string.
 	UserByIdentity(ctx context.Context, arg UserByIdentityParams) (UserByIdentityRow, error)
