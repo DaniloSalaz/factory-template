@@ -28,14 +28,14 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	cfg, err := config.Load(os.LookupEnv)
+	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	logger := observability.NewLogger(os.Stdout, cfg.LogLevel).With(slog.String("env", cfg.Env))
+	logger := observability.NewLogger(os.Stdout, cfg.Log.Level).With(slog.String("env", string(cfg.Env)))
 
-	pool, err := db.NewPool(ctx, cfg.DatabaseURL)
+	pool, err := db.NewPool(ctx, cfg.DB.URL.Reveal())
 	if err != nil {
 		return fmt.Errorf("connect database: %w", err)
 	}
@@ -44,7 +44,7 @@ func run() error {
 	mux := http.NewServeMux()
 	health.New(health.Deps{DB: pool, Logger: logger}).Register(mux)
 
-	if err := httpx.Run(ctx, logger, httpx.ServerConfig{Addr: cfg.HTTPAddr, ShutdownTimeout: cfg.ShutdownTimeout}, mux); err != nil {
+	if err := httpx.Run(ctx, logger, httpx.ServerConfig{Addr: cfg.HTTP.Addr(), ShutdownTimeout: cfg.HTTP.ShutdownTimeout}, mux); err != nil {
 		return fmt.Errorf("run server: %w", err)
 	}
 	return nil
