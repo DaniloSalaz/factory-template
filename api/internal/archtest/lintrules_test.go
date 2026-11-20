@@ -1,0 +1,83 @@
+//go:build arch
+
+package archtest
+
+import (
+	"errors"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// TestLintRules runs golangci-lint with the real config against each fixture module in
+// testdata/lint (they share the real module path so the rules apply). Each fixture holds
+// files that break a rule and files that are allowed; the test checks both.
+func TestLintRules(t *testing.T) {
+	t.Parallel()
+
+	bin, err := exec.LookPath("golangci-lint")
+	if err != nil {
+		t.Fatal("golangci-lint not found in PATH; run the tests through `mise run arch`")
+	}
+	cfg, err := filepath.Abs("../../.golangci.yml")
+	if err != nil {
+		t.Fatalf("config path: %v", err)
+	}
+
+	tests := []struct {
+		fixture string
+		want    []string // each must appear in the output
+		allowed []string // files that must not be reported
+	}{
+		{
+			fixture: "env-only-in-config",
+			want: []string{
+				"internal/platform/httpx/port.go", "internal/modules/foo/foo.go",
+				"[env-only-in-config]", "add the variable to config.Config",
+			},
+			allowed: []string{"internal/platform/config/"},
+		},
+		{
+			fixture: "platform-no-modules",
+			want:    []string{"internal/platform/httpx/httpx.go", "[platform-no-modules]", "move the code into"},
+		},
+		{
+			fixture: "apperr-stdlib-only",
+			want:    []string{"internal/platform/apperr/apperr.go", "platform/logx", "[apperr-stdlib-only]", "only the standard library"},
+		},
+		{
+			fixture: "domain-pure",
+			want: []string{
+				"domain/transport.go", "'net/http'", "transport belongs in adapters/http",
+				"domain/platform.go", "platform/logx", "[domain-pure]", "behind a port",
+			},
+			allowed: []string{"domain/allowed.go"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.fixture, func(t *testing.T) {
+			t.Parallel()
+
+			cmd := exec.CommandContext(t.Context(), bin, "run", "--config", cfg, "./...")
+			cmd.Dir = filepath.Join("testdata", "lint", tc.fixture)
+			out, err := cmd.CombinedOutput()
+			output := string(out)
+
+			var exitErr *exec.ExitError
+			if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+				t.Fatalf("golangci-lint should report issues (exit 1), got err=%v:\n%s", err, output)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(output, want) {
+					t.Errorf("output does not contain %q:\n%s", want, output)
+				}
+			}
+			for _, allowed := range tc.allowed {
+				if strings.Contains(output, allowed) {
+					t.Errorf("allowed file %q was reported:\n%s", allowed, output)
+				}
+			}
+		})
+	}
+}
