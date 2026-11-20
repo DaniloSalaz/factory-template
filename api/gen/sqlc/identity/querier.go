@@ -6,6 +6,7 @@ package identitydb
 
 import (
 	"context"
+	"net/netip"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -14,17 +15,30 @@ type Querier interface {
 	// The acting user's membership in a tenant (tenant middleware, design 5.4.2). No row:
 	// no membership, or no such tenant.
 	AuthMembership(ctx context.Context, tenantID pgtype.UUID) (AuthMembershipRow, error)
+	ChangeMemberRole(ctx context.Context, arg ChangeMemberRoleParams) error
 	ConsumeMFAChallenge(ctx context.Context, arg ConsumeMFAChallengeParams) (ConsumeMFAChallengeRow, error)
 	CreateIdentity(ctx context.Context, arg CreateIdentityParams) error
 	CreateMFAChallenge(ctx context.Context, arg CreateMFAChallengeParams) (CreateMFAChallengeRow, error)
 	// A new session has no MFA: only mark_session_mfa gives it one (design, 5.2).
 	CreateSession(ctx context.Context, arg CreateSessionParams) (pgtype.UUID, error)
+	// Tenants and members (design 5.5 and 5.7, migration 00005). Writes that change who is a
+	// member, or with which role, go through these functions; app_runtime cannot write
+	// memberships directly.
+	CreateTenant(ctx context.Context, arg CreateTenantParams) (CreateTenantRow, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (pgtype.UUID, error)
 	// The user's subject at a provider (WorkOS: the user id its MFA API takes).
 	IdentitySubject(ctx context.Context, arg IdentitySubjectParams) (string, error)
+	LeaveTenant(ctx context.Context, ipPrefix *netip.Prefix) error
+	// A page of the tenant's members in membership order (UUIDv7, so by creation), which is
+	// unique and stable. Under RLS; the WHERE on tenant_id is defence in depth.
+	ListMembers(ctx context.Context, arg ListMembersParams) ([]ListMembersRow, error)
+	// Under RLS, in the tenant's transaction. The lock serializes renames, so the audited
+	// old name is the one replaced.
+	LockTenantName(ctx context.Context, id pgtype.UUID) (string, error)
 	// MFA (design 5.2, migration 00004): every write goes through these functions.
 	MFAFactorsForUser(ctx context.Context) ([]MFAFactorsForUserRow, error)
 	MarkSessionMFA(ctx context.Context, arg MarkSessionMFAParams) (MarkSessionMFARow, error)
+	MemberByUser(ctx context.Context, arg MemberByUserParams) (MemberByUserRow, error)
 	// The acting user's own memberships, never anyone else's (GET /me).
 	MembershipsForUser(ctx context.Context) ([]MembershipsForUserRow, error)
 	// Events without a tenant: login and logout never have one (record_audit, TN031).
@@ -33,6 +47,8 @@ type Querier interface {
 	RecordTenantAudit(ctx context.Context, arg RecordTenantAuditParams) error
 	RegisterMFAFactor(ctx context.Context, arg RegisterMFAFactorParams) (RegisterMFAFactorRow, error)
 	RemoveMFAFactor(ctx context.Context, factorID pgtype.UUID) (RemoveMFAFactorRow, error)
+	RemoveMember(ctx context.Context, arg RemoveMemberParams) error
+	RenameTenant(ctx context.Context, arg RenameTenantParams) (RenameTenantRow, error)
 	RevokeSession(ctx context.Context, id pgtype.UUID) error
 	RevokeSessionByHash(ctx context.Context, tokenHash []byte) error
 	RevokeUserSessions(ctx context.Context, userID pgtype.UUID) (int64, error)

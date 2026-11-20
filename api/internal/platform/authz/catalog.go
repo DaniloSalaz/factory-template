@@ -20,6 +20,8 @@ const (
 	PermMembersInvite authctx.Permission = "members:invite"
 	PermMembersManage authctx.Permission = "members:manage"
 	PermAuditRead     authctx.Permission = "audit:read"
+	// PermTenantUpdate renames the current tenant (PATCH /tenant).
+	PermTenantUpdate authctx.Permission = "tenant:update"
 	// PermTenantOwn is reserved for RoleOwner. Since no other role holds it, no role can
 	// include owner, so the inclusion rule alone keeps anyone else from granting it.
 	PermTenantOwn authctx.Permission = "tenant:own"
@@ -28,7 +30,7 @@ const (
 // PlatformPermissions returns every permission of the platform, the scope included.
 func PlatformPermissions() []authctx.Permission {
 	return []authctx.Permission{
-		PermMembersRead, PermMembersInvite, PermMembersManage, PermAuditRead, PermTenantOwn,
+		PermMembersRead, PermMembersInvite, PermMembersManage, PermAuditRead, PermTenantUpdate, PermTenantOwn,
 		authctx.PermScopeTenant,
 	}
 }

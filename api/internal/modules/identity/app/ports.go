@@ -128,6 +128,50 @@ type Repo interface {
 	RemoveMFAFactor(ctx context.Context, factorID string) (providerFactorID string, err error)
 }
 
+// TenantStore runs the transactions of tenant and member management (design, 5.5 and
+// 5.7). It is apart from Store so that each use case sees only what it needs.
+type TenantStore interface {
+	// AsUser runs fn as userID, without a tenant (db.WithUserTx).
+	AsUser(ctx context.Context, userID string, fn func(ctx context.Context, r TenantRepo) error) error
+	// InTenant runs fn as p in its tenant (db.WithTenantTx).
+	InTenant(ctx context.Context, p authctx.Principal, fn func(ctx context.Context, r TenantRepo) error) error
+}
+
+// TenantRepo is what tenant and member management reads and writes. The writes that
+// change who is a member, or with which role, are the database functions that keep an
+// owner in every tenant; they act only on the transaction's tenant.
+type TenantRepo interface {
+	// CreateTenant creates a tenant with the transaction's user as owner, unless they
+	// have already created maxTenants.
+	CreateTenant(ctx context.Context, name, slug string, maxTenants int, ip netip.Prefix) (tenantID string, err error)
+	// RenameTenant renames the transaction's tenant and returns its previous name.
+	RenameTenant(ctx context.Context, tenantID, name string) (previous string, t Tenant, err error)
+	RecordTenantAudit(ctx context.Context, tenantID string, e AuditEvent) error
+
+	// ListMembers returns up to limit members of the tenant after the membership after
+	// ("" for the first page), in membership order.
+	ListMembers(ctx context.Context, tenantID, after string, limit int) ([]Member, error)
+	// MemberByUser returns the tenant's member userID; found is false if they are not one.
+	MemberByUser(ctx context.Context, tenantID, userID string) (m Member, found bool, err error)
+	// ChangeMemberRole and RemoveMember refuse (membership.changed) if the actor's or the
+	// member's role is no longer the expected one, and never leave the tenant without an
+	// owner (membership.last_owner).
+	ChangeMemberRole(ctx context.Context, userID, role, expectedActorRole, expectedMemberRole string, ip netip.Prefix) error
+	RemoveMember(ctx context.Context, userID, expectedActorRole, expectedMemberRole string, ip netip.Prefix) error
+	// LeaveTenant removes the transaction user's own membership.
+	LeaveTenant(ctx context.Context, ip netip.Prefix) error
+}
+
+// Member is a member of a tenant, as other members see them.
+type Member struct {
+	MembershipID string
+	UserID       string
+	Email        pii.Email
+	DisplayName  string
+	Role         string
+	JoinedAt     time.Time
+}
+
 // MFAFactor is one of the user's factors.
 type MFAFactor struct {
 	ID               string
@@ -249,4 +293,8 @@ const (
 	AuditMFAVerifyFailed = "mfa.verify_failed"
 	AuditMFAVerifyLocked = "mfa.verify_locked"
 	// mfa.factor_removed is recorded by a database trigger, whoever removes the factor.
+
+	AuditTenantUpdated = "tenant.updated"
+	// tenant.created, membership.created, membership.role_changed, membership.removed
+	// and membership.left are recorded by the database functions that make the change.
 )
