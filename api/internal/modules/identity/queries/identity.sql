@@ -69,3 +69,10 @@ SELECT record_audit(NULL::uuid, sqlc.arg(action), sqlc.narg(target_type), sqlc.n
 -- The distinct roles stored in any tenant, without tenant data (design, section 8).
 -- name: RolesInUse :many
 SELECT r.role::text AS role FROM roles_in_use() AS r(role);
+
+-- The acting user's membership in a tenant (tenant middleware, design 5.4.2). No row:
+-- no membership, or no such tenant.
+-- name: AuthMembership :one
+SELECT m.role::text AS role, m.tenant_status::text AS tenant_status,
+       m.user_disabled::boolean AS user_disabled
+FROM auth_membership(sqlc.arg(tenant_id)::uuid) AS m(role, tenant_status, user_disabled);

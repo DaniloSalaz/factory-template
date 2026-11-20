@@ -1,5 +1,5 @@
 // Package identity is the module's public API: login with the identity provider,
-// sessions and the session middleware (design, sections 5.1, 5.4.1 and 5.5).
+// sessions, and the session and tenant middlewares (design, sections 5.1, 5.4 and 5.5).
 package identity
 
 import (
@@ -59,6 +59,7 @@ type Deps struct {
 type Module struct {
 	handler  *identityhttp.Handler
 	sessions *app.Sessions
+	tenancy  *app.Tenancy
 	store    app.Store
 	catalog  *authz.Catalog
 	limiter  ratelimit.Limiter
@@ -101,6 +102,7 @@ func New(deps Deps) (*Module, error) {
 	return &Module{
 		handler:  identityhttp.NewHandler(login, sessions, deps.Logger),
 		sessions: sessions,
+		tenancy:  app.NewTenancy(store, deps.Catalog, deps.Now),
 		store:    store,
 		catalog:  deps.Catalog,
 		limiter:  deps.RateLimiter,
@@ -120,6 +122,13 @@ func checkMFASupport(rolesRequiringMFA []string, providerEnforcesMFA bool) error
 		"the WorkOS dashboard requires MFA for every user: set Authentication > Multi-factor auth "+
 		"to Required in this environment's dashboard and WORKOS_MFA_REQUIRED=true "+
 		"(docs/runbooks/auth.md)", strings.Join(roles, ", "))
+}
+
+// TenantMiddleware requires X-Tenant-ID and a membership that may act in it on every
+// route whose contract security asks for a tenant, and builds the request's Principal
+// from the catalog. It goes right after SessionMiddleware.
+func (m *Module) TenantMiddleware() httpx.Middleware {
+	return identityhttp.TenantMiddleware(m.tenancy, m.logger)
 }
 
 // CheckRolesInUse logs an error for every role stored in a membership that the catalog

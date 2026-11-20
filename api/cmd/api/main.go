@@ -91,6 +91,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		// What each route requires comes from the security declared in the contract.
 		httpx.RouteSecurity(mux, routes.Security()),
 		idm.SessionMiddleware(),
+		idm.TenantMiddleware(),
 	)
 
 	if err := httpx.NewServer(cfg.HTTP, handler, logger).Run(ctx); err != nil {

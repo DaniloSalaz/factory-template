@@ -233,6 +233,26 @@ func (r repo) RolesInUse(ctx context.Context) ([]string, error) {
 	return roles, nil
 }
 
+// tenantActive is the tenants.status of a tenant that may be used.
+const tenantActive = "active"
+
+func (r repo) Membership(ctx context.Context, tenantID string) (app.Membership, bool, error) {
+	tid, err := parseUUID(tenantID)
+	if err != nil {
+		return app.Membership{}, false, err
+	}
+	row, err := r.q.AuthMembership(ctx, tid)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return app.Membership{}, false, nil
+	}
+	if err != nil {
+		return app.Membership{}, false, fmt.Errorf("auth membership: %w", err)
+	}
+	return app.Membership{
+		Role: row.Role, TenantActive: row.TenantStatus == tenantActive, UserDisabled: row.UserDisabled,
+	}, true, nil
+}
+
 // uniqueViolation is SQLSTATE unique_violation.
 const uniqueViolation = "23505"
 

@@ -68,6 +68,16 @@ type Repo interface {
 
 	// RolesInUse returns the distinct roles stored in any membership.
 	RolesInUse(ctx context.Context) ([]string, error)
+	// Membership returns the transaction user's membership in tenantID (a UUID); found
+	// is false without one or without such a tenant.
+	Membership(ctx context.Context, tenantID string) (m Membership, found bool, err error)
+}
+
+// Membership is the acting user's membership in a tenant, with the state of both.
+type Membership struct {
+	Role         string
+	TenantActive bool
+	UserDisabled bool
 }
 
 // ErrAlreadyExists is what a Repo returns when a create hits a unique constraint: a

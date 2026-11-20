@@ -12,6 +12,27 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const authMembership = `-- name: AuthMembership :one
+SELECT m.role::text AS role, m.tenant_status::text AS tenant_status,
+       m.user_disabled::boolean AS user_disabled
+FROM auth_membership($1::uuid) AS m(role, tenant_status, user_disabled)
+`
+
+type AuthMembershipRow struct {
+	Role         string
+	TenantStatus string
+	UserDisabled bool
+}
+
+// The acting user's membership in a tenant (tenant middleware, design 5.4.2). No row:
+// no membership, or no such tenant.
+func (q *Queries) AuthMembership(ctx context.Context, tenantID pgtype.UUID) (AuthMembershipRow, error) {
+	row := q.db.QueryRow(ctx, authMembership, tenantID)
+	var i AuthMembershipRow
+	err := row.Scan(&i.Role, &i.TenantStatus, &i.UserDisabled)
+	return i, err
+}
+
 const createIdentity = `-- name: CreateIdentity :exec
 INSERT INTO user_identities (user_id, provider, subject, email_at_link)
 VALUES ($1, $2, $3, $4::text::extensions.citext)

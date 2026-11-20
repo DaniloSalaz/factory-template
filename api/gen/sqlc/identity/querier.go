@@ -11,6 +11,9 @@ import (
 )
 
 type Querier interface {
+	// The acting user's membership in a tenant (tenant middleware, design 5.4.2). No row:
+	// no membership, or no such tenant.
+	AuthMembership(ctx context.Context, tenantID pgtype.UUID) (AuthMembershipRow, error)
 	CreateIdentity(ctx context.Context, arg CreateIdentityParams) error
 	CreateSession(ctx context.Context, arg CreateSessionParams) (pgtype.UUID, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (pgtype.UUID, error)

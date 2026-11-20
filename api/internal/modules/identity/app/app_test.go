@@ -38,6 +38,8 @@ type state struct {
 	audit      []memAudit
 	nextID     int
 	rolesInUse []string
+	// memberships by tenant id, then user id.
+	memberships map[string]map[string]app.Membership
 }
 
 type memUser struct {
@@ -65,6 +67,7 @@ func (s state) clone() state {
 	return state{
 		users: maps.Clone(s.users), identities: maps.Clone(s.identities), sessions: maps.Clone(s.sessions),
 		audit: slices.Clone(s.audit), nextID: s.nextID, rolesInUse: slices.Clone(s.rolesInUse),
+		memberships: s.memberships, // read-only in these tests
 	}
 }
 
@@ -225,6 +228,11 @@ const front = "https://front.test"
 
 func (r *memRepo) RolesInUse(context.Context) ([]string, error) {
 	return slices.Clone(r.st.rolesInUse), nil
+}
+
+func (r *memRepo) Membership(_ context.Context, tenantID string) (app.Membership, bool, error) {
+	m, ok := r.st.memberships[tenantID][r.actor]
+	return m, ok, nil
 }
 
 type fixture struct {

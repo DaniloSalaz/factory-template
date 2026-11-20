@@ -57,3 +57,17 @@ func ErrStaleAuthentication() error {
 func ErrMFAMissing() error {
 	return apperr.Forbidden("auth.mfa_required", "Multi-factor authentication is required.")
 }
+
+// ErrTenantForbidden is returned when the request may not act in the tenant it names:
+// a malformed or missing X-Tenant-ID, a tenant that does not exist or is suspended, no
+// membership, or a disabled user. All are the same 403, so a caller cannot learn which
+// tenants exist (design, 5.4.2).
+func ErrTenantForbidden() error {
+	return apperr.Forbidden("auth.tenant_forbidden", "You cannot act in this tenant.")
+}
+
+// ErrRoleMFARequired is returned when the member's role requires an MFA more recent than
+// the session has (design, 5.4.3). The front end answers it with a full login (5.2.5).
+func ErrRoleMFARequired() error {
+	return apperr.Forbidden("auth.mfa_required", "Your role requires a recent multi-factor authentication; log in again.")
+}

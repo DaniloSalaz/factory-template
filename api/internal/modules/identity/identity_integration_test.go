@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -190,11 +191,23 @@ func newEnv(t *testing.T, opts options) *env {
 	noContent := func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }
 	mux.HandleFunc("GET /whoami", noContent)
 	mux.HandleFunc("GET /undeclared", noContent)
+	mux.HandleFunc("GET /in-tenant", func(w http.ResponseWriter, r *http.Request) {
+		p, ok := authctx.PrincipalFrom(r.Context())
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(principalView{
+			UserID: p.UserID(), TenantID: p.TenantID(), Role: p.Role(), Scope: string(p.Scope()), Permissions: p.Permissions(),
+		})
+	})
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	// The contract's table, plus a test route that needs only a session. /undeclared is
 	// left out of it on purpose.
 	security := routes.Security()
 	security["GET /whoami"] = httpx.Security{Session: true}
+	security["GET /in-tenant"] = httpx.Security{Session: true, Tenant: true}
 	// The same chain as cmd/api.
 	h := httpx.Chain(httpx.WithRouteFallback(mux, logger),
 		httpx.RequestID(),
@@ -206,6 +219,7 @@ func newEnv(t *testing.T, opts options) *env {
 		httpx.CSRF([]string{frontOrigin}, logger),
 		httpx.RouteSecurity(mux, security),
 		m.SessionMiddleware(),
+		m.TenantMiddleware(),
 	)
 	srv := httptest.NewTLSServer(h)
 	t.Cleanup(srv.Close)
@@ -248,9 +262,27 @@ func (r response) problemCode(t *testing.T) string {
 
 func (b *browser) do(method, path, origin string) response {
 	b.e.t.Helper()
+	return b.doHeaders(method, path, origin, nil)
+}
+
+// inTenant calls GET /in-tenant with X-Tenant-ID (none if tenantID is "-").
+func (b *browser) inTenant(tenantID string) response {
+	b.e.t.Helper()
+	h := http.Header{}
+	if tenantID != "-" {
+		h.Set("X-Tenant-ID", tenantID)
+	}
+	return b.doHeaders(http.MethodGet, "/in-tenant", "", h)
+}
+
+func (b *browser) doHeaders(method, path, origin string, header http.Header) response {
+	b.e.t.Helper()
 	req, err := http.NewRequestWithContext(b.e.t.Context(), method, b.e.srv.URL+path, nil)
 	if err != nil {
 		b.e.t.Fatal(err)
+	}
+	for k, v := range header {
+		req.Header[k] = v
 	}
 	if origin != "" {
 		req.Header.Set("Origin", origin)
@@ -1004,6 +1036,47 @@ func mustURL(s string) *url.URL {
 	return u
 }
 
+type principalView struct {
+	UserID      string               `json:"user_id"`
+	TenantID    string               `json:"tenant_id"`
+	Role        string               `json:"role"`
+	Scope       string               `json:"scope"`
+	Permissions []authctx.Permission `json:"permissions"`
+}
+
+func (r response) principal(t *testing.T) principalView {
+	t.Helper()
+	if r.status != http.StatusOK {
+		t.Fatalf("in-tenant: %d %s", r.status, r.body)
+	}
+	var p principalView
+	if err := json.Unmarshal(r.body, &p); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func (e *env) userID(who app.Authentication) string {
+	e.t.Helper()
+	return e.scalar(`SELECT user_id::text FROM user_identities WHERE subject = $1`, who.Subject)
+}
+
+// logRecords returns the log records whose msg is msg.
+func (e *env) logRecords(msg string) []map[string]any {
+	e.t.Helper()
+	var out []map[string]any
+	for line := range strings.Lines(e.logs.String()) {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			e.t.Fatalf("invalid log line %q: %v", line, err)
+		}
+		if m["msg"] == msg {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
 // tenant creates an active tenant as the superuser (POST /tenants arrives in step 5)
 // and returns its id.
 func (e *env) tenant() string {
@@ -1046,5 +1119,160 @@ func TestCheckRolesInUse_LogsUnknownRoles(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("no error for the unknown role:\n%s", e.logs.String())
+	}
+}
+
+func TestTenant_SameForbiddenForEveryReason(t *testing.T) {
+	e := newEnv(t, options{})
+	who, other := e.person(), e.person()
+	b := e.browser()
+	b.login(who)
+	e.browser().login(other)
+	mine, foreign, suspended := e.tenant(), e.tenant(), e.tenant()
+	e.member(who, mine, "member")
+	e.member(other, foreign, "member")
+	e.member(who, suspended, "member")
+	e.exec(`UPDATE tenants SET status = 'suspended' WHERE id = $1`, suspended)
+	audits := e.count(`SELECT count(*) FROM audit_log`)
+
+	if p := b.inTenant(mine).principal(t); p.TenantID != mine {
+		t.Fatalf("own tenant: %+v", p)
+	}
+	nonexistent := "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f9999"
+	cases := []struct{ name, tenant string }{
+		{"missing", "-"}, {"malformed", "not-a-uuid"}, {"nonexistent", nonexistent},
+		{"foreign", foreign}, {"suspended", suspended},
+	}
+	var first httpx.Problem
+	for i, tc := range cases {
+		res := b.inTenant(tc.tenant)
+		var p httpx.Problem
+		if err := json.Unmarshal(res.body, &p); err != nil || res.status != http.StatusForbidden || p.Code != "auth.tenant_forbidden" {
+			t.Fatalf("%s: %d %s", tc.name, res.status, res.body)
+		}
+		p.RequestID = ""
+		if i == 0 {
+			first = p
+		} else if fmt.Sprint(p) != fmt.Sprint(first) {
+			t.Fatalf("%s: problem %+v differs from %+v", tc.name, p, first)
+		}
+	}
+
+	if n := e.count(`SELECT count(*) FROM audit_log`); n != audits {
+		t.Fatalf("a refused tenant must not be audited: %d new events", n-audits)
+	}
+	warns := e.logRecords("tenant refused")
+	if len(warns) != len(cases) {
+		t.Fatalf("want one warning per refusal, got %d", len(warns))
+	}
+	uid := e.userID(who)
+	for i, w := range warns {
+		if w["level"] != "WARN" || w["user_id"] != uid {
+			t.Fatalf("warning %d: %v", i, w)
+		}
+		got, has := w["requested_tenant_id"]
+		switch cases[i].name {
+		case "missing", "malformed":
+			if has {
+				t.Fatalf("%s: a non-UUID must not reach the logs: %v", cases[i].name, w)
+			}
+		default:
+			if got != cases[i].tenant {
+				t.Fatalf("%s: requested_tenant_id = %v", cases[i].name, got)
+			}
+		}
+	}
+}
+
+func TestTenant_Principal(t *testing.T) {
+	e := newEnv(t, options{})
+	who := e.person()
+	b := e.browser()
+	b.login(who)
+	uid := e.userID(who)
+	member, client, ghost := e.tenant(), e.tenant(), e.tenant()
+	e.member(who, member, "member")
+	e.member(who, client, "client")
+	e.member(who, ghost, "ghost-role")
+
+	p := b.inTenant(member).principal(t)
+	if p.UserID != uid || p.Role != "member" || p.Scope != string(authctx.ScopeTenant) ||
+		!slices.Contains(p.Permissions, authz.PermMembersRead) {
+		t.Fatalf("member: %+v", p)
+	}
+	rec := e.accessRecord("/in-tenant")
+	if rec["user_id"] != uid || rec["tenant_id"] != member || rec["pattern"] != "GET /in-tenant" {
+		t.Fatalf("access record = %v, want user_id, tenant_id and pattern (issue #13)", rec)
+	}
+
+	if p := b.inTenant(client).principal(t); p.Scope != string(authctx.ScopeOwn) || len(p.Permissions) != 0 {
+		t.Fatalf("client (no scope:tenant): %+v", p)
+	}
+	if p := b.inTenant(ghost).principal(t); p.Scope != string(authctx.ScopeOwn) || len(p.Permissions) != 0 {
+		t.Fatalf("an unknown role has no permissions: %+v", p)
+	}
+	errs := e.logRecords("the member's role is not in the catalog: acting with no permissions")
+	if len(errs) != 1 || errs[0]["level"] != "ERROR" || errs[0]["role"] != "ghost-role" {
+		t.Fatalf("unknown role log = %v", errs)
+	}
+
+	// A route without a tenant ignores the header.
+	if res := b.doHeaders(http.MethodGet, "/whoami", "", http.Header{"X-Tenant-Id": {"garbage"}}); res.status != http.StatusNoContent {
+		t.Fatalf("/whoami with a junk X-Tenant-ID: %d", res.status)
+	}
+}
+
+func TestTenant_RoleMFA(t *testing.T) {
+	e := newEnv(t, options{mfaRequired: true, catalog: testCatalog(t, 12*time.Hour)})
+	tenant := e.tenant()
+
+	noMFA := e.person()
+	noMFA.MFA.CoveredByPolicy = false // a method off the allowlist: mfa_auth_time is NULL
+	nb := e.browser()
+	nb.login(noMFA)
+	e.member(noMFA, tenant, authz.RoleOwner)
+	if res := nb.inTenant(tenant); res.status != http.StatusForbidden || res.problemCode(t) != "auth.mfa_required" {
+		t.Fatalf("owner without MFA: %d %s", res.status, res.body)
+	}
+	if res := nb.do(http.MethodGet, "/whoami", ""); res.status != http.StatusNoContent {
+		t.Fatalf("routes without a tenant do not check the role's MFA: %d", res.status)
+	}
+
+	withMFA := e.person()
+	b := e.browser()
+	b.login(withMFA)
+	e.member(withMFA, tenant, authz.RoleOwner)
+	if p := b.inTenant(tenant).principal(t); p.Role != authz.RoleOwner {
+		t.Fatalf("owner with recent MFA: %+v", p)
+	}
+	e.clock.Advance(12*time.Hour + time.Minute)
+	if res := b.inTenant(tenant); res.status != http.StatusForbidden || res.problemCode(t) != "auth.mfa_required" {
+		t.Fatalf("owner with MFA older than 12 h: %d %s", res.status, res.body)
+	}
+}
+
+// Without httpx.RouteSecurity in front (a wiring bug), both middlewares require
+// everything instead of letting the request through.
+func TestMiddlewares_FailClosedWithoutRouteSecurity(t *testing.T) {
+	e := newEnv(t, options{})
+	b := e.browser()
+	b.login(e.person())
+	reached := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	h := httpx.Chain(reached, e.module.SessionMiddleware(), e.module.TenantMiddleware())
+
+	call := func(cookie bool) *httptest.ResponseRecorder {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/healthz", nil)
+		if cookie {
+			req.AddCookie(&http.Cookie{Name: "__Host-session", Value: b.sessionToken()})
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	if rec := call(false); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("no session: %d, want 401", rec.Code)
+	}
+	if rec := call(true); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "auth.tenant_forbidden") {
+		t.Fatalf("no tenant: %d %s, want 403 auth.tenant_forbidden", rec.Code, rec.Body)
 	}
 }
