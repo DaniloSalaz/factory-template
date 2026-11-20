@@ -245,6 +245,41 @@ CREATE POLICY own_scope ON case_access AS RESTRICTIVE FOR ALL
 
 Las tablas hijas (documentos de un expediente) declaran su alcance a través del padre con el mismo `EXISTS`.
 
+**Tablas de acceso.** Una tabla que concede acceso a otras filas (`case_access`) se marca con `COMMENT ON TABLE <tabla> IS 'scope: access'`. Además de `own_scope`, lleva tres políticas restrictivas que solo permiten escribir con alcance `tenant`. Sin ellas, `own_scope` deja que un usuario con alcance `own` inserte una fila de acceso para sí mismo, o cambie el `case_id` de la suya, y llegue a cualquier expediente del tenant. Puede leer sus filas de acceso, pero nunca escribirlas:
+
+```sql
+COMMENT ON TABLE case_access IS 'scope: access';
+CREATE POLICY own_write_insert ON case_access AS RESTRICTIVE FOR INSERT
+  WITH CHECK (current_setting('app.scope') = 'tenant');
+CREATE POLICY own_write_update ON case_access AS RESTRICTIVE FOR UPDATE
+  USING (current_setting('app.scope') = 'tenant');
+CREATE POLICY own_write_delete ON case_access AS RESTRICTIVE FOR DELETE
+  USING (current_setting('app.scope') = 'tenant');
+```
+
+La política de `UPDATE` es obligatoria aunque `app_runtime` no tenga `UPDATE` en la tabla: un permiso concedido más adelante no debe abrir el alcance.
+
+**Tablas hijas: claves foráneas compuestas, obligatorias.** Toda tabla que referencia a un padre con `tenant_id` (las tablas de acceso incluidas) lo hace con `(tenant_id, parent_id)` hacia un `UNIQUE (tenant_id, id)` del padre. RLS filtra las filas que se leen, pero una clave foránea simple a `cases(id)` no comprueba el tenant: una fila hija del tenant A podría colgar de un expediente de B. Con la clave compuesta, la base de datos lo rechaza (`23503`) sea cual sea el código:
+
+```sql
+CREATE TABLE cases (
+  id        uuid PRIMARY KEY DEFAULT uuidv7(),
+  tenant_id uuid NOT NULL REFERENCES tenants (id) ON DELETE RESTRICT,
+  …,
+  UNIQUE (tenant_id, id)
+);
+CREATE TABLE case_documents (
+  id        uuid PRIMARY KEY DEFAULT uuidv7(),
+  tenant_id uuid NOT NULL REFERENCES tenants (id) ON DELETE RESTRICT,
+  case_id   uuid NOT NULL,
+  …,
+  FOREIGN KEY (tenant_id, case_id) REFERENCES cases (tenant_id, id)
+);
+CREATE INDEX case_documents_tenant_case_idx ON case_documents (tenant_id, case_id);
+```
+
+Los patrones completos, listos para copiar, están en `docs/patterns.md`.
+
 **Políticas restrictivas adicionales.** Una tabla puede añadir más políticas `AS RESTRICTIVE` para estrechar una operación concreta; nunca políticas permisivas. `memberships` tiene una: con alcance `own`, el usuario puede leer y borrar su propia membresía (abandonar el tenant, sección 5.7), pero no modificarla.
 
 ```sql
@@ -258,6 +293,7 @@ Un `UPDATE` con alcance `own` no ve ninguna fila y no afecta a ninguna.
 - `relrowsecurity` y `relforcerowsecurity` activos;
 - `tenant_isolation` existe, es permisiva, `FOR ALL`, y su expresión compara la columna (`tenant_id`, o `id` en `tenants`) con `app.tenant_id`;
 - o bien el comentario `scope: tenant-shared`, o bien `own_scope` restrictiva y `FOR ALL`;
+- en las tablas con el comentario `scope: access`: `own_scope` y políticas restrictivas para `INSERT` (en `WITH CHECK`), `UPDATE` y `DELETE` (en `USING`) cuya expresión es exactamente `current_setting('app.scope') = 'tenant'`;
 - ninguna política usa `current_setting(…, true)` ni `NULLIF`;
 - ninguna política permisiva adicional además de `tenant_isolation` (las restrictivas adicionales se admiten, con las mismas comprobaciones de expresión).
 
@@ -370,6 +406,7 @@ Los `{id}` son de la membresía o de la invitación, nunca del usuario. El rol `
 **Estructura de la BD** (test de migraciones y de funciones, sección 7.3 y 7.4)
 - Cada tabla con `tenant_id`, y `tenants` por su `id`: RLS activo y forzado, `tenant_isolation` permisiva y `FOR ALL`, alcance declarado; si es `own_scope`, restrictiva y `FOR ALL`; ninguna otra política permisiva.
 - Una tabla de prueba con `own_scope` permisiva hace fallar el test (el test se prueba a sí mismo).
+- Una tabla de acceso sin la política de escritura de `INSERT`, `UPDATE` o `DELETE` hace fallar el test.
 - Funciones: `search_path`, `EXECUTE` revocado a `PUBLIC`, propietario y sin parámetro `user_id`.
 - Foto de permisos: todos los de `app_runtime` (de tabla, de columna y de ejecución, también los heredados de `PUBLIC`) coinciden con `testdata/runtime_privileges.golden`. Cambiar ese fichero es una decisión de seguridad que se justifica en el PR.
 
