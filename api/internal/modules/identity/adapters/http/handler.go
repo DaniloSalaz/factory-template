@@ -23,12 +23,13 @@ type Handler struct {
 	login    *app.Login
 	sessions *app.Sessions
 	accounts *app.Accounts
+	mfa      *app.MFA
 	logger   *slog.Logger
 }
 
 // NewHandler builds a Handler.
-func NewHandler(login *app.Login, sessions *app.Sessions, accounts *app.Accounts, logger *slog.Logger) *Handler {
-	return &Handler{login: login, sessions: sessions, accounts: accounts, logger: logger}
+func NewHandler(login *app.Login, sessions *app.Sessions, accounts *app.Accounts, mfa *app.MFA, logger *slog.Logger) *Handler {
+	return &Handler{login: login, sessions: sessions, accounts: accounts, mfa: mfa, logger: logger}
 }
 
 // AuthLogin starts a login (design, 5.1.1 and 5.1.2).
@@ -98,13 +99,13 @@ func (h *Handler) AuthLogoutAll(ctx context.Context, _ identityapi.AuthLogoutAll
 	return loggedOut{logoutURL: logoutURL}, nil
 }
 
-// GetMe returns the current user and their memberships (design, section 10).
+// GetMe returns the current user, their memberships and their MFA (design, section 10).
 func (h *Handler) GetMe(ctx context.Context, _ identityapi.GetMeRequestObject) (identityapi.GetMeResponseObject, error) {
 	cur, ok := app.CurrentFrom(ctx)
 	if !ok {
 		return nil, domain.ErrSessionInvalid()
 	}
-	me, err := h.accounts.Me(ctx, cur.UserID)
+	me, err := h.accounts.Me(ctx, cur)
 	if err != nil {
 		return nil, err
 	}
@@ -116,6 +117,12 @@ func (h *Handler) GetMe(ctx context.Context, _ identityapi.GetMeRequestObject) (
 		// The user's own email, to the user: the API boundary is where pii is revealed.
 		User:        identityapi.CurrentUser{Id: userID, Email: me.User.Email.Reveal(), DisplayName: me.User.DisplayName},
 		Memberships: make([]identityapi.Membership, 0, len(me.Memberships)),
+		MfaEnrolled: me.MFAEnrolled(),
+		MfaFactors:  make([]identityapi.MFAFactor, 0, len(me.Factors)),
+	}
+	if !me.SessionMFAAt.IsZero() {
+		at := me.SessionMFAAt
+		out.SessionMfaAt = &at
 	}
 	for _, m := range me.Memberships {
 		tenantID, err := uuid(m.TenantID)
@@ -124,10 +131,89 @@ func (h *Handler) GetMe(ctx context.Context, _ identityapi.GetMeRequestObject) (
 		}
 		out.Memberships = append(out.Memberships, identityapi.Membership{
 			TenantId: tenantID, TenantSlug: m.TenantSlug, TenantName: m.TenantName,
-			TenantStatus: identityapi.MembershipTenantStatus(m.TenantStatus), Role: m.Role,
+			TenantStatus: identityapi.MembershipTenantStatus(m.TenantStatus), Role: m.Role, MfaRequired: m.MFARequired,
+		})
+	}
+	for _, f := range me.Factors {
+		id, err := uuid(f.ID)
+		if err != nil {
+			return nil, err
+		}
+		out.MfaFactors = append(out.MfaFactors, identityapi.MFAFactor{
+			Id: id, Type: identityapi.Totp, Verified: !f.VerifiedAt.IsZero(), CreatedAt: f.CreatedAt,
 		})
 	}
 	return out, nil
+}
+
+// EnrollTOTP enrolls a TOTP factor (design, 5.2).
+func (h *Handler) EnrollTOTP(ctx context.Context, _ identityapi.EnrollTOTPRequestObject) (identityapi.EnrollTOTPResponseObject, error) {
+	cur, ok := app.CurrentFrom(ctx)
+	if !ok {
+		return nil, domain.ErrSessionInvalid()
+	}
+	e, err := h.mfa.Enroll(ctx, cur)
+	if err != nil {
+		return nil, err
+	}
+	factorID, err := uuid(e.Challenge.FactorID)
+	if err != nil {
+		return nil, err
+	}
+	challengeID, err := uuid(e.Challenge.ID)
+	if err != nil {
+		return nil, err
+	}
+	// Shown to the user once, at the API boundary; never logged or stored.
+	return identityapi.EnrollTOTP201JSONResponse{
+		FactorId: factorID, ChallengeId: challengeID, ExpiresAt: e.Challenge.ExpiresAt,
+		QrCode: e.QRCode.Reveal(), Secret: e.Secret.Reveal(), Uri: e.URI.Reveal(),
+	}, nil
+}
+
+// CreateMFAChallenge challenges one of the user's factors.
+func (h *Handler) CreateMFAChallenge(ctx context.Context, req identityapi.CreateMFAChallengeRequestObject) (identityapi.CreateMFAChallengeResponseObject, error) {
+	cur, ok := app.CurrentFrom(ctx)
+	if !ok {
+		return nil, domain.ErrSessionInvalid()
+	}
+	ch, err := h.mfa.Challenge(ctx, cur, req.Body.FactorId.String())
+	if err != nil {
+		return nil, err
+	}
+	challengeID, err := uuid(ch.ID)
+	if err != nil {
+		return nil, err
+	}
+	return identityapi.CreateMFAChallenge201JSONResponse{
+		ChallengeId: challengeID, FactorId: req.Body.FactorId, ExpiresAt: ch.ExpiresAt,
+	}, nil
+}
+
+// VerifyTOTP answers a challenge; on success the session is replaced and the browser
+// gets the new cookie.
+func (h *Handler) VerifyTOTP(ctx context.Context, req identityapi.VerifyTOTPRequestObject) (identityapi.VerifyTOTPResponseObject, error) {
+	cur, ok := app.CurrentFrom(ctx)
+	if !ok {
+		return nil, domain.ErrSessionInvalid()
+	}
+	rotated, err := h.mfa.Verify(ctx, cur, req.Body.ChallengeId.String(), req.Body.Code)
+	if err != nil {
+		return nil, err
+	}
+	return verified{rotated: rotated}, nil
+}
+
+// RemoveTOTP removes one of the user's factors.
+func (h *Handler) RemoveTOTP(ctx context.Context, req identityapi.RemoveTOTPRequestObject) (identityapi.RemoveTOTPResponseObject, error) {
+	cur, ok := app.CurrentFrom(ctx)
+	if !ok {
+		return nil, domain.ErrSessionInvalid()
+	}
+	if err := h.mfa.Remove(ctx, cur, req.FactorId.String()); err != nil {
+		return nil, err
+	}
+	return identityapi.RemoveTOTP204Response{}, nil
 }
 
 // GetCurrentTenant returns the tenant of X-Tenant-ID with the caller's role and

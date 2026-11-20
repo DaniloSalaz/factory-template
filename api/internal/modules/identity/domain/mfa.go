@@ -1,28 +1,9 @@
 package domain
 
 import (
-	"slices"
+	"crypto/sha256"
 	"time"
 )
-
-// ProviderMFA is what the identity provider tells about how the user authenticated.
-//
-// WorkOS documents no claim saying whether MFA happened (design, section 13), so MFA can
-// only be inferred: every login forces a fresh authentication, and if the provider
-// enforces MFA on every user of the environment, that authentication included it. If the
-// provider ever reports authentication methods (an amr claim, RFC 8176), those are
-// checked instead of inferring.
-type ProviderMFA struct {
-	// AuthTime is when the user actively authenticated, per the provider.
-	AuthTime time.Time
-	// CoveredByPolicy is true only when the method used is confirmed to go through the
-	// provider's MFA policy. It is an allowlist: unknown methods are not covered.
-	CoveredByPolicy bool
-	// AMR are the authentication methods reported by the provider; HasAMR is false when
-	// it reports none, which is the case of WorkOS today.
-	AMR    []string
-	HasAMR bool
-}
 
 // AuthClockSkew is how far the provider's clock may lag behind ours.
 const AuthClockSkew = 60 * time.Second
@@ -30,32 +11,48 @@ const AuthClockSkew = 60 * time.Second
 // FreshAuthentication reports whether the provider authenticated the user during this
 // login, that is, after the intent started (less AuthClockSkew). Every login forces a
 // fresh authentication (max_age=0); if the provider ignored that, auth_time would be
-// older, and both auth_time and the inferred MFA would describe an earlier login.
+// older and describe an earlier login.
 func FreshAuthentication(authTime, intentStartedAt time.Time) bool {
 	return !authTime.Before(intentStartedAt.Add(-AuthClockSkew))
 }
 
-// amrMFA is the RFC 8176 value for authentication with more than one factor.
-const amrMFA = "mfa"
+// MFA is optional, and required only by the roles of the catalog that say so (design,
+// 5.2; ADR 0002). The identity provider reports nothing about MFA in a login, so the app
+// verifies the second factor itself after the login, and a session counts as MFA only
+// through the mfa_auth_time that verification sets.
 
-// MFAAuthTime returns when the user last passed MFA, if the login proves it.
-//
-// With reported methods, MFA is what they say: if the environment requires MFA and they
-// do not include it, the login is refused. Without them, MFA is inferred only when the
-// provider enforces it (providerEnforcesMFA) and the method is on the allowlist of
-// methods confirmed to ask for the second factor (CoveredByPolicy).
-func MFAAuthTime(m ProviderMFA, providerEnforcesMFA bool) (time.Time, bool, error) {
-	if m.HasAMR {
-		if slices.Contains(m.AMR, amrMFA) {
-			return m.AuthTime, true, nil
-		}
-		if providerEnforcesMFA {
-			return time.Time{}, false, ErrMFAMissing()
-		}
-		return time.Time{}, false, nil
+// FactorChangeMFAMaxAge is how recent the session's MFA must be to enroll or remove a
+// factor once the user has a verified one: a stolen session alone cannot swap the
+// victim's factor for the thief's.
+const FactorChangeMFAMaxAge = 10 * time.Minute
+
+// MFASatisfied reports whether a session whose MFA was at mfaAuthTime (zero: never) has
+// an MFA no older than maxAge at now.
+func MFASatisfied(mfaAuthTime time.Time, maxAge time.Duration, now time.Time) bool {
+	return !mfaAuthTime.IsZero() && now.Sub(mfaAuthTime) <= maxAge
+}
+
+// totpDigits is the length of the codes the provider issues (WorkOS: 6, SHA-1, 30 s).
+const totpDigits = 6
+
+// ValidTOTPCode reports whether code looks like a TOTP code, so anything else is refused
+// before it reaches the provider.
+func ValidTOTPCode(code string) bool {
+	if len(code) != totpDigits {
+		return false
 	}
-	if providerEnforcesMFA && m.CoveredByPolicy {
-		return m.AuthTime, true, nil
+	for _, c := range []byte(code) {
+		if c < '0' || c > '9' {
+			return false
+		}
 	}
-	return time.Time{}, false, nil
+	return true
+}
+
+// HashCode is what the database keeps of the last code accepted with a factor, to refuse
+// it if it comes again. A 6-digit code is trivial to brute-force from its hash, which is
+// harmless: a used code is worthless once its 30 s step has passed.
+func HashCode(code string) []byte {
+	sum := sha256.Sum256([]byte(code))
+	return sum[:]
 }

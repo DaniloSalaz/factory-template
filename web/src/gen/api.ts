@@ -28,11 +28,68 @@ export interface Membership {
   tenant_status: MembershipTenantStatus;
   /** The member's role in the app's role catalog. */
   role: string;
+  /** The role requires a recent MFA to act in the tenant. */
+  mfa_required: boolean;
+}
+
+export type MFAFactorType = typeof MFAFactorType[keyof typeof MFAFactorType];
+
+
+export const MFAFactorType = {
+  totp: 'totp',
+} as const;
+
+export interface MFAFactor {
+  id: string;
+  type: MFAFactorType;
+  /** False until its first code is verified. */
+  verified: boolean;
+  created_at: string;
 }
 
 export interface Me {
   user: CurrentUser;
   memberships: Membership[];
+  /** The user has at least one verified factor. */
+  mfa_enrolled: boolean;
+  mfa_factors: MFAFactor[];
+  /**
+     * When this session last verified a factor; null if never.
+     * @nullable
+     */
+  session_mfa_at: string | null;
+}
+
+export interface TOTPEnrollment {
+  factor_id: string;
+  challenge_id: string;
+  expires_at: string;
+  /** A data URI of a PNG image to scan with an authenticator app. Shown once. */
+  qr_code: string;
+  /** The shared secret, for apps that cannot scan. Shown once. */
+  secret: string;
+  /** The otpauth:// URI the QR code encodes. */
+  uri: string;
+}
+
+export interface MFAChallengeRequest {
+  factor_id: string;
+}
+
+export interface MFAChallenge {
+  challenge_id: string;
+  factor_id: string;
+  expires_at: string;
+}
+
+export interface MFAVerifyRequest {
+  challenge_id: string;
+  /** @pattern ^[0-9]{6}$ */
+  code: string;
+}
+
+export interface MFAVerified {
+  mfa_verified_at: string;
 }
 
 /**
@@ -180,6 +237,26 @@ export type AuthCallbackParams = {
   error?: string;
   /** @maxLength 1024 */
   error_description?: string;
+};
+
+const getHeaders = (...sources: (RequestInit['headers'] | Record<string, string | undefined>)[]) => {
+  const seen = new Set<string>();
+  const layers: [string, string | readonly string[]][][] = [];
+  for (const source of sources.reverse()) {
+    if (!source) continue;
+    const entries = source instanceof Headers
+      ? source.entries()
+      : Symbol.iterator in source
+        ? Array.from(source as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string])
+        : Object.entries<string | readonly string[] | undefined>(source);
+    const layer: [string, string | readonly string[]][] = [];
+    for (const [name, value] of entries) {
+      if (value !== undefined && !seen.has(name.toLowerCase())) layer.push([name, value]);
+    }
+    for (const [name] of layer) seen.add(name.toLowerCase());
+    layers.push(layer);
+  }
+  return Object.fromEntries(layers.reverse().flat()) as Extract<RequestInit['headers'], Record<string, unknown>>;
 };
 
 export type getHealthzResponse200 = {
@@ -555,6 +632,307 @@ export const getMe = async ( options?: Parameters<typeof apiFetch>[1]): Promise<
   {
     ...options,
     method: 'GET'
+
+
+  }
+);}
+
+
+
+export type enrollTOTPResponse201 = {
+  data: TOTPEnrollment
+  status: 201
+}
+
+export type enrollTOTPResponse401 = {
+  data: UnauthorizedResponse
+  status: 401
+}
+
+export type enrollTOTPResponse403 = {
+  data: ForbiddenResponse
+  status: 403
+}
+
+export type enrollTOTPResponse409 = {
+  data: ConflictResponse
+  status: 409
+}
+
+export type enrollTOTPResponse429 = {
+  data: TooManyRequestsResponse
+  status: 429
+}
+
+export type enrollTOTPResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type enrollTOTPResponse503 = {
+  data: ServiceUnavailableResponse
+  status: 503
+}
+
+export type enrollTOTPResponseSuccess = (enrollTOTPResponse201) & {
+  headers: Headers;
+};
+export type enrollTOTPResponseError = (enrollTOTPResponse401 | enrollTOTPResponse403 | enrollTOTPResponse409 | enrollTOTPResponse429 | enrollTOTPResponse500 | enrollTOTPResponse503) & {
+  headers: Headers;
+};
+
+export type enrollTOTPResponse = (enrollTOTPResponseSuccess | enrollTOTPResponseError)
+
+export const getEnrollTOTPUrl = () => {
+
+
+
+
+  return `/me/mfa/totp`
+}
+
+/**
+ * Creates a TOTP factor at the identity provider and its first challenge, valid 5 minutes. Show the QR code (or the secret) to the user once; the factor counts only after its first code is verified with POST /me/mfa/totp/verify. If the user already has a verified factor, the session must have verified one in the last 10 minutes (otherwise 403 auth.mfa_required). Rate limited per user.
+ * @summary Enroll a TOTP factor
+ */
+export const enrollTOTP = async ( options?: Parameters<typeof apiFetch>[1]): Promise<enrollTOTPResponse> => {
+
+  return apiFetch<enrollTOTPResponse>(getEnrollTOTPUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+export type createMFAChallengeResponse201 = {
+  data: MFAChallenge
+  status: 201
+}
+
+export type createMFAChallengeResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type createMFAChallengeResponse401 = {
+  data: UnauthorizedResponse
+  status: 401
+}
+
+export type createMFAChallengeResponse403 = {
+  data: ForbiddenResponse
+  status: 403
+}
+
+export type createMFAChallengeResponse404 = {
+  data: NotFoundResponse
+  status: 404
+}
+
+export type createMFAChallengeResponse409 = {
+  data: ConflictResponse
+  status: 409
+}
+
+export type createMFAChallengeResponse429 = {
+  data: TooManyRequestsResponse
+  status: 429
+}
+
+export type createMFAChallengeResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type createMFAChallengeResponse503 = {
+  data: ServiceUnavailableResponse
+  status: 503
+}
+
+export type createMFAChallengeResponseSuccess = (createMFAChallengeResponse201) & {
+  headers: Headers;
+};
+export type createMFAChallengeResponseError = (createMFAChallengeResponse400 | createMFAChallengeResponse401 | createMFAChallengeResponse403 | createMFAChallengeResponse404 | createMFAChallengeResponse409 | createMFAChallengeResponse429 | createMFAChallengeResponse500 | createMFAChallengeResponse503) & {
+  headers: Headers;
+};
+
+export type createMFAChallengeResponse = (createMFAChallengeResponseSuccess | createMFAChallengeResponseError)
+
+export const getCreateMFAChallengeUrl = () => {
+
+
+
+
+  return `/me/mfa/challenges`
+}
+
+/**
+ * Creates a challenge of the factor, bound to this session, single-use and valid 5 minutes. Use it to answer 403 auth.mfa_required. Rate limited per user.
+ * @summary Challenge one of the user's factors
+ */
+export const createMFAChallenge = async (mFAChallengeRequest: MFAChallengeRequest, options?: Parameters<typeof apiFetch>[1]): Promise<createMFAChallengeResponse> => {
+
+  return apiFetch<createMFAChallengeResponse>(getCreateMFAChallengeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(mFAChallengeRequest)
+  }
+);}
+
+
+
+export type verifyTOTPResponse200 = {
+  data: MFAVerified
+  status: 200
+}
+
+export type verifyTOTPResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type verifyTOTPResponse401 = {
+  data: UnauthorizedResponse
+  status: 401
+}
+
+export type verifyTOTPResponse403 = {
+  data: ForbiddenResponse
+  status: 403
+}
+
+export type verifyTOTPResponse404 = {
+  data: NotFoundResponse
+  status: 404
+}
+
+export type verifyTOTPResponse409 = {
+  data: ConflictResponse
+  status: 409
+}
+
+export type verifyTOTPResponse422 = {
+  data: UnprocessableEntityResponse
+  status: 422
+}
+
+export type verifyTOTPResponse429 = {
+  data: TooManyRequestsResponse
+  status: 429
+}
+
+export type verifyTOTPResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type verifyTOTPResponse503 = {
+  data: ServiceUnavailableResponse
+  status: 503
+}
+
+export type verifyTOTPResponseSuccess = (verifyTOTPResponse200) & {
+  headers: Headers;
+};
+export type verifyTOTPResponseError = (verifyTOTPResponse400 | verifyTOTPResponse401 | verifyTOTPResponse403 | verifyTOTPResponse404 | verifyTOTPResponse409 | verifyTOTPResponse422 | verifyTOTPResponse429 | verifyTOTPResponse500 | verifyTOTPResponse503) & {
+  headers: Headers;
+};
+
+export type verifyTOTPResponse = (verifyTOTPResponseSuccess | verifyTOTPResponseError)
+
+export const getVerifyTOTPUrl = () => {
+
+
+
+
+  return `/me/mfa/totp/verify`
+}
+
+/**
+ * Answers a challenge of this session with a code. The challenge is used up by the attempt, right or wrong. On success the session is replaced by a new one, whose MFA counts from now: the response sets a new __Host-session cookie and the old one stops working. The first code of a new factor also verifies the factor. At most 5 attempts per user and per session in 15 minutes (429 mfa.rate_limited). A code already accepted with the factor is refused (409 mfa.code_reused).
+ * @summary Verify a TOTP code
+ */
+export const verifyTOTP = async (mFAVerifyRequest: MFAVerifyRequest, options?: Parameters<typeof apiFetch>[1]): Promise<verifyTOTPResponse> => {
+
+  return apiFetch<verifyTOTPResponse>(getVerifyTOTPUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(mFAVerifyRequest)
+  }
+);}
+
+
+
+export type removeTOTPResponse204 = {
+  data: void
+  status: 204
+}
+
+export type removeTOTPResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type removeTOTPResponse401 = {
+  data: UnauthorizedResponse
+  status: 401
+}
+
+export type removeTOTPResponse403 = {
+  data: ForbiddenResponse
+  status: 403
+}
+
+export type removeTOTPResponse404 = {
+  data: NotFoundResponse
+  status: 404
+}
+
+export type removeTOTPResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type removeTOTPResponse503 = {
+  data: ServiceUnavailableResponse
+  status: 503
+}
+
+export type removeTOTPResponseSuccess = (removeTOTPResponse204) & {
+  headers: Headers;
+};
+export type removeTOTPResponseError = (removeTOTPResponse400 | removeTOTPResponse401 | removeTOTPResponse403 | removeTOTPResponse404 | removeTOTPResponse500 | removeTOTPResponse503) & {
+  headers: Headers;
+};
+
+export type removeTOTPResponse = (removeTOTPResponseSuccess | removeTOTPResponseError)
+
+export const getRemoveTOTPUrl = (factorId: string,) => {
+
+
+
+
+  return `/me/mfa/totp/${factorId}`
+}
+
+/**
+ * Removes the factor here and at the identity provider. If the user has a verified factor, the session must have verified one in the last 10 minutes (403 auth.mfa_required). The last verified factor cannot be removed while a role of the user, in an active tenant, requires MFA (403 mfa.last_factor_required).
+ * @summary Remove one of the user's factors
+ */
+export const removeTOTP = async (factorId: string, options?: Parameters<typeof apiFetch>[1]): Promise<removeTOTPResponse> => {
+
+  return apiFetch<removeTOTPResponse>(getRemoveTOTPUrl(factorId),
+  {
+    ...options,
+    method: 'DELETE'
 
 
   }

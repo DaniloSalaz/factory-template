@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
 )
@@ -97,7 +96,7 @@ func TestExchangeCode(t *testing.T) {
 			t.Fatal(err)
 		}
 		if a.Subject != "user_1" || a.Email.Reveal() != "ana@example.test" || !a.EmailVerified || a.DisplayName != "Ana Ruiz" ||
-			a.SessionID != "session_1" || a.Method != "SSO" || !a.MFA.AuthTime.Equal(authTime) || a.MFA.CoveredByPolicy || a.MFA.HasAMR {
+			a.SessionID != "session_1" || a.Method != "SSO" || !a.AuthTime.Equal(authTime) {
 			t.Fatalf("authentication = %+v", a)
 		}
 		var body map[string]string
@@ -124,15 +123,6 @@ func TestExchangeCode(t *testing.T) {
 		}
 	})
 
-	t.Run("reports amr when present", func(t *testing.T) {
-		t.Parallel()
-		p, _, _ := fakeWorkOS(t, http.StatusOK, resp("user_1", map[string]any{"sub": "user_1", "sid": "s", "auth_time": authTime.Unix(), "amr": []string{"pwd", "mfa"}}))
-		a, err := p.ExchangeCode(t.Context(), "c", "v")
-		if err != nil || !a.MFA.HasAMR || len(a.MFA.AMR) != 2 {
-			t.Fatalf("authentication = %+v, %v", a, err)
-		}
-	})
-
 	broken := map[string]map[string]any{
 		"sub of another user": {"sub": "user_2", "sid": "s", "auth_time": authTime.Unix()},
 		"no auth_time":        {"sub": "user_1", "sid": "s"},
@@ -144,43 +134,6 @@ func TestExchangeCode(t *testing.T) {
 			_, err := p.ExchangeCode(t.Context(), "c", "v")
 			if e, ok := apperr.As(err); !ok || e.Code != "auth.provider_unavailable" {
 				t.Fatalf("err = %v", err)
-			}
-		})
-	}
-}
-
-// Only allowlisted methods count as MFA, and with MFA Required at the provider they give
-// mfa_auth_time; any other method, unknown ones included, gives none (design, 5.2).
-func TestExchangeCode_MFAAllowlist(t *testing.T) {
-	t.Parallel()
-	authTime := time.Unix(1_800_000_000, 0).UTC()
-	tests := map[string]bool{
-		"Password":       true,
-		"MagicAuth":      false,
-		"GoogleOAuth":    false,
-		"MicrosoftOAuth": false,
-		"Passkey":        false,
-		"SSO":            false,
-		"InventedAuth":   false,
-		"":               false,
-	}
-	for method, wantMFA := range tests {
-		t.Run("method "+method, func(t *testing.T) {
-			t.Parallel()
-			methodJSON := ""
-			if method != "" {
-				methodJSON = fmt.Sprintf(`,"authentication_method":%q`, method)
-			}
-			token := jwt(t, map[string]any{"sub": "user_1", "sid": "s", "auth_time": authTime.Unix()})
-			p, _, _ := fakeWorkOS(t, http.StatusOK, fmt.Sprintf(
-				`{"user":{"id":"user_1","email":"ana@example.test","email_verified":true},"access_token":%q%s}`, token, methodJSON))
-			a, err := p.ExchangeCode(t.Context(), "c", "v")
-			if err != nil {
-				t.Fatal(err)
-			}
-			_, gotMFA, err := domain.MFAAuthTime(a.MFA, true)
-			if err != nil || gotMFA != wantMFA {
-				t.Fatalf("with WORKOS_MFA_REQUIRED=true, MFA = %v (%v), want %v", gotMFA, err, wantMFA)
 			}
 		})
 	}
@@ -240,5 +193,88 @@ func TestLogoutURL(t *testing.T) {
 	}
 	if _, err := p.LogoutURL(""); err == nil {
 		t.Fatal("an empty session id must fail")
+	}
+}
+
+// fakeMFA answers the WorkOS MFA API: one route per call, each with its status and body,
+// and records the requests.
+func fakeMFA(t *testing.T, routes map[string]struct {
+	status int
+	body   string
+},
+) (*Provider, *[]string) {
+	t.Helper()
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		key := r.Method + " " + r.URL.Path
+		seen = append(seen, key+" "+string(b))
+		route, ok := routes[key]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(route.status)
+		_, _ = io.WriteString(w, route.body)
+	}))
+	t.Cleanup(srv.Close)
+	p := New(Config{ClientID: "client_test", APIKey: pii.Secret(testKey), BaseURL: srv.URL}, slog.New(slog.DiscardHandler))
+	return p, &seen
+}
+
+type route = struct {
+	status int
+	body   string
+}
+
+func TestMFA(t *testing.T) {
+	t.Parallel()
+
+	p, seen := fakeMFA(t, map[string]route{
+		"POST /user_management/users/user_1/auth_factors": {http.StatusCreated, `{
+			"authentication_factor":{"object":"authentication_factor","id":"auth_factor_1","type":"totp",
+				"totp":{"issuer":"Acme","user":"ana@example.test","secret":"JBSWY3DPEHPK3PXP","qr_code":"data:image/png;base64,AAA","uri":"otpauth://totp/x?secret=JBSWY3DPEHPK3PXP"}},
+			"authentication_challenge":{"object":"authentication_challenge","id":"auth_challenge_1","authentication_factor_id":"auth_factor_1"}}`},
+		"POST /auth/factors/auth_factor_1/challenge":         {http.StatusCreated, `{"id":"auth_challenge_2","authentication_factor_id":"auth_factor_1"}`},
+		"POST /auth/challenges/auth_challenge_2/verify":      {http.StatusOK, `{"challenge":{"id":"auth_challenge_2"},"valid":true}`},
+		"POST /auth/challenges/auth_challenge_3/verify":      {http.StatusOK, `{"challenge":{"id":"auth_challenge_3"},"valid":false}`},
+		"DELETE /auth/factors/auth_factor_1":                 {http.StatusNoContent, ``},
+		"DELETE /auth/factors/auth_factor_gone":              {http.StatusNotFound, `{"message":"not found"}`},
+		"POST /auth/challenges/auth_challenge_broken/verify": {http.StatusInternalServerError, `{"message":"boom"}`},
+	})
+	ctx := t.Context()
+
+	e, err := p.EnrollTOTP(ctx, "user_1")
+	if err != nil || e.FactorID != "auth_factor_1" || e.ChallengeID != "auth_challenge_1" ||
+		e.Secret.Reveal() != "JBSWY3DPEHPK3PXP" || !strings.HasPrefix(e.QRCode.Reveal(), "data:image/png") {
+		t.Fatalf("EnrollTOTP = %+v, %v", e, err)
+	}
+	if !strings.Contains((*seen)[0], `"type":"totp"`) {
+		t.Fatalf("enroll request = %s", (*seen)[0])
+	}
+	if id, err := p.Challenge(ctx, "auth_factor_1"); err != nil || id != "auth_challenge_2" {
+		t.Fatalf("Challenge = %q, %v", id, err)
+	}
+	if ok, err := p.Verify(ctx, "auth_challenge_2", "123456"); err != nil || !ok {
+		t.Fatalf("Verify (valid) = %v, %v", ok, err)
+	}
+	if !strings.Contains((*seen)[2], `"code":"123456"`) {
+		t.Fatalf("verify request = %s", (*seen)[2])
+	}
+	if ok, err := p.Verify(ctx, "auth_challenge_3", "000000"); err != nil || ok {
+		t.Fatalf("Verify (invalid) = %v, %v; only valid: true counts", ok, err)
+	}
+	if ok, err := p.Verify(ctx, "auth_challenge_broken", "000000"); ok || apperr.KindOf(err) != apperr.KindUnavailable {
+		t.Fatalf("Verify (provider error) = %v, %v", ok, err)
+	}
+	if err := p.DeleteFactor(ctx, "auth_factor_1"); err != nil {
+		t.Fatalf("DeleteFactor = %v", err)
+	}
+	if err := p.DeleteFactor(ctx, "auth_factor_gone"); err != nil {
+		t.Fatalf("DeleteFactor of a factor already gone = %v, want nil", err)
+	}
+	if _, err := p.Challenge(ctx, "auth_factor_unknown"); apperr.KindOf(err) != apperr.KindConflict {
+		t.Fatalf("Challenge of an unknown factor = %v, want mfa.provider_rejected", err)
 	}
 }

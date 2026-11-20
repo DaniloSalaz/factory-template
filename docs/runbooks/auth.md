@@ -1,6 +1,7 @@
 # Runbook: login con WorkOS AuthKit
 
-Diseño: `docs/designs/auth-y-tenancy.md` (secciones 5.1, 5.2, 5.5, 6 y 13).
+Diseño: `docs/designs/auth-y-tenancy.md` (secciones 5.1, 5.2, 5.5, 6 y 13) y
+`docs/adr/0002-mfa-opcional-por-rol.md`.
 
 ## Variables
 
@@ -9,7 +10,6 @@ Diseño: `docs/designs/auth-y-tenancy.md` (secciones 5.1, 5.2, 5.5, 6 y 13).
 | `WORKOS_CLIENT_ID` | `[env]` de `mise.toml` (o el entorno) | Empieza por `client_` |
 | `WORKOS_API_KEY` | `secrets.env`, cifrado con SOPS + age | Nunca en `mise.toml`, `.env` ni logs (`pii.Secret`) |
 | `WORKOS_REDIRECT_URI` | `[env]` | Registrada como Redirect URI en el panel; `https` fuera de desarrollo |
-| `WORKOS_MFA_REQUIRED` | `[env]` | `true` solo si el panel tiene la MFA en **Required** (ver abajo) |
 | `FRONTEND_ORIGIN` | `[env]` | Origen al que debe resolver `return_to` |
 | `ALLOWED_ORIGINS` | `[env]` | Lista cerrada para CORS y CSRF; incluye `FRONTEND_ORIGIN`; sin comodines |
 | `TRUSTED_CLIENT_IP_HEADER` | `[env]` | Vacía en desarrollo; `CF-Connecting-IP` por defecto en staging y producción; nunca `X-Forwarded-For` |
@@ -33,51 +33,105 @@ sops edit secrets.env                                   # WORKOS_API_KEY=sk_test
    (desarrollo: `http://localhost:5173/auth/callback`).
 2. **Redirects → Sign-out URIs**: el origen del front (desarrollo: `http://localhost:5173/`),
    como URI por defecto. El logout devuelve allí tras cerrar la sesión de AuthKit.
-3. **Authentication → Features → Multi-factor auth**: `Required` en los entornos de las
-   apps con roles que exigen MFA.
+3. **Authentication → Features → Multi-factor auth**: **no** en `Required` (ADR 0002). La
+   MFA la verifica la app después del login, y solo la exigen los roles del catálogo que
+   lo dicen. Con `Required`, AuthKit pediría un factor a todos en cada login, además del
+   que pide la app.
 
-## MFA: comprobación manual obligatoria en cada entorno
+### Pasos exactos para pasar de `Required` a opcional
 
-WorkOS no informa de si hubo MFA: el access token no trae `amr` ni nada equivalente y
-la respuesta de autenticación solo da `authentication_method` (`Password`, `GoogleOAuth`,
-`SSO`…). La app solo puede **deducirlo** de la configuración (diseño, 5.2 y 13):
+**Solo cuando el commit de la MFA opcional esté desplegado en ese entorno**, nunca antes:
+el código anterior trataba como MFA cualquier login con contraseña mientras
+`WORKOS_MFA_REQUIRED=true`.
 
-- cada login fuerza una autenticación nueva (`max_age=0`), así que `auth_time` es la
-  hora real de esa autenticación;
-- si `WORKOS_MFA_REQUIRED=true` y el método está en la **lista blanca** de métodos que
-  piden el segundo factor, la sesión guarda `mfa_auth_time = auth_time`; con cualquier
-  otro método, también los desconocidos, `NULL`. Lista actual: `Password`;
-- si algún rol del catálogo exige MFA y `WORKOS_MFA_REQUIRED=false`, la API no arranca.
+1. Despliega la versión con la MFA opcional (en local: `git pull` de `main` y reinicia
+   `mise run dev`). Comprueba que arranca y que `/healthz` responde 200.
+2. Panel de WorkOS de **staging**, que es también el de desarrollo local (el
+   `WORKOS_CLIENT_ID` de `mise.toml` es de staging): *Authentication → Features →
+   Multi-factor auth* → elige la opción que no es `Required` (desactivado u opcional) →
+   *Save changes*.
+3. Si tienes `WORKOS_MFA_REQUIRED` en tu `.env` local, bórrala: la variable ya no existe y
+   la configuración la ignoraría.
+4. Comprueba el flujo con un usuario de prueba, como en "Prueba manual: MFA de un rol"
+   (más abajo): entra sin que AuthKit pida un código, `GET /tenant` con un tenant donde
+   es `owner` da `403 auth.mfa_enrollment_required`, da de alta el factor, verifica y
+   `GET /tenant` da 200.
+5. Producción: los mismos pasos 1 a 4, en su panel, cuando exista.
 
-Si `WORKOS_MFA_REQUIRED=true` pero el panel no la exige, la app trataría como MFA
-logins que no la tuvieron. **Al crear cada entorno, y después de cada cambio en el
-panel**, comprueba:
+## MFA: cómo funciona
 
-1. Panel del entorno → Authentication → Features → Multi-factor auth: ¿`Required`?
-2. Variable `WORKOS_MFA_REQUIRED` desplegada en ese entorno: ¿coincide (`true` ⇔ Required)?
-3. Entra con un usuario de prueba sin SSO: AuthKit debe pedir el código TOTP.
-4. En los logs de la API (nivel debug), el registro `workos access token claims` lista
-   los nombres de los claims del token. Si algún día aparece `amr` (o un claim de MFA),
-   avisa: el diseño pide comprobarlo en lugar de deducirlo (sección 13).
+WorkOS no informa de si hubo MFA en un login: el access token no trae `amr` ni nada
+equivalente (diseño, sección 13). Por eso la app no deduce nada del login y verifica el
+segundo factor ella misma (diseño, 5.2):
 
-### Añadir un método a la lista blanca de MFA
+- un login **nunca** deja MFA en la sesión: `mfa_auth_time` nace `NULL`;
+- `POST /me/mfa/totp` da de alta un factor TOTP en WorkOS; `POST /me/mfa/challenges`
+  crea un challenge (un solo uso, 5 minutos, ligado a la sesión); `POST
+  /me/mfa/totp/verify` envía el código a WorkOS;
+- solo con `valid: true`, `mark_session_mfa` sustituye la sesión por una nueva (token
+  nuevo, `mfa_auth_time = now()`) y revoca la anterior;
+- un código ya aceptado con ese factor en los últimos 10 minutos se rechaza
+  (`409 mfa.code_reused`); como mucho 5 intentos de verificación por usuario y por
+  sesión en 15 minutos (`429 mfa.rate_limited`, por réplica);
+- `GET /tenant` y las rutas con tenant exigen, si el rol lo pide, una MFA de la sesión
+  dentro de su ventana (owner: 12 h): `403 auth.mfa_required` si el usuario tiene factor
+  verificado, `403 auth.mfa_enrollment_required` si aún no.
 
-La lista está en `coveredByMFAPolicy`
-(`api/internal/modules/identity/adapters/workos/workos.go`). Un método (`MagicAuth`,
-`Passkey`, `GoogleOAuth`…) solo entra con una **prueba en staging que demuestre que
-AuthKit pide el segundo factor** con ese método:
+Para ver qué pasa en la BD (como `app_admin`):
 
-1. Staging con *Multi-factor auth* en `Required` y `WORKOS_MFA_REQUIRED=true`.
-2. Un usuario de prueba con TOTP configurado entra con ese método, en una ventana
-   privada (sin sesión de AuthKit).
-3. AuthKit pide el código TOTP **antes** de volver al callback. Si no lo pide, o si el
-   usuario puede saltárselo, el método no entra.
-4. Repite el paso 2 con un usuario sin TOTP configurado: AuthKit debe obligarle a
-   configurarlo antes de terminar.
-5. El PR que añade el método enlaza la evidencia (capturas o vídeo, con fecha y entorno)
-   y añade el método al test `TestExchangeCode_MFAAllowlist` con MFA.
+```sh
+docker compose exec postgres psql -U app_admin -d factory -c \
+  "SELECT f.id, f.verified_at, f.last_code_at, u.email FROM mfa_factors f JOIN users u ON u.id = f.user_id;"
+docker compose exec postgres psql -U app_admin -d factory -c \
+  "SELECT action, actor_user_id, target_id, metadata, created_at FROM audit_log
+    WHERE action LIKE 'mfa.%' ORDER BY created_at DESC LIMIT 10;"
+```
 
-`SSO` nunca entra: WorkOS documenta que su MFA no se aplica a usuarios SSO.
+## Recuperación: un usuario ha perdido su dispositivo
+
+Hasta que exista el comando de administración (paso 7, issue #18), a mano y
+en este orden. Exige verificar antes la identidad del usuario por un canal ajeno a la
+cuenta, y un ticket que lo justifique.
+
+1. Localiza sus factores, como `app_admin`:
+
+   ```sh
+   docker compose exec -T postgres psql -U app_admin -d factory -v email='usuario@ejemplo.com' <<'SQL'
+   SELECT f.id, f.provider_factor_id, f.verified_at
+   FROM mfa_factors f JOIN users u ON u.id = f.user_id WHERE u.email = :'email';
+   SQL
+   ```
+
+2. Bórralo en WorkOS. `provider_factor_id` es el `auth_factor_…` del paso 1:
+
+   ```sh
+   sops exec-env secrets.env 'curl -sS -X DELETE https://api.workos.com/auth/factors/auth_factor_XXXX \
+     -H "Authorization: Bearer $WORKOS_API_KEY"' ; echo
+   ```
+
+   Un `404` significa que ya no estaba; sigue igualmente.
+
+3. Bórralo en la BD, como `app_admin` y con el motivo. El disparador
+   `audit_mfa_factor_removed` registra `mfa.factor_removed`, con `by = app_admin` y
+   `reason` en `metadata`:
+
+   ```sh
+   docker compose exec -T postgres psql -U app_admin -d factory -v ON_ERROR_STOP=1 \
+     -v factor='<id del paso 1>' -v reason='dispositivo perdido, ticket #123' <<'SQL'
+   BEGIN;
+   SELECT set_config('app.audit_reason', :'reason', true);
+   DELETE FROM mfa_factors WHERE id = :'factor';
+   COMMIT;
+   SQL
+   ```
+
+4. Opcional, si se sospecha que alguien más tiene acceso a la cuenta: revoca sus
+   sesiones (`UPDATE sessions SET revoked_at = now() WHERE user_id = … AND revoked_at IS NULL`,
+   como `app_admin`).
+5. Comprueba la auditoría:
+   `SELECT metadata FROM audit_log WHERE action = 'mfa.factor_removed' AND target_id = '<id>';`
+6. El usuario vuelve a entrar y da de alta un factor nuevo. Si su rol exige MFA, hasta
+   entonces recibe `403 auth.mfa_enrollment_required` en ese tenant.
 
 ## Prueba manual en desarrollo
 
@@ -92,7 +146,7 @@ cd web && npm run dev             # terminal 2: front en :5173
 ```
 
 1. Abre `http://localhost:5173` y pulsa **Entrar**. AuthKit pide credenciales (siempre:
-   `max_age=0`) y vuelve a `http://localhost:5173/`.
+   `max_age=0`), sin código de MFA, y vuelve a `http://localhost:5173/`.
 2. DevTools → Application → Cookies → `http://localhost:5173`: existe `__Host-session`
    (`HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`) y ya no queda ninguna `__Host-oauth_*`.
 3. La sesión está en Postgres, solo con el hash:
@@ -131,11 +185,12 @@ Dos roles, cada uno para lo suyo:
   `db.WithTenantTx`. Una comprobación hecha como superusuario no prueba nada: se salta RLS.
 
 Desde la raíz del repo, con `mise run up && mise run migrate` y la API en marcha
-(`mise run dev`). Los bloques son de bash/zsh.
+(`mise run dev`). Los bloques valen para bash y zsh.
 
 ```sh
-SU="docker compose exec -T postgres psql -U factory -d factory -v ON_ERROR_STOP=1 -At"
-APP="docker compose exec -T postgres psql -U app_runtime -d factory -v ON_ERROR_STOP=1"
+# Funciones y no variables: zsh no parte en palabras una variable sin comillas.
+psql_su()  { docker compose exec -T postgres psql -U factory -d factory -v ON_ERROR_STOP=1 -At "$@"; }
+psql_app() { docker compose exec -T postgres psql -U app_runtime -d factory -v ON_ERROR_STOP=1 "$@"; }
 ```
 
 1. **Sesión.** Elige una:
@@ -147,7 +202,7 @@ APP="docker compose exec -T postgres psql -U app_runtime -d factory -v ON_ERROR_
      ```sh
      EMAIL=runbook@example.test
      SESSION=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')
-     $SU -v email="$EMAIL" -v token="$SESSION" <<'SQL'
+     psql_su -v email="$EMAIL" -v token="$SESSION" <<'SQL'
      INSERT INTO users (email, email_verified, display_name) VALUES (:'email', true, 'Runbook');
      INSERT INTO sessions (token_hash, user_id, auth_time, last_seen_at, idle_expires_at, absolute_expires_at)
      SELECT sha256(convert_to(:'token', 'UTF8')), id, now(), now(), now() + interval '1 hour', now() + interval '1 hour'
@@ -162,7 +217,7 @@ APP="docker compose exec -T postgres psql -U app_runtime -d factory -v ON_ERROR_
    - un evento de auditoría en cada uno.
 
    ```sh
-   $SU -v email="$EMAIL" <<'SQL'
+   psql_su -v email="$EMAIL" <<'SQL'
    INSERT INTO users (email, email_verified, display_name) VALUES ('otra.runbook@example.test', true, 'Otra');
    INSERT INTO tenants (name, slug) VALUES ('Prueba', 'prueba'), ('Ajeno', 'ajeno');
    INSERT INTO memberships (tenant_id, user_id, role)
@@ -172,9 +227,9 @@ APP="docker compose exec -T postgres psql -U app_runtime -d factory -v ON_ERROR_
    INSERT INTO audit_log (tenant_id, action, target_type, target_id)
      SELECT id, 'runbook.seed', 'tenant', slug FROM tenants WHERE slug IN ('prueba', 'ajeno');
    SQL
-   MIO=$($SU <<< "SELECT id FROM tenants WHERE slug = 'prueba'")
-   AJENO=$($SU <<< "SELECT id FROM tenants WHERE slug = 'ajeno'")
-   USER_ID=$($SU -v email="$EMAIL" <<< "SELECT id FROM users WHERE email = :'email'")
+   MIO=$(psql_su <<< "SELECT id FROM tenants WHERE slug = 'prueba'")
+   AJENO=$(psql_su <<< "SELECT id FROM tenants WHERE slug = 'ajeno'")
+   USER_ID=$(psql_su -v email="$EMAIL" <<< "SELECT id FROM users WHERE email = :'email'")
    echo "MIO=$MIO AJENO=$AJENO USER_ID=$USER_ID"
    ```
 
@@ -209,7 +264,7 @@ APP="docker compose exec -T postgres psql -U app_runtime -d factory -v ON_ERROR_
    - En `audit_log` solo está `runbook.seed`: los 403 del paso 5 no se auditan.
 
    ```sh
-   $APP -v a="$MIO" -v b="$AJENO" -v u="$USER_ID" <<'SQL'
+   psql_app -v a="$MIO" -v b="$AJENO" -v u="$USER_ID" <<'SQL'
    BEGIN;
    SELECT set_config('app.tenant_id', :'a', true), set_config('app.user_id', :'u', true),
           set_config('app.scope', 'tenant', true) \g /dev/null
@@ -230,7 +285,7 @@ APP="docker compose exec -T postgres psql -U app_runtime -d factory -v ON_ERROR_
    error en lugar de filas:
 
    ```sh
-   $APP <<< "SELECT count(*) FROM audit_log;"
+   psql_app <<< "SELECT count(*) FROM audit_log;"
    # ERROR:  unrecognized configuration parameter "app.tenant_id"
    ```
 
@@ -240,7 +295,7 @@ APP="docker compose exec -T postgres psql -U app_runtime -d factory -v ON_ERROR_
 9. **Limpieza**, como `factory`:
 
    ```sh
-   $SU -v email="$EMAIL" <<'SQL'
+   psql_su -v email="$EMAIL" <<'SQL'
    DELETE FROM audit_log WHERE action = 'runbook.seed';
    DELETE FROM memberships WHERE tenant_id IN (SELECT id FROM tenants WHERE slug IN ('prueba', 'ajeno'));
    DELETE FROM tenants WHERE slug IN ('prueba', 'ajeno');
@@ -252,3 +307,54 @@ APP="docker compose exec -T postgres psql -U app_runtime -d factory -v ON_ERROR_
    ```
 
    Con la opción A no se borra tu usuario ni tus sesiones: solo los de prueba.
+
+## Prueba manual: MFA de un rol
+
+Con WorkOS de verdad (opción A de la sección anterior: sesión del navegador) y una app de
+autenticación (Google Authenticator, 1Password…). Usa `SESSION`, `MIO` y `psql_su` de la
+sección anterior, con tu usuario como `owner` de `prueba` (el `owner` del catálogo de
+ejemplo exige MFA de menos de 12 h):
+
+```sh
+psql_su -v email="$EMAIL" <<< "UPDATE memberships SET role = 'owner' WHERE tenant_id = (SELECT id FROM tenants WHERE slug = 'prueba') AND user_id = (SELECT id FROM users WHERE email = :'email')"
+```
+
+1. Sin factor: `GET /tenant` da `403 auth.mfa_enrollment_required`.
+
+   ```sh
+   curl -s localhost:8080/tenant -H "Cookie: __Host-session=$SESSION" -H "X-Tenant-ID: $MIO"; echo
+   ```
+
+2. Alta: guarda `factor_id` y `challenge_id`, y escanea el `qr_code` (es un `data:` URI:
+   pégalo en la barra del navegador) o introduce `secret` en la app.
+
+   ```sh
+   curl -s -X POST localhost:8080/me/mfa/totp -H "Cookie: __Host-session=$SESSION" \
+     -H "Origin: http://localhost:5173"; echo
+   ```
+
+3. Verifica con el código de la app. La respuesta trae un `Set-Cookie` nuevo: usa ese
+   valor como `SESSION` a partir de aquí. La cookie anterior ya da `401`.
+
+   ```sh
+   curl -s -i -X POST localhost:8080/me/mfa/totp/verify -H "Cookie: __Host-session=$SESSION" \
+     -H "Origin: http://localhost:5173" -H "Content-Type: application/json" \
+     -d '{"challenge_id":"<challenge_id>","code":"<6 dígitos>"}' | grep -iE '^(HTTP|set-cookie)'
+   ```
+
+4. `GET /tenant` con la cookie nueva: `200`. `GET /me` trae `mfa_enrolled: true`,
+   `session_mfa_at` y `mfa_required: true` en la membresía de `prueba`.
+5. Repetir el mismo código con un challenge nuevo (`POST /me/mfa/challenges` con
+   `{"factor_id": "…"}`) da `409 mfa.code_reused`; un código erróneo, `422
+   mfa.code_invalid`; el sexto intento en 15 minutos, `429 mfa.rate_limited`.
+6. Baja del único factor siendo `owner`: `403 mfa.last_factor_required`.
+
+   ```sh
+   curl -s -X DELETE localhost:8080/me/mfa/totp/<factor_id> -H "Cookie: __Host-session=$SESSION" \
+     -H "Origin: http://localhost:5173"; echo
+   ```
+
+7. En la auditoría, como `app_admin`: `mfa.factor_enrolled`, `mfa.verified`,
+   `mfa.verify_failed` (con `reason`) y `mfa.verify_locked`.
+8. Limpieza: borra el factor como en "Recuperación" (pasos 2 y 3) y los tenants como en
+   la sección anterior.

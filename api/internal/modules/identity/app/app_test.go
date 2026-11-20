@@ -23,8 +23,9 @@ import (
 // memStore is an in-memory app.Store. A transaction works on a copy of the state that
 // replaces it only on success, so a failed transaction leaves no writes behind.
 type memStore struct {
-	mu sync.Mutex
-	st state
+	now func() time.Time
+	mu  sync.Mutex
+	st  state
 	// raceWinner, when set, makes the next CreateUser lose a race: the winner's user and
 	// identity are committed as if by a concurrent login, and CreateUser fails with
 	// app.ErrAlreadyExists, aborting its transaction.
@@ -41,6 +42,22 @@ type state struct {
 	rolesInUse []string
 	// memberships by tenant id, then user id.
 	memberships map[string]map[string]app.Membership
+	factors     map[string]memFactor
+	challenges  map[string]memChallenge
+}
+
+type memFactor struct {
+	user, providerID string
+	verifiedAt       time.Time
+	lastCode         string
+	lastAt           time.Time
+	createdAt        time.Time
+}
+
+type memChallenge struct {
+	factor, session, providerID string
+	expiresAt                   time.Time
+	consumed, completed         bool
 }
 
 type memUser struct {
@@ -53,6 +70,7 @@ type memUser struct {
 type memSession struct {
 	app.NewSession
 	revoked bool
+	mfaAt   time.Time
 }
 
 type memAudit struct {
@@ -62,7 +80,10 @@ type memAudit struct {
 }
 
 func newMemStore() *memStore {
-	return &memStore{st: state{users: map[string]memUser{}, identities: map[string]string{}, sessions: map[string]memSession{}}}
+	return &memStore{now: time.Now, st: state{
+		users: map[string]memUser{}, identities: map[string]string{}, sessions: map[string]memSession{},
+		factors: map[string]memFactor{}, challenges: map[string]memChallenge{},
+	}}
 }
 
 func (s state) clone() state {
@@ -70,6 +91,7 @@ func (s state) clone() state {
 		users: maps.Clone(s.users), identities: maps.Clone(s.identities), sessions: maps.Clone(s.sessions),
 		audit: slices.Clone(s.audit), nextID: s.nextID, rolesInUse: slices.Clone(s.rolesInUse),
 		memberships: s.memberships, // read-only in these tests
+		factors:     maps.Clone(s.factors), challenges: maps.Clone(s.challenges),
 	}
 }
 
@@ -181,7 +203,7 @@ func (r *memRepo) SessionByHash(_ context.Context, hash []byte) (app.Session, bo
 	for id, s := range r.st.sessions {
 		if string(s.TokenHash) == string(hash) {
 			return app.Session{
-				ID: id, UserID: s.UserID, MFAAuthTime: s.MFAAuthTime, ProviderSessionID: s.ProviderSessionID,
+				ID: id, UserID: s.UserID, MFAAuthTime: s.mfaAt, ProviderSessionID: s.ProviderSessionID,
 				State: domain.SessionState{
 					LastSeenAt: s.Now, IdleExpiresAt: s.IdleExpiresAt, AbsoluteExpiresAt: s.AbsoluteExpiresAt,
 					Revoked: s.revoked, UserDisabled: r.st.users[s.UserID].disabled,
@@ -236,6 +258,137 @@ func (r *memRepo) RecordAudit(_ context.Context, e app.AuditEvent) error {
 // ------------------------------------------------------------------------------------
 
 const front = "https://front.test"
+
+// The MFA methods follow the database functions of migration 00004, with their codes.
+
+func (r *memRepo) IdentitySubject(_ context.Context, userID, provider string) (string, bool, error) {
+	for key, uid := range r.st.identities {
+		if p, subject, _ := strings.Cut(key, "|"); uid == userID && p == provider {
+			return subject, true, nil
+		}
+	}
+	return "", false, nil
+}
+
+func (r *memRepo) MFAFactors(context.Context) ([]app.MFAFactor, error) {
+	var out []app.MFAFactor
+	for _, id := range slices.Sorted(maps.Keys(r.st.factors)) {
+		if f := r.st.factors[id]; f.user == r.actor {
+			out = append(out, app.MFAFactor{ID: id, Provider: "fake", ProviderFactorID: f.providerID, VerifiedAt: f.verifiedAt, CreatedAt: f.createdAt})
+		}
+	}
+	return out, nil
+}
+
+// liveSession is the session of tokenHash if it is the actor's and usable.
+func (r *memRepo) liveSession(tokenHash []byte) (string, memSession, error) {
+	for id, sess := range r.st.sessions {
+		if string(sess.TokenHash) == string(tokenHash) && sess.UserID == r.actor && !sess.revoked {
+			return id, sess, nil
+		}
+	}
+	return "", memSession{}, apperr.Unauthorized("auth.session_invalid", "invalid session")
+}
+
+func (r *memRepo) addChallenge(sessionID, factorID, providerID string) app.Challenge {
+	id := r.id("challenge")
+	exp := r.store.now().Add(5 * time.Minute)
+	r.st.challenges[id] = memChallenge{factor: factorID, session: sessionID, providerID: providerID, expiresAt: exp}
+	return app.Challenge{ID: id, FactorID: factorID, ExpiresAt: exp}
+}
+
+func (r *memRepo) RegisterMFAFactor(_ context.Context, tokenHash []byte, _, providerFactorID, providerChallengeID string) (app.Challenge, error) {
+	sid, _, err := r.liveSession(tokenHash)
+	if err != nil {
+		return app.Challenge{}, err
+	}
+	pending := 0
+	for _, f := range r.st.factors {
+		if f.user == r.actor && f.verifiedAt.IsZero() {
+			pending++
+		}
+	}
+	if pending >= 3 {
+		return app.Challenge{}, apperr.Conflict("mfa.too_many_pending", "too many")
+	}
+	fid := r.id("factor")
+	r.st.factors[fid] = memFactor{user: r.actor, providerID: providerFactorID, createdAt: r.store.now()}
+	return r.addChallenge(sid, fid, providerChallengeID), nil
+}
+
+func (r *memRepo) CreateMFAChallenge(_ context.Context, tokenHash []byte, factorID, providerChallengeID string) (app.Challenge, error) {
+	sid, _, err := r.liveSession(tokenHash)
+	if err != nil {
+		return app.Challenge{}, err
+	}
+	if f, ok := r.st.factors[factorID]; !ok || f.user != r.actor {
+		return app.Challenge{}, apperr.NotFound("mfa.factor_not_found", "not found")
+	}
+	return r.addChallenge(sid, factorID, providerChallengeID), nil
+}
+
+func (r *memRepo) ConsumeMFAChallenge(_ context.Context, tokenHash []byte, challengeID string) (app.ConsumedChallenge, error) {
+	sid, _, err := r.liveSession(tokenHash)
+	if err != nil {
+		return app.ConsumedChallenge{}, apperr.NotFound("mfa.challenge_not_found", "not found")
+	}
+	c, ok := r.st.challenges[challengeID]
+	if !ok || c.session != sid {
+		return app.ConsumedChallenge{}, apperr.NotFound("mfa.challenge_not_found", "not found")
+	}
+	if c.consumed {
+		return app.ConsumedChallenge{}, apperr.Conflict("mfa.challenge_used", "used")
+	}
+	if !r.store.now().Before(c.expiresAt) {
+		return app.ConsumedChallenge{}, apperr.Conflict("mfa.challenge_expired", "expired")
+	}
+	c.consumed = true
+	r.st.challenges[challengeID] = c
+	return app.ConsumedChallenge{ProviderChallengeID: c.providerID, FactorID: c.factor, FactorVerified: !r.st.factors[c.factor].verifiedAt.IsZero()}, nil
+}
+
+func (r *memRepo) MarkSessionMFA(_ context.Context, tokenHash []byte, challengeID string, codeHash, newTokenHash []byte) (app.MarkedSession, error) {
+	c, ok := r.st.challenges[challengeID]
+	if !ok || !c.consumed {
+		return app.MarkedSession{}, apperr.NotFound("mfa.challenge_not_found", "not found")
+	}
+	if c.completed {
+		return app.MarkedSession{}, apperr.Conflict("mfa.challenge_used", "used")
+	}
+	sid, sess, err := r.liveSession(tokenHash)
+	if err != nil || sid != c.session {
+		return app.MarkedSession{}, apperr.Unauthorized("auth.session_invalid", "invalid session")
+	}
+	now := r.store.now()
+	f := r.st.factors[c.factor]
+	if f.lastCode == string(codeHash) && now.Sub(f.lastAt) < 10*time.Minute {
+		return app.MarkedSession{}, apperr.Conflict("mfa.code_reused", "reused")
+	}
+	first := f.verifiedAt.IsZero()
+	if first {
+		f.verifiedAt = now
+	}
+	f.lastCode, f.lastAt = string(codeHash), now
+	r.st.factors[c.factor] = f
+	c.completed = true
+	r.st.challenges[challengeID] = c
+	sess.revoked = true
+	r.st.sessions[sid] = sess
+	next := memSession{NewSession: sess.NewSession, mfaAt: now}
+	next.TokenHash = newTokenHash
+	newID := r.id("session")
+	r.st.sessions[newID] = next
+	return app.MarkedSession{SessionID: newID, MFAAuthTime: now, AbsoluteExpiresAt: sess.AbsoluteExpiresAt, FactorID: c.factor, FirstVerification: first}, nil
+}
+
+func (r *memRepo) RemoveMFAFactor(_ context.Context, factorID string) (string, error) {
+	f, ok := r.st.factors[factorID]
+	if !ok || f.user != r.actor {
+		return "", apperr.NotFound("mfa.factor_not_found", "not found")
+	}
+	delete(r.st.factors, factorID)
+	return f.providerID, nil
+}
 
 func (r *memRepo) RecordTenantAudit(_ context.Context, tenantID string, e app.AuditEvent) error {
 	if r.tenant == "" || tenantID != r.tenant {
@@ -292,7 +445,7 @@ type fixture struct {
 	now      time.Time
 }
 
-func newFixture(t *testing.T, mfaEnforced bool) *fixture {
+func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	codec, err := domain.NewIntentCodec([]byte(strings.Repeat("k", 32)))
 	if err != nil {
@@ -300,8 +453,9 @@ func newFixture(t *testing.T, mfaEnforced bool) *fixture {
 	}
 	f := &fixture{idp: fakeidp.New(), store: newMemStore(), now: time.Unix(1_800_000_000, 0)}
 	clock := func() time.Time { return f.now }
+	f.store.now = clock
 	policy := domain.SessionPolicy{IdleTTL: time.Hour, AbsoluteTTL: 24 * time.Hour}
-	f.login = app.NewLogin(f.idp, f.store, codec, app.LoginConfig{FrontendOrigin: front, Policy: policy, ProviderEnforcesMFA: mfaEnforced}, clock)
+	f.login = app.NewLogin(f.idp, f.store, codec, app.LoginConfig{FrontendOrigin: front, Policy: policy}, clock)
 	f.sessions = app.NewSessions(f.idp, f.store, policy, clock)
 	return f
 }
@@ -310,7 +464,7 @@ func person(n int) app.Authentication {
 	return app.Authentication{
 		Subject: fmt.Sprintf("sub-%d", n), Email: pii.Email(fmt.Sprintf("p%d@example.test", n)), EmailVerified: true,
 		SessionID: fmt.Sprintf("sid-%d", n), Method: "Password",
-		MFA: domain.ProviderMFA{AuthTime: time.Unix(1_799_999_990, 0), CoveredByPolicy: true},
+		AuthTime: time.Unix(1_799_999_990, 0),
 	}
 }
 
@@ -336,7 +490,7 @@ func wantCode(t *testing.T, err error, code string) {
 
 func TestComplete_NewUser(t *testing.T) {
 	t.Parallel()
-	f := newFixture(t, false)
+	f := newFixture(t)
 
 	done, err := f.complete(t, person(1), "")
 	if err != nil {
@@ -350,7 +504,7 @@ func TestComplete_NewUser(t *testing.T) {
 		t.Fatalf("state = %+v", st)
 	}
 	for _, s := range st.sessions {
-		if string(s.TokenHash) != string(domain.HashToken(done.Token)) || !s.MFAAuthTime.IsZero() || s.ProviderSessionID != "sid-1" {
+		if string(s.TokenHash) != string(domain.HashToken(done.Token)) || !s.mfaAt.IsZero() || s.ProviderSessionID != "sid-1" {
 			t.Fatalf("session = %+v", s)
 		}
 	}
@@ -367,20 +521,18 @@ func TestComplete_RejectionsWriteOnlyTheAudit(t *testing.T) {
 		name   string
 		setup  func(t *testing.T, f *fixture)
 		authn  func() app.Authentication
-		mfa    bool
 		code   string
 		action string
 	}{
 		{
 			name:   "impersonation",
 			authn:  func() app.Authentication { a := person(1); a.Impersonated = true; return a },
-			mfa:    true,
 			code:   "auth.impersonation_refused",
 			action: app.AuditLoginFailed,
 		},
 		{
 			name:   "authentication older than the attempt",
-			authn:  func() app.Authentication { a := person(1); a.MFA.AuthTime = time.Unix(1_800_000_000-61, 0); return a },
+			authn:  func() app.Authentication { a := person(1); a.AuthTime = time.Unix(1_800_000_000-61, 0); return a },
 			code:   "auth.stale_authentication",
 			action: app.AuditLoginFailed,
 		},
@@ -388,13 +540,6 @@ func TestComplete_RejectionsWriteOnlyTheAudit(t *testing.T) {
 			name:   "unverified email",
 			authn:  func() app.Authentication { a := person(1); a.EmailVerified = false; return a },
 			code:   "auth.email_unverified",
-			action: app.AuditLoginFailed,
-		},
-		{
-			name:   "reported methods without mfa",
-			authn:  func() app.Authentication { a := person(1); a.MFA.HasAMR, a.MFA.AMR = true, []string{"pwd"}; return a },
-			mfa:    true,
-			code:   "auth.mfa_required",
 			action: app.AuditLoginFailed,
 		},
 		{
@@ -413,7 +558,7 @@ func TestComplete_RejectionsWriteOnlyTheAudit(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			f := newFixture(t, tc.mfa)
+			f := newFixture(t)
 			if tc.setup != nil {
 				tc.setup(t, f)
 			}
@@ -436,7 +581,7 @@ func TestComplete_RejectionsWriteOnlyTheAudit(t *testing.T) {
 // fails on the unique constraint, runs again and logs in as the winner's user.
 func TestComplete_LosesTheRaceToCreateTheUser(t *testing.T) {
 	t.Parallel()
-	f := newFixture(t, false)
+	f := newFixture(t)
 	who := person(1)
 	f.store.raceWinner = &who
 
@@ -456,7 +601,7 @@ func TestComplete_LosesTheRaceToCreateTheUser(t *testing.T) {
 
 func TestComplete_DisabledUser(t *testing.T) {
 	t.Parallel()
-	f := newFixture(t, false)
+	f := newFixture(t)
 	if _, err := f.complete(t, person(1), ""); err != nil {
 		t.Fatal(err)
 	}
@@ -481,7 +626,7 @@ func TestComplete_EmailChange(t *testing.T) {
 
 	t.Run("takes the provider's verification", func(t *testing.T) {
 		t.Parallel()
-		f := newFixture(t, false)
+		f := newFixture(t)
 		if _, err := f.complete(t, person(1), ""); err != nil {
 			t.Fatal(err)
 		}
@@ -506,7 +651,7 @@ func TestComplete_EmailChange(t *testing.T) {
 
 	t.Run("keeps the old one, unverified, if another user has it", func(t *testing.T) {
 		t.Parallel()
-		f := newFixture(t, false)
+		f := newFixture(t)
 		for _, n := range []int{1, 2} {
 			if _, err := f.complete(t, person(n), ""); err != nil {
 				t.Fatal(err)
@@ -539,35 +684,23 @@ func TestComplete_EmailChange(t *testing.T) {
 	})
 }
 
-func TestComplete_MFA(t *testing.T) {
+// A login never gives the session MFA: only verifying a factor does (design, 5.2), so
+// no method of the provider, however it authenticated, can stand in for it.
+func TestComplete_NeverGivesMFA(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name     string
-		enforced bool
-		mutate   func(*app.Authentication)
-		wantMFA  bool
-	}{
-		{"provider enforces MFA", true, func(*app.Authentication) {}, true},
-		{"provider does not", false, func(*app.Authentication) {}, false},
-		{"method off the allowlist", true, func(a *app.Authentication) { a.MFA.CoveredByPolicy = false }, false},
-		{"reported mfa", false, func(a *app.Authentication) { a.MFA.HasAMR, a.MFA.AMR = true, []string{"mfa"} }, true},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, method := range []string{"Password", "Passkey", "SSO", "MagicAuth", ""} {
+		t.Run("method "+method, func(t *testing.T) {
 			t.Parallel()
-			f := newFixture(t, tc.enforced)
+			f := newFixture(t)
 			a := person(1)
-			tc.mutate(&a)
+			a.Method = method
 			if _, err := f.complete(t, a, ""); err != nil {
 				t.Fatal(err)
 			}
 			for _, s := range f.store.snapshot().sessions {
-				if got := !s.MFAAuthTime.IsZero(); got != tc.wantMFA {
-					t.Fatalf("mfa = %v, want %v", got, tc.wantMFA)
-				}
-				if tc.wantMFA && !s.MFAAuthTime.Equal(a.MFA.AuthTime) {
-					t.Fatalf("mfa_auth_time = %v, want the provider's auth_time", s.MFAAuthTime)
+				if !s.mfaAt.IsZero() {
+					t.Fatalf("a login set mfa_auth_time = %v", s.mfaAt)
 				}
 			}
 		})
@@ -576,7 +709,7 @@ func TestComplete_MFA(t *testing.T) {
 
 func TestComplete_TruncatesTheUserAgent(t *testing.T) {
 	t.Parallel()
-	f := newFixture(t, false)
+	f := newFixture(t)
 	started, err := f.login.Start("/", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -596,7 +729,7 @@ func TestComplete_TruncatesTheUserAgent(t *testing.T) {
 
 func TestComplete_IntentAndProvider(t *testing.T) {
 	t.Parallel()
-	f := newFixture(t, false)
+	f := newFixture(t)
 	started, err := f.login.Start("/", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -621,7 +754,7 @@ func TestComplete_IntentAndProvider(t *testing.T) {
 
 func TestSessions(t *testing.T) {
 	t.Parallel()
-	f := newFixture(t, false)
+	f := newFixture(t)
 	first, err := f.complete(t, person(1), "")
 	if err != nil {
 		t.Fatal(err)

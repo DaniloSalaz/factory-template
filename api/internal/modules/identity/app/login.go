@@ -16,8 +16,6 @@ import (
 type LoginConfig struct {
 	FrontendOrigin string
 	Policy         domain.SessionPolicy
-	// ProviderEnforcesMFA: MFA is "Required" for every user at the provider.
-	ProviderEnforcesMFA bool
 }
 
 // Login implements the login of the design (5.1): the redirect to the provider and the
@@ -119,17 +117,12 @@ func (l *Login) Complete(ctx context.Context, cb Callback) (Completed, error) {
 	if authn.Impersonated {
 		return Completed{}, l.reject(ctx, cb, "impersonation", domain.ErrImpersonationRefused())
 	}
-	if !domain.FreshAuthentication(authn.MFA.AuthTime, intent.StartedAt) {
+	if !domain.FreshAuthentication(authn.AuthTime, intent.StartedAt) {
 		return Completed{}, l.reject(ctx, cb, "stale_auth", domain.ErrStaleAuthentication())
 	}
 	if !authn.EmailVerified {
 		return Completed{}, l.reject(ctx, cb, "email_unverified", domain.ErrEmailUnverified())
 	}
-	mfaTime, _, err := domain.MFAAuthTime(authn.MFA, l.cfg.ProviderEnforcesMFA)
-	if err != nil {
-		return Completed{}, l.reject(ctx, cb, "mfa_missing", err)
-	}
-
 	userID, err := l.resolveUser(ctx, cb, authn)
 	if err != nil {
 		return Completed{}, err
@@ -149,9 +142,9 @@ func (l *Login) Complete(ctx context.Context, cb Callback) (Completed, error) {
 				return fmt.Errorf("revoke previous session: %w", err)
 			}
 		}
+		// A new session never has MFA: only verifying a factor gives it (design, 5.2).
 		sessionID, err := r.CreateSession(ctx, NewSession{
-			TokenHash: domain.HashToken(token), UserID: userID,
-			AuthTime: authn.MFA.AuthTime, MFAAuthTime: mfaTime,
+			TokenHash: domain.HashToken(token), UserID: userID, AuthTime: authn.AuthTime,
 			Now: now, IdleExpiresAt: idle, AbsoluteExpiresAt: absolute,
 			IPPrefix: cb.IPPrefix, UserAgent: domain.TruncateUserAgent(cb.UserAgent), ProviderSessionID: authn.SessionID,
 		})
@@ -163,7 +156,7 @@ func (l *Login) Complete(ctx context.Context, cb Callback) (Completed, error) {
 		}
 		return r.RecordAudit(ctx, AuditEvent{
 			Action: AuditLogin, TargetType: "session", TargetID: sessionID, IPPrefix: cb.IPPrefix,
-			Metadata: map[string]string{"method": authn.Method, "mfa": fmt.Sprint(!mfaTime.IsZero())},
+			Metadata: map[string]string{"method": authn.Method},
 		})
 	})
 	if err != nil {

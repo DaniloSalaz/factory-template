@@ -10,8 +10,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"slices"
-	"strings"
 	"time"
 
 	identityapi "github.com/DaniloSalaz/factory-template/api/gen/openapi/identity"
@@ -47,12 +45,22 @@ type Deps struct {
 	WorkOS config.WorkOS
 	// RateLimiter limits /auth/login and /auth/callback per client IP.
 	RateLimiter ratelimit.Limiter
-	// Catalog is the app's validated role catalog.
+	// MFARateLimiter limits MFA verification attempts, per user and per session, and
+	// enrollments and challenges per user (design, 5.2).
+	MFARateLimiter ratelimit.Limiter
+	// Catalog is the app's validated role catalog. A catalog where no role requires MFA
+	// is valid: MFA is then optional for everyone.
 	Catalog *authz.Catalog
 	// Provider replaces WorkOS; only tests set it.
-	Provider app.IdentityProvider
+	Provider Provider
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
+}
+
+// Provider is the identity provider: login and, for the second factor, its MFA API.
+type Provider interface {
+	app.IdentityProvider
+	app.MFAProvider
 }
 
 // Module wires the identity module.
@@ -67,17 +75,10 @@ type Module struct {
 	logger   *slog.Logger
 }
 
-// New wires adapters and use cases. It fails if the configuration cannot honour the MFA
-// that the roles require.
+// New wires adapters and use cases.
 func New(deps Deps) (*Module, error) {
-	if deps.Catalog == nil {
-		return nil, errors.New("identity: Catalog is required")
-	}
-	if err := checkMFASupport(deps.Catalog.RolesRequiringMFA(), deps.WorkOS.MFARequired); err != nil {
-		return nil, err
-	}
-	if deps.DB == nil || deps.Logger == nil || deps.RateLimiter == nil {
-		return nil, errors.New("identity: DB, Logger and RateLimiter are required")
+	if deps.Catalog == nil || deps.DB == nil || deps.Logger == nil || deps.RateLimiter == nil || deps.MFARateLimiter == nil {
+		return nil, errors.New("identity: Catalog, DB, Logger, RateLimiter and MFARateLimiter are required")
 	}
 
 	mac := hmac.New(sha256.New, []byte(deps.WorkOS.APIKey.Reveal()))
@@ -97,11 +98,12 @@ func New(deps Deps) (*Module, error) {
 	policy := domain.SessionPolicy{IdleTTL: deps.Auth.SessionIdleTTL, AbsoluteTTL: deps.Auth.SessionAbsoluteTTL}
 
 	login := app.NewLogin(idp, store, codec, app.LoginConfig{
-		FrontendOrigin: deps.Web.FrontendOrigin, Policy: policy, ProviderEnforcesMFA: deps.WorkOS.MFARequired,
+		FrontendOrigin: deps.Web.FrontendOrigin, Policy: policy,
 	}, deps.Now)
 	sessions := app.NewSessions(idp, store, policy, deps.Now)
 	return &Module{
-		handler:  identityhttp.NewHandler(login, sessions, app.NewAccounts(store), deps.Logger),
+		handler: identityhttp.NewHandler(login, sessions, app.NewAccounts(store, deps.Catalog),
+			app.NewMFA(idp, idp.Name(), store, deps.Catalog, deps.MFARateLimiter, deps.Now), deps.Logger),
 		sessions: sessions,
 		tenancy:  app.NewTenancy(store, deps.Catalog, deps.Now),
 		authz:    authz.NewAuthorizer(app.NewDenialAuditor(store), deps.Logger),
@@ -110,20 +112,6 @@ func New(deps Deps) (*Module, error) {
 		limiter:  deps.RateLimiter,
 		logger:   deps.Logger,
 	}, nil
-}
-
-// checkMFASupport refuses to start when a role requires MFA that the app could not
-// establish (design, 5.2 and 13).
-func checkMFASupport(rolesRequiringMFA []string, providerEnforcesMFA bool) error {
-	if len(rolesRequiringMFA) == 0 || providerEnforcesMFA {
-		return nil
-	}
-	roles := slices.Sorted(slices.Values(rolesRequiringMFA))
-	return fmt.Errorf("identity: roles %s require MFA but WORKOS_MFA_REQUIRED is false. "+
-		"WorkOS does not report whether a login used MFA, so the app can only rely on it when "+
-		"the WorkOS dashboard requires MFA for every user: set Authentication > Multi-factor auth "+
-		"to Required in this environment's dashboard and WORKOS_MFA_REQUIRED=true "+
-		"(docs/runbooks/auth.md)", strings.Join(roles, ", "))
 }
 
 // Authorizer is the permission check that use cases make (authz.Require), recording

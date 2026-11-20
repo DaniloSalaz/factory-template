@@ -211,38 +211,43 @@ func TestNeedsTouch(t *testing.T) {
 	}
 }
 
-func TestMFAAuthTime(t *testing.T) {
+func TestMFASatisfied(t *testing.T) {
 	t.Parallel()
 
-	at := time.Unix(1_800_000_000, 0)
+	now := time.Unix(1_800_000_000, 0)
 	tests := []struct {
-		name     string
-		mfa      ProviderMFA
-		enforced bool
-		wantOK   bool
-		wantErr  bool
+		name string
+		at   time.Time
+		want bool
 	}{
-		{"inferred for an allowlisted method when the provider enforces MFA", ProviderMFA{AuthTime: at, CoveredByPolicy: true}, true, true, false},
-		{"nothing when the provider does not enforce it", ProviderMFA{AuthTime: at, CoveredByPolicy: true}, false, false, false},
-		{"methods off the allowlist are not MFA", ProviderMFA{AuthTime: at}, true, false, false},
-		{"reported amr with mfa wins", ProviderMFA{AuthTime: at, HasAMR: true, AMR: []string{"pwd", "mfa"}}, false, true, false},
-		{"reported amr without mfa is refused when required", ProviderMFA{AuthTime: at, HasAMR: true, AMR: []string{"pwd"}}, true, false, true},
-		{"reported amr without mfa, not required", ProviderMFA{AuthTime: at, HasAMR: true, AMR: []string{"pwd"}}, false, false, false},
+		{"never verified", time.Time{}, false},
+		{"recent", now.Add(-time.Minute), true},
+		{"exactly the maximum", now.Add(-FactorChangeMFAMaxAge), true},
+		{"older than the maximum", now.Add(-FactorChangeMFAMaxAge - time.Second), false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, ok, err := MFAAuthTime(tc.mfa, tc.enforced)
-			if (err != nil) != tc.wantErr || ok != tc.wantOK {
-				t.Fatalf("MFAAuthTime = %v, %v, %v", got, ok, err)
-			}
-			if ok && !got.Equal(at) {
-				t.Fatalf("mfa time = %v, want the provider's auth_time %v", got, at)
-			}
-			if tc.wantErr && !errors.Is(err, ErrMFAMissing()) {
-				t.Fatalf("err = %v, want auth.mfa_required", err)
+			if got := MFASatisfied(tc.at, FactorChangeMFAMaxAge, now); got != tc.want {
+				t.Fatalf("MFASatisfied = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestValidTOTPCode(t *testing.T) {
+	t.Parallel()
+
+	for code, want := range map[string]bool{
+		"123456": true, "000000": true, "12345": false, "1234567": false, "12345a": false, "": false, "\t23456": false,
+		"１２３４５６": false,
+	} {
+		if got := ValidTOTPCode(code); got != want {
+			t.Errorf("ValidTOTPCode(%q) = %v, want %v", code, got, want)
+		}
+	}
+	if string(HashCode("123456")) == string(HashCode("123457")) || len(HashCode("123456")) != 32 {
+		t.Fatal("HashCode must be the SHA-256 of the code")
 	}
 }
 

@@ -149,7 +149,7 @@ func (r repo) CreateSession(ctx context.Context, s app.NewSession) (string, erro
 	}
 	id, err := r.q.CreateSession(ctx, identitydb.CreateSessionParams{
 		TokenHash: s.TokenHash, UserID: uid,
-		AuthTime: ts(s.AuthTime), MfaAuthTime: ts(s.MFAAuthTime), Now: ts(s.Now),
+		AuthTime: ts(s.AuthTime), Now: ts(s.Now),
 		IdleExpiresAt: ts(s.IdleExpiresAt), AbsoluteExpiresAt: ts(s.AbsoluteExpiresAt),
 		IpPrefix: prefix(s.IPPrefix), UserAgent: text(s.UserAgent), ProviderSessionID: text(s.ProviderSessionID),
 	})
@@ -301,6 +301,103 @@ func (r repo) TenantByID(ctx context.Context, id string) (app.Tenant, bool, erro
 		return app.Tenant{}, false, fmt.Errorf("tenant by id: %w", err)
 	}
 	return app.Tenant{ID: row.ID.String(), Slug: row.Slug, Name: row.Name}, true, nil
+}
+
+func (r repo) IdentitySubject(ctx context.Context, userID, provider string) (string, bool, error) {
+	uid, err := parseUUID(userID)
+	if err != nil {
+		return "", false, err
+	}
+	subject, err := r.q.IdentitySubject(ctx, identitydb.IdentitySubjectParams{UserID: uid, Provider: provider})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("identity subject: %w", err)
+	}
+	return subject, true, nil
+}
+
+func (r repo) MFAFactors(ctx context.Context) ([]app.MFAFactor, error) {
+	rows, err := r.q.MFAFactorsForUser(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("mfa factors: %w", err)
+	}
+	out := make([]app.MFAFactor, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, app.MFAFactor{
+			ID: row.ID.String(), Provider: row.Provider, ProviderFactorID: row.ProviderFactorID,
+			VerifiedAt: row.VerifiedAt.Time, CreatedAt: row.CreatedAt.Time,
+		})
+	}
+	return out, nil
+}
+
+func (r repo) RegisterMFAFactor(ctx context.Context, tokenHash []byte, provider, providerFactorID, providerChallengeID string) (app.Challenge, error) {
+	row, err := r.q.RegisterMFAFactor(ctx, identitydb.RegisterMFAFactorParams{
+		TokenHash: tokenHash, Provider: provider, ProviderFactorID: providerFactorID, ProviderChallengeID: providerChallengeID,
+	})
+	if err != nil {
+		return app.Challenge{}, fmt.Errorf("register mfa factor: %w", err)
+	}
+	return app.Challenge{ID: row.ChallengeID.String(), FactorID: row.FactorID.String(), ExpiresAt: row.ExpiresAt.Time}, nil
+}
+
+func (r repo) CreateMFAChallenge(ctx context.Context, tokenHash []byte, factorID, providerChallengeID string) (app.Challenge, error) {
+	fid, err := parseUUID(factorID)
+	if err != nil {
+		return app.Challenge{}, err
+	}
+	row, err := r.q.CreateMFAChallenge(ctx, identitydb.CreateMFAChallengeParams{
+		TokenHash: tokenHash, FactorID: fid, ProviderChallengeID: providerChallengeID,
+	})
+	if err != nil {
+		return app.Challenge{}, fmt.Errorf("create mfa challenge: %w", err)
+	}
+	return app.Challenge{ID: row.ChallengeID.String(), FactorID: factorID, ExpiresAt: row.ExpiresAt.Time}, nil
+}
+
+func (r repo) ConsumeMFAChallenge(ctx context.Context, tokenHash []byte, challengeID string) (app.ConsumedChallenge, error) {
+	cid, err := parseUUID(challengeID)
+	if err != nil {
+		return app.ConsumedChallenge{}, err
+	}
+	row, err := r.q.ConsumeMFAChallenge(ctx, identitydb.ConsumeMFAChallengeParams{TokenHash: tokenHash, ChallengeID: cid})
+	if err != nil {
+		return app.ConsumedChallenge{}, fmt.Errorf("consume mfa challenge: %w", err)
+	}
+	return app.ConsumedChallenge{
+		ProviderChallengeID: row.ProviderChallengeID, FactorID: row.FactorID.String(), FactorVerified: row.FactorVerified,
+	}, nil
+}
+
+func (r repo) MarkSessionMFA(ctx context.Context, tokenHash []byte, challengeID string, codeHash, newTokenHash []byte) (app.MarkedSession, error) {
+	cid, err := parseUUID(challengeID)
+	if err != nil {
+		return app.MarkedSession{}, err
+	}
+	row, err := r.q.MarkSessionMFA(ctx, identitydb.MarkSessionMFAParams{
+		TokenHash: tokenHash, ChallengeID: cid, CodeHash: codeHash, NewTokenHash: newTokenHash,
+	})
+	if err != nil {
+		return app.MarkedSession{}, fmt.Errorf("mark session mfa: %w", err)
+	}
+	return app.MarkedSession{
+		SessionID: row.SessionID.String(), MFAAuthTime: row.MfaAuthTime.Time, AbsoluteExpiresAt: row.AbsoluteExpiresAt.Time,
+		FactorID: row.FactorID.String(), FirstVerification: row.FirstVerification,
+	}, nil
+}
+
+func (r repo) RemoveMFAFactor(ctx context.Context, factorID string) (string, error) {
+	fid, err := parseUUID(factorID)
+	if err != nil {
+		return "", err
+	}
+	row, err := r.q.RemoveMFAFactor(ctx, fid)
+	if err != nil {
+		return "", fmt.Errorf("remove mfa factor: %w", err)
+	}
+	return row.ProviderFactorID, nil
 }
 
 // tenantActive is the tenants.status of a tenant that may be used.

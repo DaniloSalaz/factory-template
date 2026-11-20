@@ -29,6 +29,13 @@ func tnErrors() map[string]tnError {
 		"TN015": {apperr.KindForbidden, "invitation.email_mismatch", "the invitation is for another email address"},
 		"TN016": {apperr.KindConflict, "invitation.already_member", "the user is already a member of the tenant"},
 		"TN020": {apperr.KindConflict, "tenant.slug_taken", "the tenant slug is already taken"},
+		"TN040": {apperr.KindNotFound, "mfa.factor_not_found", "MFA factor not found"},
+		"TN041": {apperr.KindNotFound, "mfa.challenge_not_found", "The challenge does not exist or is not this session's; request a new one."},
+		"TN042": {apperr.KindConflict, "mfa.challenge_used", "The challenge has already been used; request a new one."},
+		"TN043": {apperr.KindConflict, "mfa.challenge_expired", "The challenge has expired; request a new one."},
+		"TN044": {apperr.KindConflict, "mfa.code_reused", "This code has already been used; wait for the next one."},
+		"TN045": {apperr.KindConflict, "mfa.too_many_pending", "Finish or remove your pending factors before enrolling another."},
+		"TN050": {apperr.KindUnauthorized, "auth.session_invalid", "The session is missing, expired or revoked."},
 		"TN030": {apperr.KindInternal, "audit.tenant_mismatch", "internal error"},
 		"TN031": {apperr.KindInternal, "audit.tenant_not_set", "internal error"},
 	}

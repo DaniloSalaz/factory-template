@@ -33,6 +33,31 @@ func (q *Queries) AuthMembership(ctx context.Context, tenantID pgtype.UUID) (Aut
 	return i, err
 }
 
+const consumeMFAChallenge = `-- name: ConsumeMFAChallenge :one
+SELECT r.provider_challenge_id::text AS provider_challenge_id, r.factor_id::uuid AS factor_id,
+       r.factor_verified::boolean AS factor_verified
+FROM consume_mfa_challenge($1::bytea, $2::uuid)
+  AS r(provider_challenge_id, factor_id, factor_verified)
+`
+
+type ConsumeMFAChallengeParams struct {
+	TokenHash   []byte
+	ChallengeID pgtype.UUID
+}
+
+type ConsumeMFAChallengeRow struct {
+	ProviderChallengeID string
+	FactorID            pgtype.UUID
+	FactorVerified      bool
+}
+
+func (q *Queries) ConsumeMFAChallenge(ctx context.Context, arg ConsumeMFAChallengeParams) (ConsumeMFAChallengeRow, error) {
+	row := q.db.QueryRow(ctx, consumeMFAChallenge, arg.TokenHash, arg.ChallengeID)
+	var i ConsumeMFAChallengeRow
+	err := row.Scan(&i.ProviderChallengeID, &i.FactorID, &i.FactorVerified)
+	return i, err
+}
+
 const createIdentity = `-- name: CreateIdentity :exec
 INSERT INTO user_identities (user_id, provider, subject, email_at_link)
 VALUES ($1, $2, $3, $4::text::extensions.citext)
@@ -55,12 +80,36 @@ func (q *Queries) CreateIdentity(ctx context.Context, arg CreateIdentityParams) 
 	return err
 }
 
+const createMFAChallenge = `-- name: CreateMFAChallenge :one
+SELECT r.challenge_id::uuid AS challenge_id, r.expires_at::timestamptz AS expires_at
+FROM create_mfa_challenge($1::bytea, $2::uuid,
+                          $3::text) AS r(challenge_id, expires_at)
+`
+
+type CreateMFAChallengeParams struct {
+	TokenHash           []byte
+	FactorID            pgtype.UUID
+	ProviderChallengeID string
+}
+
+type CreateMFAChallengeRow struct {
+	ChallengeID pgtype.UUID
+	ExpiresAt   pgtype.Timestamptz
+}
+
+func (q *Queries) CreateMFAChallenge(ctx context.Context, arg CreateMFAChallengeParams) (CreateMFAChallengeRow, error) {
+	row := q.db.QueryRow(ctx, createMFAChallenge, arg.TokenHash, arg.FactorID, arg.ProviderChallengeID)
+	var i CreateMFAChallengeRow
+	err := row.Scan(&i.ChallengeID, &i.ExpiresAt)
+	return i, err
+}
+
 const createSession = `-- name: CreateSession :one
-INSERT INTO sessions (token_hash, user_id, auth_time, mfa_auth_time, last_seen_at,
+INSERT INTO sessions (token_hash, user_id, auth_time, last_seen_at,
                       idle_expires_at, absolute_expires_at, ip_prefix, user_agent, provider_session_id)
-VALUES ($1, $2, $3, $4,
-        $5, $6, $7,
-        $8, $9, $10)
+VALUES ($1, $2, $3,
+        $4, $5, $6,
+        $7, $8, $9)
 RETURNING id
 `
 
@@ -68,7 +117,6 @@ type CreateSessionParams struct {
 	TokenHash         []byte
 	UserID            pgtype.UUID
 	AuthTime          pgtype.Timestamptz
-	MfaAuthTime       pgtype.Timestamptz
 	Now               pgtype.Timestamptz
 	IdleExpiresAt     pgtype.Timestamptz
 	AbsoluteExpiresAt pgtype.Timestamptz
@@ -77,12 +125,12 @@ type CreateSessionParams struct {
 	ProviderSessionID pgtype.Text
 }
 
+// A new session has no MFA: only mark_session_mfa gives it one (design, 5.2).
 func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, createSession,
 		arg.TokenHash,
 		arg.UserID,
 		arg.AuthTime,
-		arg.MfaAuthTime,
 		arg.Now,
 		arg.IdleExpiresAt,
 		arg.AbsoluteExpiresAt,
@@ -112,6 +160,107 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (pgtype.
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const identitySubject = `-- name: IdentitySubject :one
+SELECT i.subject FROM user_identities i WHERE i.user_id = $1 AND i.provider = $2
+`
+
+type IdentitySubjectParams struct {
+	UserID   pgtype.UUID
+	Provider string
+}
+
+// The user's subject at a provider (WorkOS: the user id its MFA API takes).
+func (q *Queries) IdentitySubject(ctx context.Context, arg IdentitySubjectParams) (string, error) {
+	row := q.db.QueryRow(ctx, identitySubject, arg.UserID, arg.Provider)
+	var subject string
+	err := row.Scan(&subject)
+	return subject, err
+}
+
+const mFAFactorsForUser = `-- name: MFAFactorsForUser :many
+
+SELECT f.id::uuid AS id, f.provider::text AS provider, f.provider_factor_id::text AS provider_factor_id,
+       f.verified_at::timestamptz AS verified_at, f.created_at::timestamptz AS created_at
+FROM mfa_factors_for_user() AS f(id, provider, provider_factor_id, verified_at, created_at)
+`
+
+type MFAFactorsForUserRow struct {
+	ID               pgtype.UUID
+	Provider         string
+	ProviderFactorID string
+	VerifiedAt       pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+}
+
+// MFA (design 5.2, migration 00004): every write goes through these functions.
+func (q *Queries) MFAFactorsForUser(ctx context.Context) ([]MFAFactorsForUserRow, error) {
+	rows, err := q.db.Query(ctx, mFAFactorsForUser)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MFAFactorsForUserRow
+	for rows.Next() {
+		var i MFAFactorsForUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Provider,
+			&i.ProviderFactorID,
+			&i.VerifiedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markSessionMFA = `-- name: MarkSessionMFA :one
+SELECT r.session_id::uuid AS session_id, r.mfa_auth_time::timestamptz AS mfa_auth_time,
+       r.absolute_expires_at::timestamptz AS absolute_expires_at, r.factor_id::uuid AS factor_id,
+       r.first_verification::boolean AS first_verification
+FROM mark_session_mfa($1::bytea, $2::uuid, $3::bytea,
+                      $4::bytea)
+  AS r(session_id, mfa_auth_time, absolute_expires_at, factor_id, first_verification)
+`
+
+type MarkSessionMFAParams struct {
+	TokenHash    []byte
+	ChallengeID  pgtype.UUID
+	CodeHash     []byte
+	NewTokenHash []byte
+}
+
+type MarkSessionMFARow struct {
+	SessionID         pgtype.UUID
+	MfaAuthTime       pgtype.Timestamptz
+	AbsoluteExpiresAt pgtype.Timestamptz
+	FactorID          pgtype.UUID
+	FirstVerification bool
+}
+
+func (q *Queries) MarkSessionMFA(ctx context.Context, arg MarkSessionMFAParams) (MarkSessionMFARow, error) {
+	row := q.db.QueryRow(ctx, markSessionMFA,
+		arg.TokenHash,
+		arg.ChallengeID,
+		arg.CodeHash,
+		arg.NewTokenHash,
+	)
+	var i MarkSessionMFARow
+	err := row.Scan(
+		&i.SessionID,
+		&i.MfaAuthTime,
+		&i.AbsoluteExpiresAt,
+		&i.FactorID,
+		&i.FirstVerification,
+	)
+	return i, err
 }
 
 const membershipsForUser = `-- name: MembershipsForUser :many
@@ -205,6 +354,54 @@ func (q *Queries) RecordTenantAudit(ctx context.Context, arg RecordTenantAuditPa
 		arg.IpPrefix,
 	)
 	return err
+}
+
+const registerMFAFactor = `-- name: RegisterMFAFactor :one
+SELECT r.factor_id::uuid AS factor_id, r.challenge_id::uuid AS challenge_id, r.expires_at::timestamptz AS expires_at
+FROM register_mfa_factor($1::bytea, $2::text, $3::text,
+                         $4::text) AS r(factor_id, challenge_id, expires_at)
+`
+
+type RegisterMFAFactorParams struct {
+	TokenHash           []byte
+	Provider            string
+	ProviderFactorID    string
+	ProviderChallengeID string
+}
+
+type RegisterMFAFactorRow struct {
+	FactorID    pgtype.UUID
+	ChallengeID pgtype.UUID
+	ExpiresAt   pgtype.Timestamptz
+}
+
+func (q *Queries) RegisterMFAFactor(ctx context.Context, arg RegisterMFAFactorParams) (RegisterMFAFactorRow, error) {
+	row := q.db.QueryRow(ctx, registerMFAFactor,
+		arg.TokenHash,
+		arg.Provider,
+		arg.ProviderFactorID,
+		arg.ProviderChallengeID,
+	)
+	var i RegisterMFAFactorRow
+	err := row.Scan(&i.FactorID, &i.ChallengeID, &i.ExpiresAt)
+	return i, err
+}
+
+const removeMFAFactor = `-- name: RemoveMFAFactor :one
+SELECT r.provider::text AS provider, r.provider_factor_id::text AS provider_factor_id
+FROM remove_mfa_factor($1::uuid) AS r(provider, provider_factor_id)
+`
+
+type RemoveMFAFactorRow struct {
+	Provider         string
+	ProviderFactorID string
+}
+
+func (q *Queries) RemoveMFAFactor(ctx context.Context, factorID pgtype.UUID) (RemoveMFAFactorRow, error) {
+	row := q.db.QueryRow(ctx, removeMFAFactor, factorID)
+	var i RemoveMFAFactorRow
+	err := row.Scan(&i.Provider, &i.ProviderFactorID)
+	return i, err
 }
 
 const revokeSession = `-- name: RevokeSession :exec

@@ -52,12 +52,6 @@ func ErrStaleAuthentication() error {
 	return apperr.Unauthorized("auth.stale_authentication", "The identity provider did not authenticate you again; start the login again.")
 }
 
-// ErrMFAMissing is returned when the provider reports how the user authenticated and
-// MFA is required but was not part of it.
-func ErrMFAMissing() error {
-	return apperr.Forbidden("auth.mfa_required", "Multi-factor authentication is required.")
-}
-
 // ErrTenantForbidden is returned when the request may not act in the tenant it names:
 // a malformed or missing X-Tenant-ID, a tenant that does not exist or is suspended, no
 // membership, or a disabled user. All are the same 403, so a caller cannot learn which
@@ -66,8 +60,37 @@ func ErrTenantForbidden() error {
 	return apperr.Forbidden("auth.tenant_forbidden", "You cannot act in this tenant.")
 }
 
-// ErrRoleMFARequired is returned when the member's role requires an MFA more recent than
-// the session has (design, 5.4.3). The front end answers it with a full login (5.2.5).
-func ErrRoleMFARequired() error {
-	return apperr.Forbidden("auth.mfa_required", "Your role requires a recent multi-factor authentication; log in again.")
+// The two answers of a role that requires MFA (design, 5.4.3) differ in what the front
+// end must do next, so they have different codes.
+
+// ErrMFAVerificationRequired is returned when the user has a verified factor but the
+// session's MFA is missing or too old: the front end starts a challenge and asks for a
+// code (POST /me/mfa/challenges, then POST /me/mfa/totp/verify).
+func ErrMFAVerificationRequired() error {
+	return apperr.Forbidden("auth.mfa_required", "Verify your second factor to continue.")
+}
+
+// ErrMFAEnrollmentRequired is returned when the role requires MFA and the user has no
+// verified factor yet: the front end leads them to enroll one (POST /me/mfa/totp).
+func ErrMFAEnrollmentRequired() error {
+	return apperr.Forbidden("auth.mfa_enrollment_required", "Set up a second factor to continue.")
+}
+
+// ErrMFACodeInvalid is returned when the provider rejects the code. The challenge is
+// used up all the same: the next attempt needs a new one.
+func ErrMFACodeInvalid() error {
+	return apperr.Validation("mfa.code_invalid", "The code is not valid; request a new challenge and try again.")
+}
+
+// ErrMFARateLimited is returned when the user or the session has made too many
+// verification attempts or challenges in the window.
+func ErrMFARateLimited() error {
+	return apperr.RateLimited("mfa.rate_limited", "Too many attempts; try again later.")
+}
+
+// ErrMFALastFactor is returned when removing the factor would leave the user without a
+// verified one while a role of theirs, in an active tenant, requires MFA.
+func ErrMFALastFactor() error {
+	return apperr.Forbidden("mfa.last_factor_required",
+		"A role of yours requires multi-factor authentication: enroll another factor before removing this one.")
 }

@@ -3,30 +3,41 @@ package app
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/authz"
 )
 
 // Accounts answers what a user may know about their own account (design, section 10).
 type Accounts struct {
-	store Store
+	store   Store
+	catalog *authz.Catalog
 }
 
 // NewAccounts builds Accounts.
-func NewAccounts(store Store) *Accounts {
-	return &Accounts{store: store}
+func NewAccounts(store Store, catalog *authz.Catalog) *Accounts {
+	return &Accounts{store: store, catalog: catalog}
 }
 
-// Me is the current user with every tenant they belong to.
+// Me is the current user with every tenant they belong to and their MFA factors.
 type Me struct {
 	User        Profile
 	Memberships []TenantMembership
+	Factors     []MFAFactor
+	// SessionMFAAt is when this session last verified a factor; zero: never.
+	SessionMFAAt time.Time
 }
 
-// Me returns userID's profile and memberships, read in one transaction as that user:
-// auth_memberships_for_user only ever returns the acting user's own.
-func (a *Accounts) Me(ctx context.Context, userID string) (Me, error) {
+// MFAEnrolled reports whether the user has a verified factor.
+func (m Me) MFAEnrolled() bool { return hasVerified(m.Factors) }
+
+// Me returns the session's user, their memberships (each with whether its role
+// requires MFA) and factors, read in one transaction as that user: the functions behind
+// them only ever return the acting user's own.
+func (a *Accounts) Me(ctx context.Context, cur Current) (Me, error) {
+	userID := cur.UserID
 	var me Me
 	err := a.store.AsUser(ctx, userID, func(ctx context.Context, r Repo) error {
 		p, found, err := r.UserByID(ctx, userID)
@@ -40,7 +51,15 @@ func (a *Accounts) Me(ctx context.Context, userID string) (Me, error) {
 		if err != nil {
 			return fmt.Errorf("memberships: %w", err)
 		}
-		me = Me{User: p, Memberships: ms}
+		for i := range ms {
+			role, ok := a.catalog.Role(ms[i].Role)
+			ms[i].MFARequired = ok && role.RequiresMFA
+		}
+		factors, err := r.MFAFactors(ctx)
+		if err != nil {
+			return fmt.Errorf("mfa factors: %w", err)
+		}
+		me = Me{User: p, Memberships: ms, Factors: factors, SessionMFAAt: cur.MFAAuthTime}
 		return nil
 	})
 	if err != nil {

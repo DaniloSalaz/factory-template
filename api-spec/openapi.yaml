@@ -182,6 +182,161 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalError"
+  /me/mfa/totp:
+    post:
+      operationId: enrollTOTP
+      summary: Enroll a TOTP factor
+      description: >-
+        Creates a TOTP factor at the identity provider and its first challenge, valid 5
+        minutes. Show the QR code (or the secret) to the user once; the factor counts only
+        after its first code is verified with POST /me/mfa/totp/verify. If the user already
+        has a verified factor, the session must have verified one in the last 10 minutes
+        (otherwise 403 auth.mfa_required). Rate limited per user.
+      tags: [identity]
+      security:
+        - session: []
+      responses:
+        "201":
+          description: The factor and its first challenge
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TOTPEnrollment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /me/mfa/challenges:
+    post:
+      operationId: createMFAChallenge
+      summary: Challenge one of the user's factors
+      description: >-
+        Creates a challenge of the factor, bound to this session, single-use and valid 5
+        minutes. Use it to answer 403 auth.mfa_required. Rate limited per user.
+      tags: [identity]
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MFAChallengeRequest"
+      responses:
+        "201":
+          description: The challenge
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MFAChallenge"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /me/mfa/totp/verify:
+    post:
+      operationId: verifyTOTP
+      summary: Verify a TOTP code
+      description: >-
+        Answers a challenge of this session with a code. The challenge is used up by the
+        attempt, right or wrong. On success the session is replaced by a new one, whose
+        MFA counts from now: the response sets a new __Host-session cookie and the old one
+        stops working. The first code of a new factor also verifies the factor. At most 5
+        attempts per user and per session in 15 minutes (429 mfa.rate_limited). A code
+        already accepted with the factor is refused (409 mfa.code_reused).
+      tags: [identity]
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MFAVerifyRequest"
+      responses:
+        "200":
+          description: The code is valid; the session is replaced.
+          headers:
+            Set-Cookie:
+              description: The new __Host-session cookie.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MFAVerified"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /me/mfa/totp/{factorId}:
+    delete:
+      operationId: removeTOTP
+      summary: Remove one of the user's factors
+      description: >-
+        Removes the factor here and at the identity provider. If the user has a verified
+        factor, the session must have verified one in the last 10 minutes (403
+        auth.mfa_required). The last verified factor cannot be removed while a role of the
+        user, in an active tenant, requires MFA (403 mfa.last_factor_required).
+      tags: [identity]
+      security:
+        - session: []
+      parameters:
+        - name: factorId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: The factor is removed.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /tenant:
     get:
       operationId: getCurrentTenant
@@ -214,8 +369,10 @@ components:
     tenant:
       description: >-
         The tenant the request acts in. The caller must be a member of it, the tenant
-        active and, if the member's role requires it, its MFA recent enough; otherwise
-        403 (auth.tenant_forbidden or auth.mfa_required).
+        active and, if the member's role requires it, the session's MFA recent enough;
+        otherwise 403 auth.tenant_forbidden, auth.mfa_required (verify a factor:
+        POST /me/mfa/challenges) or auth.mfa_enrollment_required (no verified factor yet:
+        POST /me/mfa/totp).
       type: apiKey
       in: header
       name: X-Tenant-ID
@@ -223,7 +380,7 @@ components:
     Me:
       type: object
       additionalProperties: false
-      required: [user, memberships]
+      required: [user, memberships, mfa_enrolled, mfa_factors, session_mfa_at]
       properties:
         user:
           $ref: "#/components/schemas/CurrentUser"
@@ -231,6 +388,98 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Membership"
+        mfa_enrolled:
+          description: The user has at least one verified factor.
+          type: boolean
+        mfa_factors:
+          type: array
+          items:
+            $ref: "#/components/schemas/MFAFactor"
+        session_mfa_at:
+          description: When this session last verified a factor; null if never.
+          type: [string, "null"]
+          format: date-time
+    MFAFactor:
+      type: object
+      additionalProperties: false
+      required: [id, type, verified, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [totp]
+        verified:
+          description: False until its first code is verified.
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    TOTPEnrollment:
+      type: object
+      additionalProperties: false
+      required: [factor_id, challenge_id, expires_at, qr_code, secret, uri]
+      properties:
+        factor_id:
+          type: string
+          format: uuid
+        challenge_id:
+          type: string
+          format: uuid
+        expires_at:
+          type: string
+          format: date-time
+        qr_code:
+          description: A data URI of a PNG image to scan with an authenticator app. Shown once.
+          type: string
+        secret:
+          description: The shared secret, for apps that cannot scan. Shown once.
+          type: string
+        uri:
+          description: The otpauth:// URI the QR code encodes.
+          type: string
+    MFAChallengeRequest:
+      type: object
+      additionalProperties: false
+      required: [factor_id]
+      properties:
+        factor_id:
+          type: string
+          format: uuid
+    MFAChallenge:
+      type: object
+      additionalProperties: false
+      required: [challenge_id, factor_id, expires_at]
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        factor_id:
+          type: string
+          format: uuid
+        expires_at:
+          type: string
+          format: date-time
+    MFAVerifyRequest:
+      type: object
+      additionalProperties: false
+      required: [challenge_id, code]
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          pattern: "^[0-9]{6}$"
+    MFAVerified:
+      type: object
+      additionalProperties: false
+      required: [mfa_verified_at]
+      properties:
+        mfa_verified_at:
+          type: string
+          format: date-time
     CurrentUser:
       type: object
       additionalProperties: false
@@ -246,7 +495,7 @@ components:
     Membership:
       type: object
       additionalProperties: false
-      required: [tenant_id, tenant_slug, tenant_name, tenant_status, role]
+      required: [tenant_id, tenant_slug, tenant_name, tenant_status, role, mfa_required]
       properties:
         tenant_id:
           description: The value to send as X-Tenant-ID.
@@ -262,6 +511,9 @@ components:
         role:
           description: The member's role in the app's role catalog.
           type: string
+        mfa_required:
+          description: The role requires a recent MFA to act in the tenant.
+          type: boolean
     CurrentTenant:
       type: object
       additionalProperties: false

@@ -33,6 +33,8 @@ type Current struct {
 	MFAAuthTime time.Time
 	// providerSessionID stays inside the module: only logout needs it.
 	providerSessionID string
+	// tokenHash names the session to the MFA functions, which revalidate it.
+	tokenHash []byte
 }
 
 // Authenticate returns the session of token, refreshing last_seen_at at most every
@@ -61,7 +63,10 @@ func (s *Sessions) Authenticate(ctx context.Context, token string) (Current, err
 				return fmt.Errorf("touch session: %w", err)
 			}
 		}
-		cur = Current{ID: sess.ID, UserID: sess.UserID, MFAAuthTime: sess.MFAAuthTime, providerSessionID: sess.ProviderSessionID}
+		cur = Current{
+			ID: sess.ID, UserID: sess.UserID, MFAAuthTime: sess.MFAAuthTime,
+			providerSessionID: sess.ProviderSessionID, tokenHash: domain.HashToken(token),
+		}
 		return nil
 	})
 	if err != nil {

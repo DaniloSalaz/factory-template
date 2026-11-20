@@ -38,7 +38,9 @@ type Entered struct {
 // Enter returns the principal of user in the tenant rawTenantID names. Every reason to
 // refuse it (a malformed id, no such tenant, no membership, a suspended tenant, a
 // disabled user) is the same domain.ErrTenantForbidden, with the reason as its cause
-// for the logs; a role whose MFA is missing or too old is domain.ErrRoleMFARequired.
+// for the logs. A role whose MFA is missing or too old answers
+// domain.ErrMFAVerificationRequired, or domain.ErrMFAEnrollmentRequired if the user has
+// no verified factor yet.
 func (t *Tenancy) Enter(ctx context.Context, user authctx.User, rawTenantID string) (Entered, error) {
 	tenantID, err := authctx.ParseID(rawTenantID)
 	if err != nil {
@@ -67,7 +69,7 @@ func (t *Tenancy) Enter(ctx context.Context, user authctx.User, rawTenantID stri
 	if known {
 		mfaAt, _ := user.MFAAuthTime()
 		if !role.MFASatisfied(mfaAt, t.now()) {
-			return Entered{}, domain.ErrRoleMFARequired()
+			return Entered{}, t.mfaRequired(ctx, user)
 		}
 	}
 	// An unknown role has no permissions in the catalog, and so the own scope.
@@ -76,6 +78,24 @@ func (t *Tenancy) Enter(ctx context.Context, user authctx.User, rawTenantID stri
 		return Entered{}, forbidden(fmt.Errorf("principal: %w", err))
 	}
 	return Entered{Principal: p, UnknownRole: !known}, nil
+}
+
+// mfaRequired tells the front end what the user must do: verify a factor they have, or
+// enroll one first.
+func (t *Tenancy) mfaRequired(ctx context.Context, user authctx.User) error {
+	var verified bool
+	err := t.store.AsUser(ctx, user.ID(), func(ctx context.Context, r Repo) error {
+		factors, err := r.MFAFactors(ctx)
+		verified = hasVerified(factors)
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("mfa factors: %w", err)
+	}
+	if verified {
+		return domain.ErrMFAVerificationRequired()
+	}
+	return domain.ErrMFAEnrollmentRequired()
 }
 
 func forbidden(cause error) error {

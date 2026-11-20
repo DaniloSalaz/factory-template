@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	identityapi "github.com/DaniloSalaz/factory-template/api/gen/openapi/identity"
+	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/httpx"
 )
 
@@ -69,3 +70,18 @@ func (resp loggedOut) visit(w http.ResponseWriter) error {
 
 func (resp loggedOut) VisitAuthLogoutResponse(w http.ResponseWriter) error    { return resp.visit(w) }
 func (resp loggedOut) VisitAuthLogoutAllResponse(w http.ResponseWriter) error { return resp.visit(w) }
+
+// verified sets the cookie of the session that replaced the verified one.
+type verified struct {
+	rotated app.Rotated
+}
+
+func (resp verified) VisitVerifyTOTPResponse(w http.ResponseWriter) error {
+	http.SetCookie(w, sessionCookie(resp.rotated.Token, resp.rotated.ExpiresAt))
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(identityapi.MFAVerified{MfaVerifiedAt: resp.rotated.MFAAuthTime}); err != nil {
+		return fmt.Errorf("encode verify response: %w", err)
+	}
+	return nil
+}

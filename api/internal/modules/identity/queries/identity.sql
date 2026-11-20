@@ -30,10 +30,11 @@ WHERE id = sqlc.arg(id);
 -- name: SetLastLogin :exec
 UPDATE users SET last_login_at = now() WHERE id = $1;
 
+-- A new session has no MFA: only mark_session_mfa gives it one (design, 5.2).
 -- name: CreateSession :one
-INSERT INTO sessions (token_hash, user_id, auth_time, mfa_auth_time, last_seen_at,
+INSERT INTO sessions (token_hash, user_id, auth_time, last_seen_at,
                       idle_expires_at, absolute_expires_at, ip_prefix, user_agent, provider_session_id)
-VALUES (sqlc.arg(token_hash), sqlc.arg(user_id), sqlc.arg(auth_time), sqlc.narg(mfa_auth_time),
+VALUES (sqlc.arg(token_hash), sqlc.arg(user_id), sqlc.arg(auth_time),
         sqlc.arg(now), sqlc.arg(idle_expires_at), sqlc.arg(absolute_expires_at),
         sqlc.narg(ip_prefix), sqlc.narg(user_agent), sqlc.narg(provider_session_id))
 RETURNING id;
@@ -96,3 +97,42 @@ FROM auth_memberships_for_user() AS m(tenant_id, tenant_slug, tenant_name, tenan
 -- Under RLS, inside the tenant's own transaction; the WHERE is defence in depth.
 -- name: TenantByID :one
 SELECT t.id, t.slug, t.name FROM tenants t WHERE t.id = $1;
+
+-- The user's subject at a provider (WorkOS: the user id its MFA API takes).
+-- name: IdentitySubject :one
+SELECT i.subject FROM user_identities i WHERE i.user_id = $1 AND i.provider = $2;
+
+-- MFA (design 5.2, migration 00004): every write goes through these functions.
+
+-- name: MFAFactorsForUser :many
+SELECT f.id::uuid AS id, f.provider::text AS provider, f.provider_factor_id::text AS provider_factor_id,
+       f.verified_at::timestamptz AS verified_at, f.created_at::timestamptz AS created_at
+FROM mfa_factors_for_user() AS f(id, provider, provider_factor_id, verified_at, created_at);
+
+-- name: RegisterMFAFactor :one
+SELECT r.factor_id::uuid AS factor_id, r.challenge_id::uuid AS challenge_id, r.expires_at::timestamptz AS expires_at
+FROM register_mfa_factor(sqlc.arg(token_hash)::bytea, sqlc.arg(provider)::text, sqlc.arg(provider_factor_id)::text,
+                         sqlc.arg(provider_challenge_id)::text) AS r(factor_id, challenge_id, expires_at);
+
+-- name: CreateMFAChallenge :one
+SELECT r.challenge_id::uuid AS challenge_id, r.expires_at::timestamptz AS expires_at
+FROM create_mfa_challenge(sqlc.arg(token_hash)::bytea, sqlc.arg(factor_id)::uuid,
+                          sqlc.arg(provider_challenge_id)::text) AS r(challenge_id, expires_at);
+
+-- name: ConsumeMFAChallenge :one
+SELECT r.provider_challenge_id::text AS provider_challenge_id, r.factor_id::uuid AS factor_id,
+       r.factor_verified::boolean AS factor_verified
+FROM consume_mfa_challenge(sqlc.arg(token_hash)::bytea, sqlc.arg(challenge_id)::uuid)
+  AS r(provider_challenge_id, factor_id, factor_verified);
+
+-- name: MarkSessionMFA :one
+SELECT r.session_id::uuid AS session_id, r.mfa_auth_time::timestamptz AS mfa_auth_time,
+       r.absolute_expires_at::timestamptz AS absolute_expires_at, r.factor_id::uuid AS factor_id,
+       r.first_verification::boolean AS first_verification
+FROM mark_session_mfa(sqlc.arg(token_hash)::bytea, sqlc.arg(challenge_id)::uuid, sqlc.arg(code_hash)::bytea,
+                      sqlc.arg(new_token_hash)::bytea)
+  AS r(session_id, mfa_auth_time, absolute_expires_at, factor_id, first_verification);
+
+-- name: RemoveMFAFactor :one
+SELECT r.provider::text AS provider, r.provider_factor_id::text AS provider_factor_id
+FROM remove_mfa_factor(sqlc.arg(factor_id)::uuid) AS r(provider, provider_factor_id);

@@ -1,10 +1,16 @@
-// Package fakeidp is an in-memory IdentityProvider for tests: each code maps to the
-// authentication it yields, and the PKCE verifier must match the challenge sent to
-// AuthorizationURL, as with the real provider.
+// Package fakeidp is an in-memory IdentityProvider and MFAProvider for tests: each code
+// maps to the authentication it yields, and the PKCE verifier must match the challenge
+// sent to AuthorizationURL, as with the real provider. Each TOTP factor accepts the code
+// the test sets with SetCode, as often as it is sent: like WorkOS, the fake does not
+// refuse a reused code, so the app's own protection is what the tests exercise.
 package fakeidp
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
 	"net/url"
 	"sync"
 
@@ -21,6 +27,12 @@ type Provider struct {
 	mu         sync.Mutex
 	challenges map[string]string // state -> challenge
 	codes      map[string]pending
+
+	nextID        int
+	factors       map[string]string // factor id -> subject
+	factorCode    map[string]string // factor id -> the code it accepts
+	mfaChallenges map[string]string // challenge id -> factor id
+	failNext      bool              // see FailNextMFACall
 }
 
 type pending struct {
@@ -28,11 +40,114 @@ type pending struct {
 	authn app.Authentication
 }
 
-var _ app.IdentityProvider = (*Provider)(nil)
+var (
+	_ app.IdentityProvider = (*Provider)(nil)
+	_ app.MFAProvider      = (*Provider)(nil)
+)
 
 // New returns an empty fake provider.
 func New() *Provider {
-	return &Provider{challenges: map[string]string{}, codes: map[string]pending{}}
+	return &Provider{
+		challenges: map[string]string{}, codes: map[string]pending{},
+		factors: map[string]string{}, factorCode: map[string]string{}, mfaChallenges: map[string]string{},
+	}
+}
+
+// errUnavailable is what a provider outage looks like to the app.
+func errUnavailable() error {
+	return apperr.Wrap(errors.New("fakeidp: down"), apperr.KindUnavailable, "auth.provider_unavailable",
+		"The identity provider is unavailable; try again later.")
+}
+
+// SetCode sets the code factorID accepts from now on.
+func (p *Provider) SetCode(factorID, code string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.factorCode[factorID] = code
+}
+
+// FailNextMFACall makes the next MFA call fail as unavailable.
+func (p *Provider) FailNextMFACall() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.failNext = true
+}
+
+// Factors returns how many factors the fake holds.
+func (p *Provider) Factors() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.factors)
+}
+
+func (p *Provider) failing() bool {
+	f := p.failNext
+	p.failNext = false
+	return f
+}
+
+// id is unique across fakes too: tests that share a database each have their own fake.
+func (p *Provider) id(prefix string) string {
+	p.nextID++
+	b := make([]byte, 6)
+	_, _ = rand.Read(b)
+	return fmt.Sprintf("%s_%d_%s", prefix, p.nextID, hex.EncodeToString(b))
+}
+
+// EnrollTOTP implements app.MFAProvider. The new factor accepts "000000" until SetCode.
+func (p *Provider) EnrollTOTP(_ context.Context, subject string) (app.TOTPEnrollment, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.failing() {
+		return app.TOTPEnrollment{}, errUnavailable()
+	}
+	f, c := p.id("auth_factor"), p.id("auth_challenge")
+	p.factors[f], p.factorCode[f], p.mfaChallenges[c] = subject, "000000", f
+	return app.TOTPEnrollment{
+		FactorID: f, ChallengeID: c, QRCode: "data:image/png;base64,QR", URI: "otpauth://totp/fake?secret=FAKE",
+		Secret: "FAKESECRET",
+	}, nil
+}
+
+// Challenge implements app.MFAProvider.
+func (p *Provider) Challenge(_ context.Context, providerFactorID string) (string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.failing() {
+		return "", errUnavailable()
+	}
+	if _, ok := p.factors[providerFactorID]; !ok {
+		return "", apperr.Conflict("mfa.provider_rejected", "The identity provider rejected the request; start again.")
+	}
+	c := p.id("auth_challenge")
+	p.mfaChallenges[c] = providerFactorID
+	return c, nil
+}
+
+// Verify implements app.MFAProvider.
+func (p *Provider) Verify(_ context.Context, providerChallengeID, code string) (bool, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.failing() {
+		return false, errUnavailable()
+	}
+	f, ok := p.mfaChallenges[providerChallengeID]
+	if !ok {
+		return false, apperr.Conflict("mfa.provider_rejected", "The identity provider rejected the request; start again.")
+	}
+	_, exists := p.factors[f]
+	return exists && p.factorCode[f] == code, nil
+}
+
+// DeleteFactor implements app.MFAProvider.
+func (p *Provider) DeleteFactor(_ context.Context, providerFactorID string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.failing() {
+		return errUnavailable()
+	}
+	delete(p.factors, providerFactorID)
+	return nil
 }
 
 // Name implements app.IdentityProvider.
