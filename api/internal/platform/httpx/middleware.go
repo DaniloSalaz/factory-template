@@ -70,6 +70,7 @@ func newRequestID() string {
 
 // AccessLog writes one Info record per request, 5xx included: failures with their cause
 // are logged once by WriteProblem or Recover, so access records never double-count them.
+// Inner middlewares add attributes to the record with logx.AddAccessAttrs.
 // Successful requests to quietPaths (typically probes) are not logged. Only r.URL.Path is
 // logged, never the query string, which often carries tokens or personal data.
 func AccessLog(logger *slog.Logger, quietPaths ...string) Middleware {
@@ -77,7 +78,9 @@ func AccessLog(logger *slog.Logger, quietPaths ...string) Middleware {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 			rw := wrapResponseWriter(w)
-			next.ServeHTTP(rw, r)
+			ctx, added := logx.WithAccessAttrs(r.Context())
+			req := r.WithContext(ctx)
+			next.ServeHTTP(rw, req)
 
 			status := rw.Status()
 			if status < http.StatusMultipleChoices && slices.Contains(quietPaths, r.URL.Path) {
@@ -88,15 +91,17 @@ func AccessLog(logger *slog.Logger, quietPaths ...string) Middleware {
 				slog.String("path", r.URL.Path),
 			}
 			// ServeMux sets Pattern on this same *Request while routing it.
-			if r.Pattern != "" {
-				attrs = append(attrs, slog.String("pattern", r.Pattern))
+			if req.Pattern != "" {
+				attrs = append(attrs, slog.String("pattern", req.Pattern))
 			}
 			attrs = append(attrs,
 				slog.Int("status", status),
 				slog.Int64("bytes", rw.bytes),
 				slog.Float64("duration_ms", float64(time.Since(start).Microseconds())/1000),
 			)
-			logger.LogAttrs(r.Context(), slog.LevelInfo, "http request", attrs...)
+			// What inner middlewares learnt about the request: user_id, tenant_id.
+			attrs = append(attrs, added()...)
+			logger.LogAttrs(ctx, slog.LevelInfo, "http request", attrs...)
 		})
 	}
 }

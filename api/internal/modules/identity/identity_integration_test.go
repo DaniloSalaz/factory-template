@@ -335,6 +335,25 @@ func (e *env) person() app.Authentication {
 	}
 }
 
+// accessRecord returns the last access record ("http request") logged for path.
+func (e *env) accessRecord(path string) map[string]any {
+	e.t.Helper()
+	var last map[string]any
+	for line := range strings.Lines(e.logs.String()) {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			e.t.Fatalf("invalid log line %q: %v", line, err)
+		}
+		if m["msg"] == "http request" && m["path"] == path {
+			last = m
+		}
+	}
+	if last == nil {
+		e.t.Fatalf("no access record for %s:\n%s", path, e.logs.String())
+	}
+	return last
+}
+
 func hashHex(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
@@ -396,6 +415,15 @@ func TestLogin_CreatesSessionStoringOnlyTheHash(t *testing.T) {
 
 	if res := b.do(http.MethodGet, "/whoami", ""); res.status != http.StatusNoContent {
 		t.Fatalf("authenticated request: %d %s", res.status, res.body)
+	}
+	if got := e.accessRecord("/whoami")["user_id"]; got != userID {
+		t.Fatalf("access record user_id = %v, want %s (issue #13)", got, userID)
+	}
+	if res := e.browser().do(http.MethodGet, "/healthz", ""); res.status != http.StatusOK {
+		t.Fatalf("healthz: %d", res.status)
+	}
+	if rec := e.accessRecord("/healthz"); rec["user_id"] != nil {
+		t.Fatalf("a request without a session has no user_id: %v", rec)
 	}
 	if strings.Contains(e.logs.String(), token) {
 		t.Fatal("the session token appears in the logs")

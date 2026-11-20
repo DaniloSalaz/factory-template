@@ -14,7 +14,8 @@ import (
 
 // SessionMiddleware requires a valid session on every path except publicPaths (design,
 // 5.4.1): sessions are required by default, so a new route cannot forget it. It puts
-// the authctx.User and the session in the context, and user_id in the logs.
+// the authctx.User and the session in the context, and user_id in the logs, the
+// access record included.
 func SessionMiddleware(sessions *app.Sessions, publicPaths []string, logger *slog.Logger) httpx.Middleware {
 	public := slices.Clone(publicPaths)
 	return func(next http.Handler) http.Handler {
@@ -39,6 +40,7 @@ func SessionMiddleware(sessions *app.Sessions, publicPaths []string, logger *slo
 			ctx := authctx.WithUser(r.Context(), user)
 			ctx = app.WithCurrent(ctx, cur)
 			ctx = logx.With(ctx, slog.String("user_id", user.ID()))
+			logx.AddAccessAttrs(ctx, slog.String("user_id", user.ID()))
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
