@@ -3,12 +3,15 @@ package config
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/caarlos0/env/v11"
 )
 
 const testDBPassword = "hunter2-db-password"
@@ -244,4 +247,52 @@ func TestConfig_FieldNamesAreUnique(t *testing.T) {
 		}
 	}
 	walk(reflect.TypeFor[Config]())
+}
+
+func TestSanitizeParseError(t *testing.T) {
+	t.Parallel()
+
+	const raw = "raw-value-123"
+	tests := []struct {
+		name string
+		err  error
+		want []string
+	}{
+		{"not set", env.VarIsNotSetError{Key: "APP_ENV"}, []string{"APP_ENV is required"}},
+		{"empty", env.EmptyVarError{Key: "DATABASE_URL"}, []string{"DATABASE_URL is required"}},
+		{
+			"parse error uses the variable and ignores Err",
+			env.ParseError{Name: "Port", Type: reflect.TypeFor[int](), Err: errors.New(`parsing "` + raw + `"`)},
+			[]string{"HTTP_PORT has an invalid value, expected an integer"},
+		},
+		{
+			"parse error on an unknown field",
+			env.ParseError{Name: "Mystery", Type: reflect.TypeFor[bool](), Err: errors.New(raw)},
+			[]string{"field Mystery has an invalid value, expected bool"},
+		},
+		{"unknown error is generic", errors.New(raw), []string{"environment could not be parsed"}},
+		{
+			"aggregate keeps every error",
+			env.AggregateError{Errors: []error{env.VarIsNotSetError{Key: "APP_ENV"}, env.ParseError{Name: "Level", Type: reflect.TypeFor[slog.Level](), Err: errors.New(raw)}}},
+			[]string{"APP_ENV is required", "LOG_LEVEL has an invalid value, expected a log level (debug, info, warn, error)"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := sanitizeParseError(tc.err)
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %d errors %v, want %d", len(got), got, len(tc.want))
+			}
+			for i, e := range got {
+				if e.Error() != tc.want[i] {
+					t.Errorf("error %d = %q, want %q", i, e.Error(), tc.want[i])
+				}
+				if strings.Contains(e.Error(), raw) {
+					t.Errorf("error %d leaks the raw value: %q", i, e.Error())
+				}
+			}
+		})
+	}
 }

@@ -172,8 +172,8 @@ func (c Config) validate() []*VarError {
 	return errs
 }
 
-// sanitizeParseError turns caarlos0/env errors into VarErrors. Its own messages embed the
-// raw value and name the Go field instead of the variable, so they are never passed on.
+// sanitizeParseError turns caarlos0/env errors into VarErrors using only their typed
+// fields. ParseError.Err is never used: its text can contain the raw value.
 func sanitizeParseError(err error) []*VarError {
 	list := []error{err}
 	var agg env.AggregateError
@@ -184,16 +184,26 @@ func sanitizeParseError(err error) []*VarError {
 	keys := envKeysByField(reflect.TypeFor[Config]())
 	out := make([]*VarError, 0, len(list))
 	for _, e := range list {
-		var parseErr env.ParseError
-		if errors.As(e, &parseErr) {
+		var (
+			notSet   env.VarIsNotSetError
+			empty    env.EmptyVarError
+			parseErr env.ParseError
+		)
+		switch {
+		case errors.As(e, &notSet):
+			out = append(out, &VarError{Var: notSet.Key, Reason: "is required"})
+		case errors.As(e, &empty):
+			out = append(out, &VarError{Var: empty.Key, Reason: "is required"})
+		case errors.As(e, &parseErr):
+			// ParseError names the Go field, not the variable.
 			key, ok := keys[parseErr.Name]
 			if !ok {
 				key = "field " + parseErr.Name
 			}
 			out = append(out, &VarError{Var: key, Reason: "has an invalid value, expected " + describeType(parseErr.Type)})
-			continue
+		default:
+			out = append(out, &VarError{Var: "environment", Reason: "could not be parsed"})
 		}
-		out = append(out, &VarError{Var: "environment", Reason: "could not be parsed"})
 	}
 	return out
 }
