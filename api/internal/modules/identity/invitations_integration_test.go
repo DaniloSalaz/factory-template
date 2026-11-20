@@ -422,3 +422,26 @@ func TestInvitations_AcceptIsRateLimited(t *testing.T) {
 	}
 	wantProblem(t, b.accept(strings.Repeat("A", 43)), http.StatusTooManyRequests, "rate_limit.exceeded")
 }
+
+// The only way to hold a session with an unverified email (design 5.1.7): a later login
+// brings, as verified, an email another user already has, so the user keeps the old one
+// unverified. An invitation to that old email is then refused: the provider no longer
+// vouches for it. A login whose email is unverified gets no session at all
+// (TestLogin_UnverifiedEmailIsRejected).
+func TestInvitations_AnEmailTheLoginUnverifiedCannotAccept(t *testing.T) {
+	e := newEnv(t, options{})
+	s := e.staff()
+	who, other := e.person(), e.person()
+	e.browser().login(other)
+	b := e.browser()
+	b.login(who)
+	s.ob.invite(s.tenant, who.Email, "member")
+
+	moved := who
+	moved.Email = other.Email
+	b.login(moved)
+	if got := e.scalar(`SELECT email_verified::text FROM users WHERE id = $1`, e.userID(who)); got != "false" {
+		t.Fatalf("email_verified = %s, want false", got)
+	}
+	wantProblem(t, b.accept(e.token(who.Email)), http.StatusForbidden, "invitation.email_mismatch")
+}
