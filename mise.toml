@@ -1,0 +1,161 @@
+[tools]
+go = "1.27.4"
+node = "26.13.1"
+sqlc = "1.31.1"
+golangci-lint = "2.15.0"
+sops = "3.13.3"
+age = "1.3.2"
+"aqua:pressly/goose" = "3.30.1"
+oapi-codegen = "2.8.2"
+# CI and security
+"go:golang.org/x/vuln/cmd/govulncheck" = "1.10.0"
+gitleaks = "8.30.1"
+trivy = "0.76.2"
+actionlint = "1.7.12"
+shellcheck = "0.11.0" # used by actionlint to check run: scripts
+
+# Defaults for local development against compose.yaml; .env (optional, gitignored) overrides them.
+[env]
+APP_ENV = "development"
+HTTP_PORT = "8080"
+LOG_LEVEL = "debug"
+LOG_FORMAT = "json"
+DATABASE_URL = "postgres://factory:factory@localhost:5432/factory?sslmode=disable"
+_.file = ".env"
+
+[tasks.up]
+description = "Start local infrastructure (Postgres) and wait until healthy"
+run = "docker compose up -d --wait"
+
+[tasks.down]
+description = "Stop local infrastructure"
+run = "docker compose down"
+
+[tasks.dev]
+description = "Run the API"
+dir = "api"
+run = "go run ./cmd/api"
+
+[tasks."web:install"]
+description = "Install web dependencies if missing"
+dir = "web"
+run = "test -d node_modules || npm ci"
+hide = true
+
+[tasks.generate]
+description = "Generate code from SQL queries and the OpenAPI contract"
+depends = ["web:install"]
+run = [
+  "cd api && sqlc generate",
+  "cd api && oapi-codegen -config oapi-codegen.yaml ../api-spec/openapi.yaml",
+  "cd web && npm run generate",
+]
+
+[tasks.migrate]
+description = "Apply pending database migrations"
+run = "goose -dir migrations postgres \"$DATABASE_URL\" up"
+
+[tasks.test]
+description = "Run Go tests with the race detector (integration tests need Docker)"
+dir = "api"
+run = "go test -race -cover ./..."
+
+[tasks.arch]
+description = "Run architecture tests (module boundaries and lint-rule fixtures)"
+dir = "api"
+run = "go test -tags arch -count=1 ./internal/archtest/..."
+
+[tasks.lint]
+description = "Lint Go, GitHub workflows and web code"
+depends = ["web:install"]
+run = [
+  { task = "lint:go" },
+  { task = "lint:actions" },
+  "cd web && npm run lint && npm run typecheck",
+]
+
+[tasks."lint:go"]
+description = "Lint Go code with golangci-lint"
+dir = "api"
+run = "golangci-lint run ./..."
+
+[tasks."lint:actions"]
+description = "Validate GitHub Actions workflows"
+run = "actionlint"
+
+[tasks.fmt]
+description = "Format Go and web code"
+depends = ["web:install"]
+run = [
+  "cd api && golangci-lint fmt ./...",
+  "cd web && npm run format",
+]
+
+[tasks."generate:check"]
+description = "Regenerate code and fail if it differs from what is checked in"
+run = [
+  { task = "generate" },
+  """
+  dirty=$(git status --porcelain -- api/gen web/src/gen)
+  if [ -n "$dirty" ]; then
+    echo "Generated code is out of date. Run 'mise run generate' and commit the result:" >&2
+    echo "$dirty" >&2
+    git --no-pager diff --stat -- api/gen web/src/gen >&2
+    exit 1
+  fi
+  echo "Generated code is up to date."
+  """,
+]
+
+[tasks."security:govulncheck"]
+description = "Report known vulnerabilities reachable from Go code"
+dir = "api"
+run = "govulncheck ./..."
+
+[tasks."security:gitleaks"]
+description = "Scan the full git history for committed secrets"
+run = "gitleaks git --redact --no-banner ."
+
+[tasks."security:trivy"]
+description = "Scan dependencies and the Dockerfile; fail on HIGH or CRITICAL"
+run = "trivy fs --quiet --scanners vuln,misconfig --severity HIGH,CRITICAL --exit-code 1 --skip-dirs web/node_modules ."
+
+[tasks.security]
+description = "Run every security scan"
+run = [
+  { task = "security:govulncheck" },
+  { task = "security:gitleaks" },
+  { task = "security:trivy" },
+]
+
+[tasks."web:check"]
+description = "Check the web app: lint, types and production build"
+dir = "web"
+run = [
+  "npm ci",
+  "npm run lint",
+  "npm run typecheck",
+  "npm run build",
+]
+
+[tasks."docker:build"]
+description = "Build the API image locally (not published)"
+run = "docker build -t factory-template-api:ci api"
+
+[tasks."docker:scan"]
+description = "Scan the API image; fail on HIGH or CRITICAL"
+depends = ["docker:build"]
+run = "trivy image --quiet --severity HIGH,CRITICAL --exit-code 1 factory-template-api:ci"
+
+[tasks.ci]
+description = "Run locally what CI runs (needs Docker for integration tests)"
+run = [
+  { task = "lint:go" },
+  { task = "lint:actions" },
+  { task = "arch" },
+  { task = "test" },
+  { task = "generate:check" },
+  { task = "security:govulncheck" },
+  { task = "security:gitleaks" },
+  { task = "web:check" },
+]

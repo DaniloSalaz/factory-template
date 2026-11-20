@@ -1,0 +1,107 @@
+version: "2"
+
+run:
+  tests: true
+  # Architecture tests live behind this tag (see internal/archtest); lint them too.
+  build-tags: [arch]
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - contextcheck
+    - depguard
+    - errname
+    - errorlint
+    - exhaustive
+    - forbidigo
+    - forcetypeassert
+    - gochecknoglobals
+    - gochecknoinits
+    - gocritic
+    - gosec
+    - misspell
+    - nilerr
+    - noctx
+    - nolintlint
+    - revive
+    - sloglint
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - wrapcheck
+  settings:
+    # Architecture rules. Messages name the rule and the fix so that whoever reads the
+    # lint output (person or agent) can correct the code without looking anything up.
+    # Each rule has a failing fixture in internal/archtest/testdata/lint.
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^os\.(Getenv|LookupEnv|Environ)$
+          msg: >-
+            [env-only-in-config] the environment is read only in internal/platform/config:
+            add the variable to config.Config (env tag + Validate) and pass the value in
+            through a constructor
+    depguard:
+      rules:
+        # In strict mode depguard only prints the list name for imports missing from
+        # `allow`, so these names carry the explanation.
+        "[platform-no-modules] internal/platform must not import internal/modules: move the code into the module, or define an interface in platform that the module implements":
+          files: ["**/internal/platform/**"]
+          deny:
+            - pkg: github.com/DaniloSalaz/factory-template/api/internal/modules
+              desc: >-
+                [platform-no-modules] platform is shared infrastructure: move the code into
+                the module, or define an interface in platform that the module implements
+        "[apperr-stdlib-only] platform/apperr may import only the standard library: keep it dependency-free so every domain package can use it":
+          files: ["**/internal/platform/apperr/**"]
+          list-mode: strict
+          allow:
+            - $gostd
+            # Its own external test package (apperr_test) imports it.
+            - github.com/DaniloSalaz/factory-template/api/internal/platform/apperr
+        "[domain-pure] domain packages may import only the standard library and platform/apperr: move infrastructure to adapters/ behind a port (interface) declared in app/":
+          files: ["**/internal/modules/*/domain/**"]
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/DaniloSalaz/factory-template/api/internal/platform/apperr
+          deny:
+            - pkg: net/http
+              desc: >-
+                [domain-pure] transport belongs in adapters/http; return apperr errors and
+                let the adapter map them
+            - pkg: database/sql
+              desc: >-
+                [domain-pure] persistence belongs in adapters/postgres behind a port
+                declared in app/
+    sloglint:
+      kv-only: false
+      attr-only: true
+      context: scope
+    wrapcheck:
+      ignore-package-globs:
+        - github.com/DaniloSalaz/factory-template/api/*
+  exclusions:
+    generated: strict
+    paths:
+      - gen/
+    rules:
+      - path: _test\.go
+        linters: [gochecknoglobals, wrapcheck, gosec]
+      # The one package allowed to read the environment, tests included.
+      - path: internal/platform/config/
+        linters: [forbidigo]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/DaniloSalaz/factory-template
+  exclusions:
+    generated: strict
+    paths:
+      - gen/

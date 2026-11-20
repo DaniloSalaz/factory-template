@@ -1,0 +1,47 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "schedule": ["before 6am on monday"],
+  "automerge": false,
+  "postUpdateOptions": ["gomodTidy"],
+  "packageRules": [
+    {
+      "description": "Go modules in one weekly PR",
+      "matchManagers": ["gomod"],
+      "groupName": "Go modules"
+    },
+    {
+      "description": "npm packages in one weekly PR",
+      "matchManagers": ["npm"],
+      "groupName": "npm packages"
+    },
+    {
+      "description": "GitHub Actions in one weekly PR, pinned by digest",
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions",
+      "pinDigests": true
+    },
+    {
+      "description": "Tools pinned in mise.toml and the mise version used by CI",
+      "matchManagers": ["mise", "custom.regex"],
+      "groupName": "mise tools"
+    },
+    {
+      "description": "Keep the Go version in mise.toml and the Dockerfile build image in lockstep",
+      "matchDepNames": ["go", "golang"],
+      "matchManagers": ["mise", "dockerfile"],
+      "groupName": "Go toolchain"
+    }
+  ],
+  "customManagers": [
+    {
+      "description": "mise version installed by jdx/mise-action in CI",
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"],
+      "matchStrings": ["MISE_VERSION: (?<currentValue>\\d+\\.\\d+\\.\\d+)"],
+      "depNameTemplate": "jdx/mise",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.+)$"
+    }
+  ]
+}

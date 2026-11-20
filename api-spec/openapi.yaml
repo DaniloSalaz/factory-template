@@ -1,0 +1,129 @@
+openapi: 3.1.0
+info:
+  title: Factory Template API
+  version: 0.1.0
+  description: Source of truth for the HTTP contract. Go server and TS client are generated from this file.
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: health
+    description: Liveness and readiness probes
+paths:
+  /healthz:
+    get:
+      operationId: getHealthz
+      summary: Liveness probe
+      tags: [health]
+      responses:
+        "200":
+          description: The process is alive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /readyz:
+    get:
+      operationId: getReadyz
+      summary: Readiness probe (checks dependencies such as the database)
+      tags: [health]
+      responses:
+        "200":
+          description: The service is ready to receive traffic
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+components:
+  schemas:
+    Status:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+    Problem:
+      description: RFC 9457 problem details with this API's extension members.
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          default: about:blank
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 100
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        code:
+          description: Stable, machine-readable error code, e.g. route_not_found.
+          type: string
+        errors:
+          description: Per-field validation errors.
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldError"
+        request_id:
+          description: Request ID, also returned in the X-Request-ID header.
+          type: string
+    FieldError:
+      type: object
+      required: [field, code, message]
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+        message:
+          type: string
+  responses:
+    BadRequest:
+      description: The request is malformed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: The resource does not exist.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    PayloadTooLarge:
+      description: The request body exceeds the size limit.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    UnprocessableEntity:
+      description: The request is well-formed but invalid; see errors.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    InternalError:
+      description: Unexpected server error. Details are logged, not returned.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    ServiceUnavailable:
+      description: A dependency is unavailable; retry later.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
