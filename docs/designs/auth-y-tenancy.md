@@ -34,7 +34,7 @@ RLS protege contra **omisiones** del código. No protege contra una aplicación 
 | Escritura de tenants y membresías | Solo con funciones `SECURITY DEFINER` (`create_tenant_with_owner`, `accept_invitation`); `app_runtime` no tiene `INSERT` en ninguna de las dos ni `DELETE` en `tenants`, y en `tenants` solo actualiza `name` | `INSERT` directo filtrado por RLS: un fallo del código podría crear un tenant sin owner o una membresía sin invitación |
 | Rol `owner` | Reservado por la plataforma; solo un owner concede owner | Tratarlo con la regla general de inclusión |
 | Invitaciones de quien pierde permisos | Se revocan al degradar, expulsar o deshabilitar a quien invitó | Revalidar a quien invitó al aceptar |
-| MFA | Por rol, con hora real de autenticación y step-up que fuerza reautenticación y rota el token | Exigirla solo en el login |
+| MFA | Por rol, con la hora real de autenticación. WorkOS no informa de la MFA: se exige a todos en el panel (`WORKOS_MFA_REQUIRED`) y cada login es una autenticación nueva; cuando caduca la de un rol, login completo (5.2) | Step-up con rotación del token: WorkOS no permite exigir MFA en la reautenticación ni saber si la hubo (sección 13) |
 | Locales | Fuera de esta versión | — |
 | Clientes del despacho | Usuarios con cuenta y rol `client` (alcance `own`) | Enlace mágico |
 
@@ -87,7 +87,7 @@ Todas las claves foráneas hacia `tenants` son `ON DELETE RESTRICT`: el borrado 
 
 1. `GET /auth/login?return_to=<ruta>`. `return_to` se resuelve con un parser de URL contra `FRONTEND_ORIGIN` y el origen resultante debe ser exactamente ese.
 2. Se crea un **intento** en una cookie `__Host-oauth_<state>` (`HttpOnly`, `Secure`, `SameSite=Lax`, 5 minutos, como mucho 3 vivas). El intento guarda: el verificador PKCE, `return_to`, el **propósito** (`login`) y la hora de inicio. Redirige a AuthKit.
-3. `GET /auth/callback?code&state`: localiza y borra la cookie de ese intento. **El propósito lo dice el intento, nunca un parámetro de la URL.** Canjea el código y obtiene `subject`, `email`, `email_verified`, la hora real de autenticación y si hubo MFA (con su hora), tal como los dé el proveedor.
+3. `GET /auth/callback?code&state`: localiza y borra la cookie de ese intento. **El propósito lo dice el intento, nunca un parámetro de la URL.** Canjea el código y obtiene `subject`, `email`, `email_verified`, la hora real de autenticación (`auth_time` del access token) y el método. Si hubo MFA se decide como dice la 5.2.
 4. Rechaza si el email no está verificado.
 5. Resuelve el usuario **sin escribir nada**:
    - Existe `user_identities(workos, subject)`: ese usuario.
@@ -96,19 +96,22 @@ Todas las claves foráneas hacia `tenants` son `ON DELETE RESTRICT`: el borrado 
 6. Rechaza si el usuario está deshabilitado. Hasta aquí no se ha escrito nada salvo, en caso de rechazo, `auth.login_failed`.
 7. Crea el usuario y la identidad si son nuevos. Si el email verificado cambió en el proveedor y no lo usa otro usuario, actualiza `users.email`.
 8. Revoca la sesión anterior del navegador, si había (evita la fijación de sesión).
-9. Crea la sesión (32 bytes aleatorios; en la BD solo el hash SHA-256) con `auth_time` y, si hubo MFA, `mfa_auth_time`, ambos **con la hora que da el proveedor**, no con la del servidor.
+9. Crea la sesión (32 bytes aleatorios; en la BD solo el hash SHA-256) con `auth_time` y, si hubo MFA, `mfa_auth_time`, ambos **con la hora que da el proveedor**, no con la del servidor, y la sesión de AuthKit (`sid`) para cerrarla en el logout.
 10. Pone la cookie, redirige a `return_to` y registra `auth.login`.
 
 Vincular otra identidad desde una sesión ya autenticada: fuera de esta versión. Migración entre proveedores: comando de administración, nunca en el login.
 
-### 5.2 Step-up de MFA
+### 5.2 MFA y reautenticación
 
-1. El front recibe `403 auth.mfa_required` y llama a `GET /auth/stepup?return_to=…`. Requiere una sesión válida.
-2. Se crea un intento con propósito `stepup`, el `user_id` de la sesión actual y la hora de inicio. Se redirige a AuthKit **forzando una autenticación nueva con MFA** (el mecanismo exacto, en la sección 13).
-3. En el callback, con propósito `stepup`:
-   - el `user_id` resuelto debe coincidir con el del intento; si no: rechazo, sesión intacta, `auth.mfa_stepup_mismatch`;
-   - debe haber MFA con una hora de autenticación **posterior al inicio del intento**; si no: `403 auth.mfa_required`, sesión intacta, `auth.mfa_stepup_failed`;
-   - si todo es correcto: en la misma fila de sesión se actualiza `mfa_auth_time` y se **rota el token** (nuevo `token_hash` y nueva cookie). Las demás pestañas siguen funcionando porque comparten la cookie. Se registra `auth.mfa_stepup`.
+El step-up de versiones anteriores (reautenticar con MFA y rotar el token en la misma sesión) **no se puede construir sobre WorkOS**: AuthKit no permite exigir un factor MFA al reautenticar ni informa de si lo hubo (sección 13). En su lugar:
+
+1. **Cada login es una autenticación nueva**: la URL de autorización lleva `max_age=0`, así que AuthKit pide credenciales aunque tenga una sesión abierta, y `auth_time` es la hora de ese login.
+2. **MFA obligatoria en el proveedor** para todos los usuarios de las apps con roles que la exigen: en el panel de WorkOS, *Multi-factor auth* en *Required*, declarado a la app con `WORKOS_MFA_REQUIRED=true`.
+3. **`mfa_auth_time`**:
+   - si el access token trae los métodos de autenticación (`amr`, RFC 8176), se usan ellos: con `mfa`, `mfa_auth_time = auth_time`; sin `mfa` y con `WORKOS_MFA_REQUIRED=true`, el login se rechaza (`403 auth.mfa_required`, `auth.login_failed` con motivo `mfa_missing`). Hoy WorkOS no envía `amr`;
+   - si no los trae, `mfa_auth_time = auth_time` solo con `WORKOS_MFA_REQUIRED=true` y un método al que se aplica la MFA de WorkOS (no a `SSO`); si no, `NULL`. La MFA se **deduce de la configuración**, no la informa el proveedor; `docs/runbooks/auth.md` describe la comprobación manual de que `WORKOS_MFA_REQUIRED` coincide con el panel en cada entorno.
+4. **Arranque**: si algún rol del catálogo requiere MFA y `WORKOS_MFA_REQUIRED=false`, la API no arranca y explica por qué.
+5. **Cuando la MFA de un rol caduca** (5.4.3), el front recibe `403 auth.mfa_required` y lleva al usuario a un **login completo** (`GET /auth/login?return_to=…`): sesión nueva y la anterior revocada (5.1.8). No hay `GET /auth/stepup` ni rotación del token en la misma fila; `mfa_auth_time` y `token_hash` conservan su `UPDATE` por si un proveedor futuro lo permite.
 
 ### 5.3 Transacciones: tres formas, y ninguna más
 
@@ -182,10 +185,10 @@ Comando de administración, con `app_admin`:
 
 - **Cookie** `__Host-session`: `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, sin `Domain`.
 - **Caducidad**: por inactividad y absoluta, configurables (7 y 30 días por defecto).
-- **MFA por rol**: cada rol declara si la requiere y su antigüedad máxima (por ejemplo, 12 horas para `owner` y `lawyer`).
+- **MFA por rol**: cada rol declara si la requiere y su antigüedad máxima (por ejemplo, 12 horas para `owner` y `lawyer`). Con WorkOS exige `WORKOS_MFA_REQUIRED=true` (5.2); al caducar, login completo.
 - **CSRF**: `SameSite=Lax` y `Origin` en `ALLOWED_ORIGINS` en los métodos que modifican datos.
 - **CORS**: `ALLOWED_ORIGINS` explícita, con `credentials`, sin comodines.
-- **Límite de peticiones** en `/auth/login`, `/auth/stepup`, `/auth/callback`, `POST /invitations`, `POST /invitations/{id}/resend`, `POST /invitations/accept` y `POST /tenants`, por IP y por usuario. `429`.
+- **Límite de peticiones** en `/auth/login`, `/auth/callback`, `POST /invitations`, `POST /invitations/{id}/resend`, `POST /invitations/accept` y `POST /tenants`, por IP y por usuario. `429`.
 - **Datos personales**: emails con `pii.Email`; IPs solo truncadas: `/24` en IPv4 y `/48` en IPv6, guardadas como `cidr` (`sessions.ip_prefix`, `audit_log.ip_prefix`). Go trunca antes de escribir; un `CHECK` en cada columna rechaza una IP completa (`/32`, `/128`) o cualquier otra máscara, y el tipo `cidr` rechaza bits de host tras la máscara.
 
 ## 7. RLS
@@ -374,7 +377,7 @@ Ya no existe ninguna función que devuelva datos de **otro** miembro.
 
 ## 9. Auditoría
 
-`auth.login`, `auth.logout`, `auth.login_failed`, `auth.email_in_use`, `auth.mfa_stepup`, `auth.mfa_stepup_failed`, `auth.mfa_stepup_mismatch`, `session.revoked`, `user.disabled`, `user.deleted`, `tenant.created`, `membership.created`, `membership.role_changed`, `membership.removed`, `membership.left`, `invitation.created`, `invitation.resent`, `invitation.accepted`, `invitation.revoked`, `authz.denied`, `job.cancelled`.
+`auth.login`, `auth.logout`, `auth.login_failed`, `auth.email_in_use`, `session.revoked`, `user.disabled`, `user.deleted`, `tenant.created`, `membership.created`, `membership.role_changed`, `membership.removed`, `membership.left`, `invitation.created`, `invitation.resent`, `invitation.accepted`, `invitation.revoked`, `authz.denied`, `job.cancelled`.
 
 El email del invitado no va en `metadata`. Retención configurable.
 
@@ -383,8 +386,7 @@ El email del invitado no va en `metadata`. Retención configurable.
 | Método y ruta | Sesión | Tenant | Permiso | Descripción |
 | --- | --- | --- | --- | --- |
 | `GET /auth/login` | No | No | — | Login |
-| `GET /auth/stepup` | Sí | No | — | Step-up de MFA |
-| `GET /auth/callback` | No | No | — | Retorno desde AuthKit (login o step-up, según el intento) |
+| `GET /auth/callback` | No | No | — | Retorno desde AuthKit (el propósito lo dice el intento) |
 | `POST /auth/logout` | Sí | No | — | Cierra la sesión |
 | `POST /auth/logout-all` | Sí | No | — | Cierra todas las sesiones |
 | `GET /me` | Sí | No | — | Usuario y membresías |
@@ -419,12 +421,13 @@ Los `{id}` son de la membresía o de la invitación, nunca del usuario. El rol `
 - Alcance `own`: un cliente no ve expedientes, documentos, filas de acceso, membresías ni invitaciones de otros; una abogada sí.
 - `GET /members` con rol `client`: `403`.
 
-**Sesión, login y step-up**
+**Sesión y login**
 - Sesión caducada (también por inactividad), revocada o inexistente: `401`. Usuario deshabilitado con sesión viva: `401`.
 - `X-Tenant-ID` mal formado, inexistente, sin membresía o tenant suspendido: el mismo `403`.
 - MFA ausente o más antigua que la máxima del rol: `403 auth.mfa_required`.
-- Step-up: con otra cuenta → rechazado; sin MFA, o con una hora de autenticación anterior al inicio del intento → rechazado; correcto → el token rota y el antiguo deja de valer.
-- Un callback con propósito `login` revoca la sesión anterior; uno con propósito `stepup` la conserva. El propósito no se puede forzar desde la URL.
+- MFA (5.2): con `WORKOS_MFA_REQUIRED=true`, `mfa_auth_time = auth_time`; con `SSO` o sin la variable, `NULL`; métodos informados sin `mfa` → login rechazado. La API no arranca si un rol exige MFA y la variable es `false`.
+- El login revoca la sesión anterior del navegador. El propósito no se puede forzar desde la URL.
+- Dos logins en paralelo funcionan; con más de 3 intentos se descarta el más antiguo.
 - `return_to` con `//evil.com`, `/\evil.com`, `/\t/evil.com` o `https://evil.com`: rechazado.
 - Identidad nueva con un email ya usado: `409`, sin escribir nada.
 
@@ -452,21 +455,22 @@ Los `{id}` son de la membresía o de la invitación, nunca del usuario. El rol `
 
 Vincular identidades desde la sesión, borrado de un tenant (será un comando de administración con `app_admin`; hasta entonces las claves hacia `tenants` son `RESTRICT` y `app_runtime` no tiene `DELETE`), locales, roles personalizados por tenant, SSO empresarial, API keys, suplantación para soporte, subdominios y OpenFGA.
 
-## 13. A verificar en la documentación de WorkOS
+## 13. Verificado en la documentación de WorkOS (noviembre de 2026)
 
-- AuthKit con PKCE y canje del código desde el backend.
-- **Imprescindible para el step-up**: cómo obtener la hora real de autenticación y si hubo MFA (por ejemplo, `auth_time` y `amr`), y cómo forzar una autenticación nueva con MFA aunque haya una sesión de AuthKit activa. Si no es posible, alternativa: exigir MFA en cada login a todos los usuarios de las apps que la necesiten, y cerrar la sesión de AuthKit tras cada login para que el siguiente sea siempre una autenticación nueva.
-- Cerrar la sesión de AuthKit en el logout.
-- Si `email_verified` puede ser cierto con emails no controlados por el usuario.
-- Residencia de los datos y DPA.
+- **PKCE y canje desde el backend**: sí. `GET /user_management/authorize` con `code_challenge` (`S256`) y `state`; `POST /user_management/authenticate` (`grant_type=authorization_code`, `code`, `code_verifier`, API key como `client_secret`). SDK oficial `github.com/workos/workos-go/v7`. [authorize](https://workos.com/docs/reference/authkit/authentication/get-authorization-url), [code](https://workos.com/docs/reference/authkit/authentication/code).
+- **Qué devuelve**: el usuario (con `email_verified`), `authentication_method` (`Password`, `Passkey`, `MagicAuth`, `SSO`, OAuth…) y un access token con `sub`, `sid`, `org_id`, `role`, `permissions`, `exp`, `iat` y `auth_time` (última autenticación activa; no avanza al refrescar). **No hay `amr` ni ningún dato de MFA.** [sessions](https://workos.com/docs/authkit/sessions), [reauthentication](https://workos.com/docs/authkit/reauthentication).
+- **Forzar reautenticación**: `max_age=0` (solo con `provider=authkit`). AuthKit elige el método (contraseña, MFA o el IdP de SSO); la app **no puede exigir MFA** ni sabe cuál se usó. Por eso no hay step-up (5.2).
+- **MFA**: se puede exigir a todos los usuarios del entorno en el panel; **no se aplica a usuarios SSO**. No se documenta si cubre todos los métodos (passkey, magic auth): la comprobación manual del runbook incluye probarlo. [mfa](https://workos.com/docs/authkit/mfa).
+- **Logout de AuthKit**: `GET /user_management/sessions/logout?session_id=<sid>`; vuelve al *Sign-out URI* configurado en el panel. [logout](https://workos.com/docs/reference/authkit/logout/get-logout-url).
+- Pendiente: si `email_verified` puede ser cierto con emails no controlados por el usuario, y residencia de datos y DPA.
 
 ## 14. Plan de implementación
 
 1. **Esquema y RLS**: esquema `extensions`, roles de BD, tablas, políticas, funciones `SECURITY DEFINER`, usuario de sistema y tests de estructura de la BD.
 2. **Transacciones y contexto**: `platform/authctx`, `WithTenantTx`, `WithUserTx`, `WithAnonTx`, y tests de aislamiento, pool y alcance `own` con tablas de ejemplo (incluida una tabla de acceso).
-3. **Login y sesiones**: adaptador de WorkOS, intentos, `/auth/*`, step-up con rotación, CSRF, CORS, IP de confianza y límite de peticiones.
+3. **Login y sesiones**: adaptador de WorkOS, intentos, `/auth/*`, MFA deducida de la configuración (5.2), CSRF, CORS, IP de confianza y límite de peticiones.
 4. **Principal y permisos**: middlewares de sesión y tenant, MFA por rol, `authz`, catálogo de roles con su validación al arrancar, y `/me`.
 5. **Tenants, invitaciones, miembros y auditoría**, con la revocación automática y el evento `identity.member_removed`.
 6. **Trabajos**: workers de usuario y de sistema.
 7. **Administración**: deshabilitar y borrar usuario.
-8. **Front**: login, step-up, selector de tenant, `X-Tenant-ID`, invitaciones (con `sessionStorage`) y miembros.
+8. **Front**: login (también al caducar la MFA de un rol), selector de tenant, `X-Tenant-ID`, invitaciones (con `sessionStorage`) y miembros.
