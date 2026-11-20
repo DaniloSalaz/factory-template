@@ -53,7 +53,8 @@ su migración dice quién la usa y cómo. En la misma migración que crea la tab
 
 1. Si tiene `tenant_id`: `ENABLE` y `FORCE ROW LEVEL SECURITY`, la política
    `tenant_isolation` y su alcance declarado (diseño, sección 7.3). El test de esquema
-   (`api/internal/platform/db/schematest`) falla si falta algo.
+   (`api/internal/platform/db/schematest`) falla si falta algo. Si es una tabla de acceso
+   o una tabla hija, sigue los patrones de `docs/patterns.md`.
 2. `GRANT` a `app_runtime` solo de los privilegios que la aplicación necesita (por ejemplo,
    sin `DELETE` en tablas de solo inserción). `UPDATE` siempre por columnas
    (`GRANT UPDATE (col, …)`), nunca de toda la tabla. Añade los permisos nuevos a

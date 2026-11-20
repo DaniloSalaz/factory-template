@@ -3,7 +3,8 @@
 //
 //   - structure_test.go reads the catalogs (pg_class, pg_policies, pg_proc), checks the
 //     rules of the design (sections 7.3 and 7.4) and proves each check catches a
-//     misbuilt object;
+//     misbuilt object; the rules for tables with tenant_id are in rules.go, which
+//     TenantTableViolations exposes to other packages' tests;
 //   - behavior_test.go runs SQL as app_runtime and checks what RLS and the SECURITY
 //     DEFINER functions actually allow;
 //   - privileges_test.go compares every privilege of app_runtime with
