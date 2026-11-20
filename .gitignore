@@ -2,6 +2,9 @@
 .env
 .env.*
 !.env.example
+# Vite build settings, not secrets (design, section 10).
+!web/.env.development
+!web/.env.production
 *.agekey
 keys.txt
 

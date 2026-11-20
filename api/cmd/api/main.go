@@ -9,12 +9,23 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/health"
+	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/clientip"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/config"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/db"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/httpx"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/logx"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/ratelimit"
+)
+
+// Requests per client IP and minute to /auth/login and /auth/callback together: a login
+// takes two, so about ten logins a minute.
+const (
+	authRateLimit  = 20
+	authRateWindow = time.Minute
 )
 
 func main() {
@@ -47,8 +58,17 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 	defer pool.Close()
 
+	idm, err := identity.New(identity.Deps{
+		DB: db.New(pool), Logger: logger, Web: cfg.Web, Auth: cfg.Auth, WorkOS: cfg.WorkOS,
+		RateLimiter: ratelimit.NewMemory(authRateLimit, authRateWindow, nil),
+	})
+	if err != nil {
+		return fmt.Errorf("wire identity module: %w", err)
+	}
+
 	mux := http.NewServeMux()
 	health.New(health.Deps{DB: pool, Logger: logger}).Register(mux)
+	idm.Register(mux)
 
 	handler := httpx.Chain(httpx.WithRouteFallback(mux, logger),
 		httpx.RequestID(),
@@ -56,6 +76,11 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		httpx.Recover(logger),
 		httpx.SecurityHeaders(),
 		httpx.BodyLimit(cfg.HTTP.MaxBodyBytes),
+		httpx.ClientIP(clientip.NewResolver(cfg.Web.TrustedClientIPHeader)),
+		httpx.CORS(cfg.Web.AllowedOrigins),
+		httpx.CSRF(cfg.Web.AllowedOrigins, logger),
+		// Every route needs a session unless listed here or public in its module.
+		idm.SessionMiddleware("/healthz", "/readyz"),
 	)
 
 	if err := httpx.NewServer(cfg.HTTP, handler, logger).Run(ctx); err != nil {

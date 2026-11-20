@@ -8,6 +8,11 @@ servers:
 tags:
   - name: health
     description: Liveness and readiness probes
+  - name: identity
+    description: >-
+      Login with WorkOS AuthKit and browser sessions (docs/designs/auth-y-tenancy.md, 5.1
+      and 5.5). The session is an HttpOnly __Host-session cookie; the browser never sees
+      a provider token.
 paths:
   /healthz:
     get:
@@ -39,8 +44,117 @@ paths:
           $ref: "#/components/responses/InternalError"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /auth/login:
+    get:
+      operationId: authLogin
+      summary: Start a login with AuthKit
+      description: >-
+        Stores the login intent in a __Host-oauth_<state> cookie (PKCE verifier,
+        return_to, purpose, start time; 5 minutes, at most 3 alive) and redirects to
+        AuthKit, always forcing a fresh authentication. Rate limited per IP.
+      tags: [identity]
+      parameters:
+        - name: return_to
+          in: query
+          description: Path (or URL) of the front end to return to; it must resolve to FRONTEND_ORIGIN.
+          schema:
+            type: string
+            maxLength: 2048
+      responses:
+        "302":
+          $ref: "#/components/responses/Redirect"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /auth/callback:
+    get:
+      operationId: authCallback
+      summary: AuthKit redirects here after authenticating
+      description: >-
+        Completes the intent named by state: exchanges the code, resolves the user and
+        sets the __Host-session cookie. What the callback does is decided by the stored
+        intent, never by the URL. Rate limited per IP.
+      tags: [identity]
+      parameters:
+        - name: code
+          in: query
+          schema:
+            type: string
+            maxLength: 512
+        - name: state
+          in: query
+          schema:
+            type: string
+            maxLength: 128
+        - name: error
+          in: query
+          schema:
+            type: string
+            maxLength: 256
+        - name: error_description
+          in: query
+          schema:
+            type: string
+            maxLength: 1024
+      responses:
+        "302":
+          $ref: "#/components/responses/Redirect"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /auth/logout:
+    post:
+      operationId: authLogout
+      summary: End this session
+      description: >-
+        Revokes the current session and clears its cookie. The front end then sends the
+        browser to logout_url to end the AuthKit session as well.
+      tags: [identity]
+      responses:
+        "200":
+          $ref: "#/components/responses/LoggedOut"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /auth/logout-all:
+    post:
+      operationId: authLogoutAll
+      summary: End every session of the user
+      tags: [identity]
+      responses:
+        "200":
+          $ref: "#/components/responses/LoggedOut"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   schemas:
+    Logout:
+      type: object
+      additionalProperties: false
+      required: [logout_url]
+      properties:
+        logout_url:
+          description: Where to send the browser to end the AuthKit session too; null if there is none.
+          type: [string, "null"]
     Status:
       type: object
       additionalProperties: false
@@ -91,6 +205,42 @@ components:
         message:
           type: string
   responses:
+    Redirect:
+      description: Redirect; cookies are set or cleared with Set-Cookie.
+      headers:
+        Location:
+          schema:
+            type: string
+    LoggedOut:
+      description: The session is revoked and its cookie cleared.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Logout"
+    Unauthorized:
+      description: No valid session.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Forbidden:
+      description: The request is not allowed (for instance, a foreign Origin).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Conflict:
+      description: The request conflicts with the current state.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    TooManyRequests:
+      description: Rate limit exceeded; retry later.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
     BadRequest:
       description: The request is malformed.
       content:

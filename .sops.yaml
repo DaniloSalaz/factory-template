@@ -1,4 +1,4 @@
 # Replace the placeholder with your age public key (age-keygen -y ~/.config/sops/age/keys.txt).
 creation_rules:
-  - path_regex: config/.*\.enc\.(env|ya?ml|json)$
-    age: age1REPLACE_WITH_YOUR_AGE_PUBLIC_KEY
+  - path_regex: secrets\.env$
+    age: age15h5p55wg99edyskemq4pyeyjfefpnfdnvkxa7vufx6xq37uau37sj2dedx

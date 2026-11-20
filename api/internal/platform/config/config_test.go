@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -14,12 +15,20 @@ import (
 	"github.com/caarlos0/env/v11"
 )
 
-const testDBPassword = "hunter2-db-password"
+const (
+	testDBPassword = "hunter2-db-password"
+	testAPIKey     = "sk_test_hunter2-workos-key"
+)
 
 func validEnv() map[string]string {
 	return map[string]string{
-		"APP_ENV":      "development",
-		"DATABASE_URL": "postgres://app:" + testDBPassword + "@localhost:5432/app?sslmode=disable&password=" + testDBPassword,
+		"APP_ENV":             "development",
+		"DATABASE_URL":        "postgres://app:" + testDBPassword + "@localhost:5432/app?sslmode=disable&password=" + testDBPassword,
+		"FRONTEND_ORIGIN":     "http://localhost:5173",
+		"ALLOWED_ORIGINS":     "http://localhost:5173",
+		"WORKOS_CLIENT_ID":    "client_test",
+		"WORKOS_API_KEY":      testAPIKey,
+		"WORKOS_REDIRECT_URI": "http://localhost:5173/auth/callback",
 	}
 }
 
@@ -52,7 +61,28 @@ func TestLoad_Valid(t *testing.T) {
 					c.HTTP.WriteTimeout == 15*time.Second && c.HTTP.IdleTimeout == time.Minute &&
 					c.HTTP.ShutdownTimeout == 10*time.Second && c.HTTP.MaxHeaderBytes == 1<<20 && c.HTTP.MaxBodyBytes == 1<<20 &&
 					c.Log.Level == slog.LevelInfo &&
-					c.Log.Format == LogFormatJSON
+					c.Log.Format == LogFormatJSON &&
+					c.Auth.SessionIdleTTL == 7*24*time.Hour && c.Auth.SessionAbsoluteTTL == 30*24*time.Hour &&
+					c.Web.TrustedClientIPHeader == "" && !c.WorkOS.MFARequired &&
+					c.WorkOS.APIKey.Reveal() == testAPIKey
+			},
+		},
+		{
+			name: "production trusts CF-Connecting-IP by default",
+			environ: with(map[string]string{
+				"APP_ENV": "production", "WORKOS_REDIRECT_URI": "https://api.example.com/auth/callback",
+			}),
+			want: func(c Config) bool { return c.Web.TrustedClientIPHeader == "CF-Connecting-IP" },
+		},
+		{
+			name: "origins are normalised and listed",
+			environ: with(map[string]string{
+				"FRONTEND_ORIGIN": "HTTPS://App.Example.com/",
+				"ALLOWED_ORIGINS": "https://app.example.com, https://admin.example.com",
+			}),
+			want: func(c Config) bool {
+				return c.Web.FrontendOrigin == "https://app.example.com" &&
+					slices.Equal(c.Web.AllowedOrigins, []string{"https://app.example.com", "https://admin.example.com"})
 			},
 		},
 		{
@@ -60,6 +90,7 @@ func TestLoad_Valid(t *testing.T) {
 			environ: with(map[string]string{
 				"APP_ENV": "production", "HTTP_PORT": "9090", "HTTP_WRITE_TIMEOUT": "30s",
 				"LOG_LEVEL": "debug", "LOG_FORMAT": "text", "DATABASE_URL": "postgresql://db.internal/app",
+				"WORKOS_REDIRECT_URI": "https://api.example.com/auth/callback",
 			}),
 			want: func(c Config) bool {
 				return c.Env == EnvProduction && c.HTTP.Port == 9090 && c.HTTP.WriteTimeout == 30*time.Second &&
@@ -99,9 +130,43 @@ func TestLoad_Invalid(t *testing.T) {
 			wantVars: []string{"APP_ENV is required"},
 		},
 		{
-			name:     "missing every required variable",
-			environ:  map[string]string{},
-			wantVars: []string{"APP_ENV is required", "DATABASE_URL is required"},
+			name:    "missing every required variable",
+			environ: map[string]string{},
+			wantVars: []string{
+				"APP_ENV is required", "DATABASE_URL is required", "FRONTEND_ORIGIN is required",
+				"ALLOWED_ORIGINS is required", "WORKOS_CLIENT_ID is required", "WORKOS_API_KEY is required",
+				"WORKOS_REDIRECT_URI is required",
+			},
+		},
+		{
+			name: "origins must be exact, without wildcards, and include the front end",
+			environ: with(map[string]string{
+				"FRONTEND_ORIGIN": "https://app.example.com/login",
+				"ALLOWED_ORIGINS": "https://*.example.com",
+			}),
+			wantVars: []string{"FRONTEND_ORIGIN must be an origin", "ALLOWED_ORIGINS must be a comma-separated list"},
+		},
+		{
+			name:     "allowed origins without the front end",
+			environ:  with(map[string]string{"ALLOWED_ORIGINS": "https://other.example.com"}),
+			wantVars: []string{"ALLOWED_ORIGINS must include FRONTEND_ORIGIN"},
+		},
+		{
+			name:     "X-Forwarded-For is never trusted",
+			environ:  with(map[string]string{"TRUSTED_CLIENT_IP_HEADER": "x-forwarded-for"}),
+			wantVars: []string{"TRUSTED_CLIENT_IP_HEADER must not be X-Forwarded-For"},
+		},
+		{
+			name:     "absolute TTL shorter than idle TTL",
+			environ:  with(map[string]string{"SESSION_IDLE_TTL": "48h", "SESSION_ABSOLUTE_TTL": "24h"}),
+			wantVars: []string{"SESSION_ABSOLUTE_TTL must not be shorter than SESSION_IDLE_TTL"},
+		},
+		{
+			name: "WorkOS values",
+			environ: with(map[string]string{
+				"APP_ENV": "staging", "WORKOS_CLIENT_ID": "wrong", "WORKOS_REDIRECT_URI": "http://api.example.com/auth/callback",
+			}),
+			wantVars: []string{"WORKOS_CLIENT_ID must start with client_", "WORKOS_REDIRECT_URI must use https outside development"},
 		},
 		{
 			name:     "empty counts as missing",
@@ -142,7 +207,7 @@ func TestLoad_Invalid(t *testing.T) {
 					t.Errorf("error does not contain %q:\n%s", want, msg)
 				}
 			}
-			for _, secret := range append(tc.secrets, testDBPassword) {
+			for _, secret := range append(tc.secrets, testDBPassword, testAPIKey) {
 				if strings.Contains(msg, secret) {
 					t.Errorf("error leaks a value: %q", secret)
 				}
@@ -168,7 +233,7 @@ func TestLoad_ReadsProcessEnvironment(t *testing.T) {
 	}
 }
 
-func TestConfig_RenderingsMaskDatabaseURL(t *testing.T) {
+func TestConfig_RenderingsMaskSecrets(t *testing.T) {
 	t.Parallel()
 
 	cfg, err := load(validEnv())
@@ -197,6 +262,9 @@ func TestConfig_RenderingsMaskDatabaseURL(t *testing.T) {
 			t.Parallel()
 			if strings.Contains(out, testDBPassword) {
 				t.Fatalf("leaks the database password: %s", out)
+			}
+			if strings.Contains(out, testAPIKey) {
+				t.Fatalf("leaks the WorkOS API key: %s", out)
 			}
 			if !strings.Contains(out, "postgres://app:***@localhost:5432/app") {
 				t.Fatalf("masked URL missing: %s", out)

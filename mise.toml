@@ -23,6 +23,16 @@ LOG_FORMAT = "json"
 # The API connects as app_runtime (subject to RLS); only migrations use app_owner.
 DATABASE_URL = "postgres://app_runtime:app_runtime@localhost:5432/factory?sslmode=disable"
 MIGRATIONS_DATABASE_URL = "postgres://app_owner:app_owner@localhost:5432/factory?sslmode=disable"
+# In development the front end (Vite, :5173) proxies /auth and /api to the API, so the
+# browser sees one origin and the AuthKit callback lands on Vite (docs/runbooks/auth.md).
+FRONTEND_ORIGIN = "http://localhost:5173"
+ALLOWED_ORIGINS = "http://localhost:5173"
+WORKOS_CLIENT_ID = "client_01M7V77YXSVNXZYGAW64XGHV92"
+WORKOS_REDIRECT_URI = "http://localhost:5173/auth/callback"
+# Must match the MFA setting of the WorkOS staging dashboard (docs/runbooks/auth.md).
+WORKOS_MFA_REQUIRED = "false"
+# WORKOS_API_KEY lives in secrets.env (SOPS + age). mise cannot decrypt dotenv files
+# (it would load the ciphertext), so `dev` runs under `sops exec-env` instead of _.file.
 _.file = ".env"
 
 [tasks.up]
@@ -34,9 +44,9 @@ description = "Stop local infrastructure"
 run = "docker compose down"
 
 [tasks.dev]
-description = "Run the API"
+description = "Run the API with the secrets of secrets.env decrypted into its environment"
 dir = "api"
-run = "go run ./cmd/api"
+run = "sops exec-env ../secrets.env 'go run ./cmd/api'"
 
 [tasks."web:install"]
 description = "Install web dependencies if missing"
@@ -50,6 +60,7 @@ depends = ["web:install"]
 run = [
   "cd api && sqlc generate",
   "cd api && oapi-codegen -config oapi-codegen.yaml ../api-spec/openapi.yaml",
+  "cd api && oapi-codegen -config oapi-codegen.identity.yaml ../api-spec/openapi.yaml",
   "cd web && npm run generate",
 ]
 
