@@ -1465,7 +1465,10 @@ func TestMFA_RemoveFactor(t *testing.T) {
 	if e.idp.Factors() == 0 {
 		t.Fatal("the refused removal reached the provider")
 	}
-	ob.ageMFA(domain.FactorChangeMFAMaxAge + time.Second)
+	// A minute past the limit, not a second: mfa_auth_time comes from the database clock
+	// and the use case compares it with the test clock, which stands still; under load
+	// the two drift apart by more than a second.
+	ob.ageMFA(domain.FactorChangeMFAMaxAge + time.Minute)
 	e.exec(`UPDATE memberships SET role = 'member' WHERE tenant_id = $1`, tenant)
 	if res := ob.remove(factor); res.status != http.StatusForbidden || res.problemCode(t) != "auth.mfa_required" {
 		t.Fatalf("removing with an MFA older than 10 minutes: %d %s, want auth.mfa_required", res.status, res.body)
