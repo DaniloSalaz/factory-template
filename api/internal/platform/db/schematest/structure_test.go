@@ -212,6 +212,9 @@ func TestSchema_DetectsMisbuiltTables(t *testing.T) {
 	const ownScope = `CREATE POLICY own_scope ON %[1]s AS RESTRICTIVE FOR ALL
 		USING (current_setting('app.scope') = 'tenant')`
 	const forced = `ALTER TABLE %[1]s ENABLE ROW LEVEL SECURITY; ALTER TABLE %[1]s FORCE ROW LEVEL SECURITY`
+	// Like memberships' own_write: an extra restrictive policy only narrows access.
+	const ownWrite = `CREATE POLICY own_write ON %[1]s AS RESTRICTIVE FOR UPDATE
+		USING (current_setting('app.scope') = 'tenant')`
 
 	tests := []struct {
 		table string
@@ -229,6 +232,14 @@ func TestSchema_DetectsMisbuiltTables(t *testing.T) {
 			USING (current_setting('app.scope') = 'tenant')`}, "own_scope must be AS RESTRICTIVE"},
 		{"zz_own_select", []string{forced, isolation, `CREATE POLICY own_scope ON %[1]s AS RESTRICTIVE FOR SELECT
 			USING (current_setting('app.scope') = 'tenant')`}, "own_scope must be FOR ALL"},
+		{"zz_good_own_write", []string{forced, isolation, ownScope, ownWrite}, ""},
+		// An extra restrictive policy is not a declared scope, and is held to the same
+		// expression rules as any other.
+		{"zz_only_own_write", []string{forced, isolation, ownWrite}, "no declared scope"},
+		{"zz_own_write_missing_ok", []string{forced, isolation, ownScope, `CREATE POLICY own_write ON %[1]s AS RESTRICTIVE FOR UPDATE
+			USING (current_setting('app.scope', true) = 'tenant')`}, `policy "own_write" uses current_setting(..., true)`},
+		{"zz_own_write_nullif", []string{forced, isolation, ownScope, `CREATE POLICY own_write ON %[1]s AS RESTRICTIVE FOR UPDATE
+			USING (NULLIF(current_setting('app.scope'), '') = 'tenant')`}, `policy "own_write" uses NULLIF`},
 		{"zz_no_scope", []string{forced, isolation}, "no declared scope"},
 		{"zz_extra_permissive", []string{forced, isolation, ownScope, `CREATE POLICY open_reads ON %[1]s FOR SELECT USING (true)`}, `extra permissive policy "open_reads"`},
 		{"zz_missing_ok", []string{forced, `CREATE POLICY tenant_isolation ON %[1]s FOR ALL

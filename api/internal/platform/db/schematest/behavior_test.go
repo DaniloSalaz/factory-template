@@ -324,6 +324,25 @@ func TestRLS_OwnScope(t *testing.T) {
 
 	s := seedTwoTenants(t)
 
+	t.Run("client can leave the tenant", func(t *testing.T) {
+		f := newFixtures(t)
+		tenant, client := f.tenant("active"), f.user(true, false)
+		f.member(tenant, f.user(true, false), "owner")
+		membership := f.member(tenant, client, "client")
+
+		conn := connect(t, testDB.RuntimeURL)
+		err := inTx(t, conn, tenantVars(tenant, client.id, "own"), func(tx pgx.Tx) error {
+			tag, err := tx.Exec(t.Context(), `DELETE FROM memberships WHERE id = $1`, membership)
+			if err == nil && tag.RowsAffected() != 1 {
+				t.Errorf("deleted %d rows of its own membership, want 1", tag.RowsAffected())
+			}
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+
 	t.Run("client sees only its own membership and no invitations or audit", func(t *testing.T) {
 		conn := connect(t, testDB.RuntimeURL)
 		err := inTx(t, conn, tenantVars(s.a, s.clientA.id, "own"), func(tx pgx.Tx) error {
@@ -362,6 +381,23 @@ func TestRLS_OwnScope(t *testing.T) {
 		})
 		if err != nil {
 			t.Fatal(err)
+		}
+	})
+
+	t.Run("client cannot change its own membership", func(t *testing.T) {
+		conn := connect(t, testDB.RuntimeURL)
+		err := inTx(t, conn, tenantVars(s.a, s.clientA.id, "own"), func(tx pgx.Tx) error {
+			tag, err := tx.Exec(t.Context(), `UPDATE memberships SET role = 'owner' WHERE id = $1`, s.clientMembership)
+			if err == nil && tag.RowsAffected() != 0 {
+				t.Errorf("updated %d rows of its own membership, want 0", tag.RowsAffected())
+			}
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if role := newFixtures(t).scalar(`SELECT role FROM memberships WHERE id = $1`, s.clientMembership); role != "client" {
+			t.Fatalf("client role = %q, want client", role)
 		}
 	})
 

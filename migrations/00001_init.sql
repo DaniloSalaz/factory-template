@@ -179,6 +179,11 @@ CREATE POLICY own_scope ON memberships AS RESTRICTIVE FOR ALL
   USING (current_setting('app.scope') = 'tenant'
          OR user_id = current_setting('app.user_id')::uuid);
 
+-- Scope 'own' may read and delete its own membership (leave the tenant) but never
+-- change it, its role included.
+CREATE POLICY own_write ON memberships AS RESTRICTIVE FOR UPDATE
+  USING (current_setting('app.scope') = 'tenant');
+
 ALTER TABLE invitations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invitations FORCE ROW LEVEL SECURITY;
 
