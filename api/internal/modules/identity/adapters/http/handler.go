@@ -4,8 +4,11 @@ package http
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
+
+	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	identityapi "github.com/DaniloSalaz/factory-template/api/gen/openapi/identity"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
@@ -19,12 +22,13 @@ var _ identityapi.StrictServerInterface = (*Handler)(nil)
 type Handler struct {
 	login    *app.Login
 	sessions *app.Sessions
+	accounts *app.Accounts
 	logger   *slog.Logger
 }
 
 // NewHandler builds a Handler.
-func NewHandler(login *app.Login, sessions *app.Sessions, logger *slog.Logger) *Handler {
-	return &Handler{login: login, sessions: sessions, logger: logger}
+func NewHandler(login *app.Login, sessions *app.Sessions, accounts *app.Accounts, logger *slog.Logger) *Handler {
+	return &Handler{login: login, sessions: sessions, accounts: accounts, logger: logger}
 }
 
 // AuthLogin starts a login (design, 5.1.1 and 5.1.2).
@@ -92,6 +96,68 @@ func (h *Handler) AuthLogoutAll(ctx context.Context, _ identityapi.AuthLogoutAll
 		return nil, err
 	}
 	return loggedOut{logoutURL: logoutURL}, nil
+}
+
+// GetMe returns the current user and their memberships (design, section 10).
+func (h *Handler) GetMe(ctx context.Context, _ identityapi.GetMeRequestObject) (identityapi.GetMeResponseObject, error) {
+	cur, ok := app.CurrentFrom(ctx)
+	if !ok {
+		return nil, domain.ErrSessionInvalid()
+	}
+	me, err := h.accounts.Me(ctx, cur.UserID)
+	if err != nil {
+		return nil, err
+	}
+	userID, err := uuid(me.User.ID)
+	if err != nil {
+		return nil, err
+	}
+	out := identityapi.GetMe200JSONResponse{
+		// The user's own email, to the user: the API boundary is where pii is revealed.
+		User:        identityapi.CurrentUser{Id: userID, Email: me.User.Email.Reveal(), DisplayName: me.User.DisplayName},
+		Memberships: make([]identityapi.Membership, 0, len(me.Memberships)),
+	}
+	for _, m := range me.Memberships {
+		tenantID, err := uuid(m.TenantID)
+		if err != nil {
+			return nil, err
+		}
+		out.Memberships = append(out.Memberships, identityapi.Membership{
+			TenantId: tenantID, TenantSlug: m.TenantSlug, TenantName: m.TenantName,
+			TenantStatus: identityapi.MembershipTenantStatus(m.TenantStatus), Role: m.Role,
+		})
+	}
+	return out, nil
+}
+
+// GetCurrentTenant returns the tenant of X-Tenant-ID with the caller's role and
+// permissions in it.
+func (h *Handler) GetCurrentTenant(ctx context.Context, _ identityapi.GetCurrentTenantRequestObject) (identityapi.GetCurrentTenantResponseObject, error) {
+	cur, err := h.accounts.CurrentTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, err := uuid(cur.Tenant.ID)
+	if err != nil {
+		return nil, err
+	}
+	p := cur.Principal
+	perms := make([]string, 0, len(p.Permissions()))
+	for _, perm := range p.Permissions() {
+		perms = append(perms, string(perm))
+	}
+	return identityapi.GetCurrentTenant200JSONResponse{
+		Id: id, Slug: cur.Tenant.Slug, Name: cur.Tenant.Name, Role: p.Role(),
+		Scope: identityapi.CurrentTenantScope(p.Scope()), Permissions: perms,
+	}, nil
+}
+
+func uuid(s string) (openapi_types.UUID, error) {
+	var id openapi_types.UUID
+	if err := id.UnmarshalText([]byte(s)); err != nil {
+		return id, fmt.Errorf("parse uuid: %w", err)
+	}
+	return id, nil
 }
 
 func deref(s *string) string {

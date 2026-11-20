@@ -15,6 +15,8 @@ import (
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/authz"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
 )
 
@@ -36,6 +38,9 @@ type state struct {
 	sessions   map[string]memSession
 	audit      []memAudit
 	nextID     int
+	rolesInUse []string
+	// memberships by tenant id, then user id.
+	memberships map[string]map[string]app.Membership
 }
 
 type memUser struct {
@@ -51,7 +56,8 @@ type memSession struct {
 }
 
 type memAudit struct {
-	actor string
+	actor  string
+	tenant string
 	app.AuditEvent
 }
 
@@ -62,7 +68,8 @@ func newMemStore() *memStore {
 func (s state) clone() state {
 	return state{
 		users: maps.Clone(s.users), identities: maps.Clone(s.identities), sessions: maps.Clone(s.sessions),
-		audit: slices.Clone(s.audit), nextID: s.nextID,
+		audit: slices.Clone(s.audit), nextID: s.nextID, rolesInUse: slices.Clone(s.rolesInUse),
+		memberships: s.memberships, // read-only in these tests
 	}
 }
 
@@ -72,6 +79,14 @@ func (m *memStore) Anon(ctx context.Context, fn func(context.Context, app.Repo) 
 
 func (m *memStore) AsUser(ctx context.Context, userID string, fn func(context.Context, app.Repo) error) error {
 	return m.tx(ctx, userID, fn)
+}
+
+func (m *memStore) InTenant(ctx context.Context, p authctx.Principal, fn func(context.Context, app.Repo) error) error {
+	return m.tx(ctx, p.UserID(), func(ctx context.Context, r app.Repo) error {
+		mr, _ := r.(*memRepo)
+		mr.tenant = p.TenantID()
+		return fn(ctx, mr)
+	})
 }
 
 func (m *memStore) tx(ctx context.Context, actor string, fn func(context.Context, app.Repo) error) error {
@@ -98,9 +113,10 @@ func (m *memStore) snapshot() state {
 }
 
 type memRepo struct {
-	st    state
-	actor string
-	store *memStore
+	st     state
+	actor  string
+	tenant string // set by InTenant
+	store  *memStore
 }
 
 func (r *memRepo) id(prefix string) string {
@@ -220,6 +236,53 @@ func (r *memRepo) RecordAudit(_ context.Context, e app.AuditEvent) error {
 // ------------------------------------------------------------------------------------
 
 const front = "https://front.test"
+
+func (r *memRepo) RecordTenantAudit(_ context.Context, tenantID string, e app.AuditEvent) error {
+	if r.tenant == "" || tenantID != r.tenant {
+		return errors.New("record_audit: TN030/TN031")
+	}
+	r.st.audit = append(r.st.audit, memAudit{actor: r.actor, tenant: tenantID, AuditEvent: e})
+	return nil
+}
+
+func (r *memRepo) RolesInUse(context.Context) ([]string, error) {
+	return slices.Clone(r.st.rolesInUse), nil
+}
+
+func (r *memRepo) UserByID(_ context.Context, id string) (app.Profile, bool, error) {
+	u, ok := r.st.users[id]
+	if !ok {
+		return app.Profile{}, false, nil
+	}
+	return app.Profile{ID: id, Email: u.email}, true, nil
+}
+
+func (r *memRepo) MembershipsForUser(context.Context) ([]app.TenantMembership, error) {
+	var out []app.TenantMembership
+	for _, tenant := range slices.Sorted(maps.Keys(r.st.memberships)) {
+		if m, ok := r.st.memberships[tenant][r.actor]; ok {
+			status := "active"
+			if !m.TenantActive {
+				status = "suspended"
+			}
+			out = append(out, app.TenantMembership{TenantID: tenant, TenantStatus: status, Role: m.Role})
+		}
+	}
+	return out, nil
+}
+
+func (r *memRepo) TenantByID(_ context.Context, id string) (app.Tenant, bool, error) {
+	// Like RLS: only the transaction's own tenant is visible.
+	if r.tenant == "" || id != r.tenant {
+		return app.Tenant{}, false, nil
+	}
+	return app.Tenant{ID: id, Slug: "slug-" + id[:4], Name: "Tenant " + id[:4]}, true, nil
+}
+
+func (r *memRepo) Membership(_ context.Context, tenantID string) (app.Membership, bool, error) {
+	m, ok := r.st.memberships[tenantID][r.actor]
+	return m, ok, nil
+}
 
 type fixture struct {
 	idp      *fakeidp.Provider
@@ -593,5 +656,23 @@ func TestSessions(t *testing.T) {
 	}
 	if a := f.store.snapshot().audit; a[len(a)-1].Action != app.AuditLogout || a[len(a)-1].actor != cur.UserID {
 		t.Fatalf("audit = %+v", a[len(a)-1])
+	}
+}
+
+func TestUnknownRolesInUse(t *testing.T) {
+	t.Parallel()
+
+	store := newMemStore()
+	store.st.rolesInUse = []string{"admin", "ghost", "owner"}
+	catalog, err := authz.NewCatalog(
+		authz.Role{Name: authz.RoleOwner, Permissions: authz.PlatformPermissions()},
+		authz.Role{Name: "admin"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := app.UnknownRolesInUse(t.Context(), store, catalog)
+	if err != nil || !slices.Equal(got, []string{"ghost"}) {
+		t.Fatalf("UnknownRolesInUse = %v, %v; want [ghost]", got, err)
 	}
 }

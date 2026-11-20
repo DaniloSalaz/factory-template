@@ -14,7 +14,68 @@ import (
 	"net/http"
 
 	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
+
+// Defines values for CurrentTenantScope.
+const (
+	Own    CurrentTenantScope = "own"
+	Tenant CurrentTenantScope = "tenant"
+)
+
+// Valid indicates whether the value is a known member of the CurrentTenantScope enum.
+func (e CurrentTenantScope) Valid() bool {
+	switch e {
+	case Own:
+		return true
+	case Tenant:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MembershipTenantStatus.
+const (
+	Active    MembershipTenantStatus = "active"
+	Suspended MembershipTenantStatus = "suspended"
+)
+
+// Valid indicates whether the value is a known member of the MembershipTenantStatus enum.
+func (e MembershipTenantStatus) Valid() bool {
+	switch e {
+	case Active:
+		return true
+	case Suspended:
+		return true
+	default:
+		return false
+	}
+}
+
+// CurrentTenant defines model for CurrentTenant.
+type CurrentTenant struct {
+	Id   openapi_types.UUID `json:"id"`
+	Name string             `json:"name"`
+
+	// Permissions The role's permissions in the app's catalog, sorted; none for an unknown role.
+	Permissions []string `json:"permissions"`
+	Role        string   `json:"role"`
+
+	// Scope tenant sees every row of the tenant; own, only the caller's own.
+	Scope CurrentTenantScope `json:"scope"`
+	Slug  string             `json:"slug"`
+}
+
+// CurrentTenantScope tenant sees every row of the tenant; own, only the caller's own.
+type CurrentTenantScope string
+
+// CurrentUser defines model for CurrentUser.
+type CurrentUser struct {
+	DisplayName string             `json:"display_name"`
+	Email       string             `json:"email"`
+	Id          openapi_types.UUID `json:"id"`
+}
 
 // FieldError defines model for FieldError.
 type FieldError struct {
@@ -28,6 +89,27 @@ type Logout struct {
 	// LogoutUrl Where to send the browser to end the AuthKit session too; null if there is none.
 	LogoutUrl *string `json:"logout_url"`
 }
+
+// Me defines model for Me.
+type Me struct {
+	Memberships []Membership `json:"memberships"`
+	User        CurrentUser  `json:"user"`
+}
+
+// Membership defines model for Membership.
+type Membership struct {
+	// Role The member's role in the app's role catalog.
+	Role string `json:"role"`
+
+	// TenantId The value to send as X-Tenant-ID.
+	TenantId     openapi_types.UUID     `json:"tenant_id"`
+	TenantName   string                 `json:"tenant_name"`
+	TenantSlug   string                 `json:"tenant_slug"`
+	TenantStatus MembershipTenantStatus `json:"tenant_status"`
+}
+
+// MembershipTenantStatus defines model for Membership.TenantStatus.
+type MembershipTenantStatus string
 
 // Problem RFC 9457 problem details with this API's extension members.
 type Problem struct {
@@ -98,6 +180,12 @@ type ServerInterface interface {
 	// AuthLogoutAll End every session of the user
 	// (POST /auth/logout-all)
 	AuthLogoutAll(w http.ResponseWriter, r *http.Request)
+	// GetMe The current user and their memberships
+	// (GET /me)
+	GetMe(w http.ResponseWriter, r *http.Request)
+	// GetCurrentTenant The tenant named by X-Tenant-ID, with the caller's role and permissions in it
+	// (GET /tenant)
+	GetCurrentTenant(w http.ResponseWriter, r *http.Request)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -242,6 +330,34 @@ func (siw *ServerInterfaceWrapper) AuthLogoutAll(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// GetMe operation middleware
+func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetCurrentTenant operation middleware
+func (siw *ServerInterfaceWrapper) GetCurrentTenant(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetCurrentTenant(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -366,6 +482,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/auth/callback", wrapper.AuthCallback)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/logout", wrapper.AuthLogout)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/logout-all", wrapper.AuthLogoutAll)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/me", wrapper.GetMe)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tenant", wrapper.GetCurrentTenant)
 
 	return m
 }
@@ -711,6 +829,128 @@ func (response AuthLogoutAll500ApplicationProblemPlusJSONResponse) VisitAuthLogo
 	return err
 }
 
+type GetMeRequestObject struct {
+}
+
+type GetMeResponseObject interface {
+	VisitGetMeResponse(w http.ResponseWriter) error
+}
+
+type GetMe200JSONResponse Me
+
+func (response GetMe200JSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMe401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetMe401ApplicationProblemPlusJSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMe500ApplicationProblemPlusJSONResponse struct {
+	InternalErrorApplicationProblemPlusJSONResponse
+}
+
+func (response GetMe500ApplicationProblemPlusJSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCurrentTenantRequestObject struct {
+}
+
+type GetCurrentTenantResponseObject interface {
+	VisitGetCurrentTenantResponse(w http.ResponseWriter) error
+}
+
+type GetCurrentTenant200JSONResponse CurrentTenant
+
+func (response GetCurrentTenant200JSONResponse) VisitGetCurrentTenantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCurrentTenant401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response GetCurrentTenant401ApplicationProblemPlusJSONResponse) VisitGetCurrentTenantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCurrentTenant403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response GetCurrentTenant403ApplicationProblemPlusJSONResponse) VisitGetCurrentTenantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCurrentTenant500ApplicationProblemPlusJSONResponse struct {
+	InternalErrorApplicationProblemPlusJSONResponse
+}
+
+func (response GetCurrentTenant500ApplicationProblemPlusJSONResponse) VisitGetCurrentTenantResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// AuthCallback AuthKit redirects here after authenticating
@@ -725,6 +965,12 @@ type StrictServerInterface interface {
 	// AuthLogoutAll End every session of the user
 	// (POST /auth/logout-all)
 	AuthLogoutAll(ctx context.Context, request AuthLogoutAllRequestObject) (AuthLogoutAllResponseObject, error)
+	// GetMe The current user and their memberships
+	// (GET /me)
+	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
+	// GetCurrentTenant The tenant named by X-Tenant-ID, with the caller's role and permissions in it
+	// (GET /tenant)
+	GetCurrentTenant(ctx context.Context, request GetCurrentTenantRequestObject) (GetCurrentTenantResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -859,6 +1105,54 @@ func (sh *strictHandler) AuthLogoutAll(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AuthLogoutAllResponseObject); ok {
 		if err := validResponse.VisitAuthLogoutAllResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetMe operation middleware
+func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
+	var request GetMeRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetMe(ctx, request.(GetMeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMe")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMeResponseObject); ok {
+		if err := validResponse.VisitGetMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetCurrentTenant operation middleware
+func (sh *strictHandler) GetCurrentTenant(w http.ResponseWriter, r *http.Request) {
+	var request GetCurrentTenantRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetCurrentTenant(ctx, request.(GetCurrentTenantRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetCurrentTenant")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetCurrentTenantResponseObject); ok {
+		if err := validResponse.VisitGetCurrentTenantResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

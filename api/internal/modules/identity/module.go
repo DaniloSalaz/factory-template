@@ -1,8 +1,9 @@
 // Package identity is the module's public API: login with the identity provider,
-// sessions and the session middleware (design, sections 5.1, 5.4.1 and 5.5).
+// sessions, and the session and tenant middlewares (design, sections 5.1, 5.4 and 5.5).
 package identity
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"errors"
@@ -19,13 +20,14 @@ import (
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/adapters/workos"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/authz"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/config"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/db"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/httpx"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/ratelimit"
 )
 
-// Paths of the module that work without a session.
+// Paths of the module that are rate limited per client IP.
 const (
 	LoginPath    = "/auth/login"
 	CallbackPath = "/auth/callback"
@@ -45,8 +47,8 @@ type Deps struct {
 	WorkOS config.WorkOS
 	// RateLimiter limits /auth/login and /auth/callback per client IP.
 	RateLimiter ratelimit.Limiter
-	// RolesRequiringMFA are the roles of the app's catalog that require MFA (plan step 4).
-	RolesRequiringMFA []string
+	// Catalog is the app's validated role catalog.
+	Catalog *authz.Catalog
 	// Provider replaces WorkOS; only tests set it.
 	Provider app.IdentityProvider
 	// Now is the clock; nil means time.Now.
@@ -57,6 +59,10 @@ type Deps struct {
 type Module struct {
 	handler  *identityhttp.Handler
 	sessions *app.Sessions
+	tenancy  *app.Tenancy
+	authz    *authz.Authorizer
+	store    app.Store
+	catalog  *authz.Catalog
 	limiter  ratelimit.Limiter
 	logger   *slog.Logger
 }
@@ -64,7 +70,10 @@ type Module struct {
 // New wires adapters and use cases. It fails if the configuration cannot honour the MFA
 // that the roles require.
 func New(deps Deps) (*Module, error) {
-	if err := checkMFASupport(deps.RolesRequiringMFA, deps.WorkOS.MFARequired); err != nil {
+	if deps.Catalog == nil {
+		return nil, errors.New("identity: Catalog is required")
+	}
+	if err := checkMFASupport(deps.Catalog.RolesRequiringMFA(), deps.WorkOS.MFARequired); err != nil {
 		return nil, err
 	}
 	if deps.DB == nil || deps.Logger == nil || deps.RateLimiter == nil {
@@ -92,8 +101,12 @@ func New(deps Deps) (*Module, error) {
 	}, deps.Now)
 	sessions := app.NewSessions(idp, store, policy, deps.Now)
 	return &Module{
-		handler:  identityhttp.NewHandler(login, sessions, deps.Logger),
+		handler:  identityhttp.NewHandler(login, sessions, app.NewAccounts(store), deps.Logger),
 		sessions: sessions,
+		tenancy:  app.NewTenancy(store, deps.Catalog, deps.Now),
+		authz:    authz.NewAuthorizer(app.NewDenialAuditor(store), deps.Logger),
+		store:    store,
+		catalog:  deps.Catalog,
 		limiter:  deps.RateLimiter,
 		logger:   deps.Logger,
 	}, nil
@@ -111,6 +124,34 @@ func checkMFASupport(rolesRequiringMFA []string, providerEnforcesMFA bool) error
 		"the WorkOS dashboard requires MFA for every user: set Authentication > Multi-factor auth "+
 		"to Required in this environment's dashboard and WORKOS_MFA_REQUIRED=true "+
 		"(docs/runbooks/auth.md)", strings.Join(roles, ", "))
+}
+
+// Authorizer is the permission check that use cases make (authz.Require), recording
+// denials in the tenant's audit trail. Other modules receive it through their Deps.
+func (m *Module) Authorizer() *authz.Authorizer {
+	return m.authz
+}
+
+// TenantMiddleware requires X-Tenant-ID and a membership that may act in it on every
+// route whose contract security asks for a tenant, and builds the request's Principal
+// from the catalog. It goes right after SessionMiddleware.
+func (m *Module) TenantMiddleware() httpx.Middleware {
+	return identityhttp.TenantMiddleware(m.tenancy, m.logger)
+}
+
+// CheckRolesInUse logs an error for every role stored in a membership that the catalog
+// lacks (design, section 8): those members act with no permissions. It never stops the
+// start-up, not even when the query fails.
+func (m *Module) CheckRolesInUse(ctx context.Context) {
+	unknown, err := app.UnknownRolesInUse(ctx, m.store, m.catalog)
+	if err != nil {
+		m.logger.ErrorContext(ctx, "check roles in use", slog.Any("error", err))
+		return
+	}
+	for _, role := range unknown {
+		m.logger.ErrorContext(ctx, "a role in use is not in the catalog: its members have no permissions",
+			slog.String("role", role))
+	}
 }
 
 // Register mounts the module's routes on mux.
@@ -138,8 +179,8 @@ func (m *Module) Register(mux *http.ServeMux) {
 	})
 }
 
-// SessionMiddleware requires a session on every route except the login, the callback
-// and publicPaths (probes, say).
-func (m *Module) SessionMiddleware(publicPaths ...string) httpx.Middleware {
-	return identityhttp.SessionMiddleware(m.sessions, append([]string{LoginPath, CallbackPath}, publicPaths...), m.logger)
+// SessionMiddleware requires a session on every route whose contract security asks for
+// one, and on every route if httpx.RouteSecurity does not run before it.
+func (m *Module) SessionMiddleware() httpx.Middleware {
+	return identityhttp.SessionMiddleware(m.sessions, m.logger)
 }

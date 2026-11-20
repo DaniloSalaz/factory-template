@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/DaniloSalaz/factory-template/api/gen/routes"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/health"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/clientip"
@@ -52,6 +53,12 @@ func main() {
 func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	logger.InfoContext(ctx, "config loaded", slog.Any("config", cfg))
 
+	// An invalid catalog stops the start-up before anything else (design, section 8).
+	catalog, err := roleCatalog()
+	if err != nil {
+		return err
+	}
+
 	pool, err := db.NewPool(ctx, cfg.DB.URL.Reveal())
 	if err != nil {
 		return fmt.Errorf("connect database: %w", err)
@@ -61,10 +68,12 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	idm, err := identity.New(identity.Deps{
 		DB: db.New(pool), Logger: logger, Web: cfg.Web, Auth: cfg.Auth, WorkOS: cfg.WorkOS,
 		RateLimiter: ratelimit.NewMemory(authRateLimit, authRateWindow, nil),
+		Catalog:     catalog,
 	})
 	if err != nil {
 		return fmt.Errorf("wire identity module: %w", err)
 	}
+	idm.CheckRolesInUse(ctx)
 
 	mux := http.NewServeMux()
 	health.New(health.Deps{DB: pool, Logger: logger}).Register(mux)
@@ -79,8 +88,10 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		httpx.ClientIP(clientip.NewResolver(cfg.Web.TrustedClientIPHeader)),
 		httpx.CORS(cfg.Web.AllowedOrigins),
 		httpx.CSRF(cfg.Web.AllowedOrigins, logger),
-		// Every route needs a session unless listed here or public in its module.
-		idm.SessionMiddleware("/healthz", "/readyz"),
+		// What each route requires comes from the security declared in the contract.
+		httpx.RouteSecurity(mux, routes.Security()),
+		idm.SessionMiddleware(),
+		idm.TenantMiddleware(),
 	)
 
 	if err := httpx.NewServer(cfg.HTTP, handler, logger).Run(ctx); err != nil {

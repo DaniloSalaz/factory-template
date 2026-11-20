@@ -105,12 +105,19 @@ func (d *DB) run(ctx context.Context, fn TxFunc, setVars string, args ...any) er
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 
+	if isIndependent(ctx) {
+		if _, err := tx.Exec(ctx, `SELECT set_config('lock_timeout', $1, true)`, independentLockTimeout); err != nil {
+			return fmt.Errorf("set lock timeout: %w", err)
+		}
+	}
 	if setVars != "" {
 		if _, err := tx.Exec(ctx, setVars, args...); err != nil {
 			return fmt.Errorf("set rls variables: %w", err)
 		}
 	}
-	if err := fn(context.WithValue(ctx, txKey{}, struct{}{}), querier{tx: tx}); err != nil {
+	// Inside fn, nesting is refused again, also in an independent transaction.
+	fnCtx := context.WithValue(context.WithValue(ctx, txKey{}, struct{}{}), independentKey{}, false)
+	if err := fn(fnCtx, querier{tx: tx}); err != nil {
 		if rbErr := tx.Rollback(context.WithoutCancel(ctx)); rbErr != nil {
 			return errors.Join(err, fmt.Errorf("rollback transaction: %w", rbErr))
 		}
@@ -124,7 +131,33 @@ func (d *DB) run(ctx context.Context, fn TxFunc, setVars string, args ...any) er
 
 type txKey struct{}
 
-func inTx(ctx context.Context) bool { return ctx.Value(txKey{}) != nil }
+type independentKey struct{}
+
+// independentLockTimeout bounds how long an independent transaction waits for a lock.
+// The caller's transaction stays open meanwhile, so a lock it holds (a row it locked
+// FOR UPDATE that a foreign key of the write needs) would otherwise wait forever: the
+// independent write fails instead, and its caller decides (authz denies anyway).
+const independentLockTimeout = "2s"
+
+// Independent returns a context in which the next transaction helper opens a new
+// transaction on its own pool connection, even when ctx is already inside one, and
+// commits it whatever happens to the outer one. It is for writes that must survive the
+// caller's rollback, such as the audit of a denied permission. It covers only that next
+// helper: inside it, nesting is refused again. The outer transaction keeps its
+// connection meanwhile, so the pool must have a spare one.
+func Independent(ctx context.Context) context.Context {
+	return context.WithValue(ctx, independentKey{}, true)
+}
+
+func inTx(ctx context.Context) bool {
+	independent, _ := ctx.Value(independentKey{}).(bool)
+	return ctx.Value(txKey{}) != nil && !independent
+}
+
+func isIndependent(ctx context.Context) bool {
+	independent, _ := ctx.Value(independentKey{}).(bool)
+	return independent
+}
 
 // querier hides the pgx.Tx behind Querier: a type assertion cannot get it back to
 // commit, roll back or reach the connection.

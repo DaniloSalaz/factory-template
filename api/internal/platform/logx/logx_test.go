@@ -227,3 +227,29 @@ func TestWithGroup_NestsContextAttrs(t *testing.T) {
 		}
 	}
 }
+
+func TestAccessAttrs(t *testing.T) {
+	t.Parallel()
+
+	// Without a container, adding is a no-op rather than a panic.
+	logx.AddAccessAttrs(t.Context(), slog.String("user_id", "u"))
+
+	ctx, added := logx.WithAccessAttrs(t.Context())
+	// A derived context still reaches the same container: that is how inner middlewares
+	// pass attributes out to the outer one.
+	inner := logx.With(ctx, slog.String("other", "x"))
+	logx.AddAccessAttrs(inner, slog.String("user_id", "u1"))
+	logx.AddAccessAttrs(inner, slog.String("tenant_id", "t1"))
+
+	got := added()
+	if len(got) != 2 || got[0].Key != "user_id" || got[1].Key != "tenant_id" {
+		t.Fatalf("added = %v, want user_id and tenant_id", got)
+	}
+
+	// Access attributes do not leak into other records.
+	logger, buf := jsonLogger(slog.LevelDebug)
+	logger.InfoContext(inner, "inside")
+	if line := decodeLines(t, buf)[0]; line["user_id"] != nil || line["tenant_id"] != nil {
+		t.Fatalf("access attributes leaked into a normal record: %v", line)
+	}
+}

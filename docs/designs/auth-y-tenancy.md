@@ -128,6 +128,8 @@ El step-up de versiones anteriores (reautenticar con MFA y rotar el token en la 
 
 Las tres viven en `platform/db`. Las dos últimas solo pueden llamar a funciones `SECURITY DEFINER` o tocar tablas de identidad, nunca tablas de negocio: sin `app.tenant_id`, RLS hace fallar cualquier intento.
 
+No se anidan: dentro de una, llamar a otra falla (`ErrNestedTx`). La única excepción es `db.Independent(ctx)`: la siguiente transacción abre otra conexión del pool y hace commit pase lo que pase con la exterior. Es para escrituras que deben sobrevivir al rollback de quien llama; hoy, solo la auditoría de `authz.denied` (5.4.5). Fija `lock_timeout` (2 s): la transacción exterior sigue abierta y podría tener bloqueada una fila que necesite una clave foránea de la escritura (por ejemplo, `tenants … FOR UPDATE`); sin ese límite sería un interbloqueo que Postgres no detecta.
+
 **El callback usa dos transacciones, y no son atómicas.**
 - `WithAnonTx` para resolver el usuario (5.1.5 a 5.1.7): todavía no hay usuario; si hay rechazo, aquí solo se registra su evento.
 - `WithUserTx`, con el usuario ya resuelto, para revocar la sesión anterior, crear la nueva, actualizar `last_login_at` y registrar `auth.login`. Va aparte para que `record_audit` tome el actor de `app.user_id`: en una transacción anónima, `auth.login` quedaría sin actor.
@@ -136,11 +138,13 @@ Se acepta que no sean atómicas porque la primera solo deja estados que un login
 
 ### 5.4 Cada petición autenticada
 
+Qué exige cada ruta lo declara el contrato OpenAPI con `security`: por defecto, sesión y tenant (`session` y `tenant`); las rutas sin tenant, `[{session: []}]`; las públicas, `[]`. `routegen` lo convierte en `gen/routes` y `httpx.RouteSecurity` lo deja en el contexto de cada petición. Falla cerrado: una ruta registrada a mano que el contrato no declara exige sesión y tenant, y una que no existe, sesión.
+
 1. **Sesión**: busca el hash con un join a `users`. `401` si está revocada o caducada (inactividad comparada con el `last_seen_at` **anterior**) o si el usuario está deshabilitado. Después actualiza `last_seen_at`, como mucho una vez cada 5 minutos.
-2. **Tenant**: valida que `X-Tenant-ID` es un UUID y, con `WithUserTx`, llama a `auth_membership(tenant_id)`: rol, estado del tenant y del usuario. Si algo falla, el mismo `403 auth.tenant_forbidden`. Su evento de auditoría va sin tenant (sección 7.4, `TN031`): así nadie llena el registro de otro tenant enviando su `X-Tenant-ID`.
+2. **Tenant**: valida que `X-Tenant-ID` es un UUID y, con `WithUserTx`, llama a `auth_membership(tenant_id)`: rol, estado del tenant y del usuario. Si algo falla (cabecera ausente o mal formada, tenant inexistente o suspendido, sin membresía, usuario deshabilitado), el mismo `403 auth.tenant_forbidden`. **No se audita**: cualquiera con sesión podría llenar el registro con UUIDs inventados, y en el de otro tenant no puede entrar (sección 7.4, `TN031`). Se registra en el log a nivel `Warn`, con `user_id`, el motivo y el tenant pedido solo si es un UUID válido.
 3. **MFA del rol**: si el rol la requiere y `mfa_auth_time` es nulo o más antiguo que la antigüedad máxima del rol: `403 auth.mfa_required`.
-4. **Principal** en el contexto (`platform/authctx`): `UserID`, `TenantID`, `Role`, `Permissions`, `Scope`. `user_id` y `tenant_id`, a los logs.
-5. **Caso de uso**: `authz.Require(ctx, perm.X)`.
+4. **Principal** en el contexto (`platform/authctx`): `UserID`, `TenantID`, `Role`, `Permissions`, `Scope`. `user_id` y `tenant_id`, a los logs, también al registro de acceso.
+5. **Caso de uso**: `Authorizer.Require(ctx, perm)` (`platform/authz`), en cualquier punto del caso de uso, también dentro de su transacción. Sin el permiso: `403 authz.denied` y el evento `authz.denied` en la auditoría del tenant, escrito en una transacción propia (`db.Independent`, 5.3) que sobrevive al rollback de quien llama. Si no se puede auditar, deniega igualmente y lo registra en el log como `Error`.
 6. **Datos**: `WithTenantTx`.
 
 El rol del middleware sirve para autorizar la petición. Las operaciones que dependen del rol del actor para modificar otros roles **lo releen y bloquean dentro de su transacción** (sección 5.7).
@@ -382,7 +386,7 @@ Ya no existe ninguna función que devuelva datos de **otro** miembro.
 - **Roles** definidos en código por cada app. La plantilla trae:
   - `owner`: reservado, todos los permisos, incluido `tenant:own`;
   - `admin` y `member`.
-- **Al arrancar**, la app valida su catálogo: ningún rol salvo `owner` puede tener `tenant:own`, `owner` no se puede renombrar ni eliminar, y avisa de los roles de `roles_in_use()` que no existen en el código.
+- **Al arrancar**, la app valida su catálogo (`cmd/api/roles.go`, con `platform/authz`) y no arranca si falla: ningún rol salvo `owner` puede tener `tenant:own`, `owner` no se puede renombrar ni eliminar y tiene todos los permisos de plataforma y de los demás roles. Avisa, con un error en el log por cada uno, de los roles de `roles_in_use()` que no existen en el código.
 - Gracias a `tenant:own`, **ningún rol puede incluir a `owner`**: la regla de inclusión ya impide que un admin conceda owner. Además, la regla "solo un owner concede owner" se comprueba explícitamente.
 - **Cada rol declara** si requiere MFA y su antigüedad máxima.
 - **Inclusión**: los permisos de A son un subconjunto de los de B. "Estrictamente incluido": subconjunto propio.
@@ -406,6 +410,7 @@ El email del invitado no va en `metadata`. Retención configurable.
 | `POST /auth/logout` | Sí | No | — | Cierra la sesión |
 | `POST /auth/logout-all` | Sí | No | — | Cierra todas las sesiones |
 | `GET /me` | Sí | No | — | Usuario y membresías |
+| `GET /tenant` | Sí | Sí | — | Tenant actual, con el rol, el alcance y los permisos del usuario |
 | `POST /tenants` | Sí | No | — | Crea un tenant (si está habilitado) |
 | `POST /invitations/accept` | Sí | No | — | Acepta una invitación |
 | `GET /members` | Sí | Sí | `members:read` | Miembros del tenant |

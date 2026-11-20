@@ -51,6 +51,13 @@ func TestLintRules(t *testing.T) {
 			want:    []string{"internal/platform/authctx/authctx.go", "platform/logx", "[authctx-stdlib-only]", "only the standard library"},
 		},
 		{
+			fixture: "authz-in-use-cases",
+			want: []string{
+				"adapters/http/handler.go", "platform/authz", "[authz-in-use-cases]", "Authorizer.Require",
+			},
+			allowed: []string{"app/usecase.go"},
+		},
+		{
 			fixture: "domain-pure",
 			want: []string{
 				"domain/transport.go", "'net/http'", "transport belongs in adapters/http",

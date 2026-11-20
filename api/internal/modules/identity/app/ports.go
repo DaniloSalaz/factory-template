@@ -9,6 +9,7 @@ import (
 
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
 )
 
@@ -46,6 +47,8 @@ type Store interface {
 	Anon(ctx context.Context, fn func(ctx context.Context, r Repo) error) error
 	// AsUser runs fn as userID (db.WithUserTx), so audit events name it as the actor.
 	AsUser(ctx context.Context, userID string, fn func(ctx context.Context, r Repo) error) error
+	// InTenant runs fn as p in its tenant (db.WithTenantTx).
+	InTenant(ctx context.Context, p authctx.Principal, fn func(ctx context.Context, r Repo) error) error
 }
 
 // Repo is what the use cases read and write inside a transaction.
@@ -65,6 +68,50 @@ type Repo interface {
 	RevokeUserSessions(ctx context.Context, userID string) (int64, error)
 
 	RecordAudit(ctx context.Context, e AuditEvent) error
+	// RecordTenantAudit records an event of the transaction's tenant; only InTenant can.
+	RecordTenantAudit(ctx context.Context, tenantID string, e AuditEvent) error
+
+	// RolesInUse returns the distinct roles stored in any membership.
+	RolesInUse(ctx context.Context) ([]string, error)
+	// Membership returns the transaction user's membership in tenantID (a UUID); found
+	// is false without one or without such a tenant.
+	Membership(ctx context.Context, tenantID string) (m Membership, found bool, err error)
+	// UserByID returns a user's profile.
+	UserByID(ctx context.Context, id string) (p Profile, found bool, err error)
+	// MembershipsForUser returns the transaction user's memberships, and only theirs.
+	MembershipsForUser(ctx context.Context) ([]TenantMembership, error)
+	// TenantByID returns a tenant; under RLS, only the transaction's own (InTenant).
+	TenantByID(ctx context.Context, id string) (t Tenant, found bool, err error)
+}
+
+// Tenant is a tenant as its members see it.
+type Tenant struct {
+	ID   string
+	Slug string
+	Name string
+}
+
+// Profile is what a user may see of themselves.
+type Profile struct {
+	ID          string
+	Email       pii.Email
+	DisplayName string
+}
+
+// TenantMembership is one of the acting user's tenants, with their role in it.
+type TenantMembership struct {
+	TenantID     string
+	TenantSlug   string
+	TenantName   string
+	TenantStatus string
+	Role         string
+}
+
+// Membership is the acting user's membership in a tenant, with the state of both.
+type Membership struct {
+	Role         string
+	TenantActive bool
+	UserDisabled bool
 }
 
 // ErrAlreadyExists is what a Repo returns when a create hits a unique constraint: a
@@ -103,7 +150,7 @@ type Session struct {
 	State             domain.SessionState
 }
 
-// AuditEvent is an event without a tenant; the actor is the transaction's user, if any.
+// AuditEvent is an audit event; the actor is the transaction's user, if any.
 // Metadata never holds personal data (design, section 9).
 type AuditEvent struct {
 	Action     string

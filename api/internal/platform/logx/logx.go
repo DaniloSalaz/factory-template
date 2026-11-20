@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/config"
@@ -37,6 +38,7 @@ type ctxKey int
 const (
 	attrsKey ctxKey = iota
 	requestIDKey
+	accessKey
 )
 
 // With returns a context whose log records will include attrs, after any added earlier.
@@ -54,6 +56,38 @@ func WithRequestID(ctx context.Context, id string) context.Context {
 func RequestIDFrom(ctx context.Context) (string, bool) {
 	id, ok := ctx.Value(requestIDKey).(string)
 	return id, ok && id != ""
+}
+
+// The access record is written by the outermost middleware with the request's original
+// context, so attributes that inner middlewares learn later (user_id, tenant_id) reach
+// it through a mutable container that the outer one creates and reads.
+type accessAttrs struct {
+	mu    sync.Mutex
+	attrs []slog.Attr
+}
+
+// WithAccessAttrs returns a context carrying an empty container for the attributes of
+// the request's access record, and a function that returns what was added to it.
+func WithAccessAttrs(ctx context.Context) (context.Context, func() []slog.Attr) {
+	c := &accessAttrs{}
+	return context.WithValue(ctx, accessKey, c), func() []slog.Attr {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return slices.Clone(c.attrs)
+	}
+}
+
+// AddAccessAttrs adds attrs to the access record of the request, if ctx carries a
+// container from WithAccessAttrs; otherwise it does nothing. It does not affect other
+// records: use With for those.
+func AddAccessAttrs(ctx context.Context, attrs ...slog.Attr) {
+	c, ok := ctx.Value(accessKey).(*accessAttrs)
+	if !ok {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.attrs = append(c.attrs, attrs...)
 }
 
 func attrsFrom(ctx context.Context) []slog.Attr {

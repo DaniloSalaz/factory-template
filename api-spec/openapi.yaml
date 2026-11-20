@@ -5,6 +5,13 @@ info:
   description: Source of truth for the HTTP contract. Go server and TS client are generated from this file.
 servers:
   - url: http://localhost:8080
+# Every operation needs a session and a tenant unless it declares less: a route that
+# forgets to declare its security fails closed. Public operations declare
+# `security: []`; those without a tenant, `security: [{session: []}]`. The API reads
+# this from gen/routes (routegen), never from a hand-written list.
+security:
+  - session: []
+    tenant: []
 tags:
   - name: health
     description: Liveness and readiness probes
@@ -19,6 +26,7 @@ paths:
       operationId: getHealthz
       summary: Liveness probe
       tags: [health]
+      security: []
       responses:
         "200":
           description: The process is alive
@@ -33,6 +41,7 @@ paths:
       operationId: getReadyz
       summary: Readiness probe (checks dependencies such as the database)
       tags: [health]
+      security: []
       responses:
         "200":
           description: The service is ready to receive traffic
@@ -53,6 +62,7 @@ paths:
         return_to, purpose, start time; 5 minutes, at most 3 alive) and redirects to
         AuthKit, always forcing a fresh authentication. Rate limited per IP.
       tags: [identity]
+      security: []
       parameters:
         - name: return_to
           in: query
@@ -78,6 +88,7 @@ paths:
         sets the __Host-session cookie. What the callback does is decided by the stored
         intent, never by the URL. Rate limited per IP.
       tags: [identity]
+      security: []
       parameters:
         - name: code
           in: query
@@ -122,6 +133,8 @@ paths:
         Revokes the current session and clears its cookie. The front end then sends the
         browser to logout_url to end the AuthKit session as well.
       tags: [identity]
+      security:
+        - session: []
       responses:
         "200":
           $ref: "#/components/responses/LoggedOut"
@@ -136,6 +149,8 @@ paths:
       operationId: authLogoutAll
       summary: End every session of the user
       tags: [identity]
+      security:
+        - session: []
       responses:
         "200":
           $ref: "#/components/responses/LoggedOut"
@@ -145,8 +160,131 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/InternalError"
+  /me:
+    get:
+      operationId: getMe
+      summary: The current user and their memberships
+      description: >-
+        The session's user and every tenant they belong to, with its role, suspended
+        tenants included (acting in one answers 403 auth.tenant_forbidden). Needs no
+        X-Tenant-ID: the front end uses it to pick one.
+      tags: [identity]
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Me"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /tenant:
+    get:
+      operationId: getCurrentTenant
+      summary: The tenant named by X-Tenant-ID, with the caller's role and permissions in it
+      description: >-
+        Declares no security, so it takes the default: a session and X-Tenant-ID. The front
+        end uses the permissions to show only what the role allows; the API checks them
+        again in every use case.
+      tags: [identity]
+      responses:
+        "200":
+          description: The current tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentTenant"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
+  securitySchemes:
+    session:
+      description: The __Host-session cookie set by /auth/callback.
+      type: apiKey
+      in: cookie
+      name: __Host-session
+    tenant:
+      description: >-
+        The tenant the request acts in. The caller must be a member of it, the tenant
+        active and, if the member's role requires it, its MFA recent enough; otherwise
+        403 (auth.tenant_forbidden or auth.mfa_required).
+      type: apiKey
+      in: header
+      name: X-Tenant-ID
   schemas:
+    Me:
+      type: object
+      additionalProperties: false
+      required: [user, memberships]
+      properties:
+        user:
+          $ref: "#/components/schemas/CurrentUser"
+        memberships:
+          type: array
+          items:
+            $ref: "#/components/schemas/Membership"
+    CurrentUser:
+      type: object
+      additionalProperties: false
+      required: [id, email, display_name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        display_name:
+          type: string
+    Membership:
+      type: object
+      additionalProperties: false
+      required: [tenant_id, tenant_slug, tenant_name, tenant_status, role]
+      properties:
+        tenant_id:
+          description: The value to send as X-Tenant-ID.
+          type: string
+          format: uuid
+        tenant_slug:
+          type: string
+        tenant_name:
+          type: string
+        tenant_status:
+          type: string
+          enum: [active, suspended]
+        role:
+          description: The member's role in the app's role catalog.
+          type: string
+    CurrentTenant:
+      type: object
+      additionalProperties: false
+      required: [id, slug, name, role, scope, permissions]
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        scope:
+          description: tenant sees every row of the tenant; own, only the caller's own.
+          type: string
+          enum: [tenant, own]
+        permissions:
+          description: The role's permissions in the app's catalog, sorted; none for an unknown role.
+          type: array
+          items:
+            type: string
     Logout:
       type: object
       additionalProperties: false

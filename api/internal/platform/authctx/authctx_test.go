@@ -66,7 +66,19 @@ func TestInvalidUUIDs(t *testing.T) {
 			if _, err := authctx.SystemPrincipal(id); err == nil {
 				t.Errorf("SystemPrincipal(%q) accepted it", id)
 			}
+			if _, err := authctx.ParseID(id); err == nil {
+				t.Errorf("ParseID(%q) accepted it", id)
+			}
 		})
+	}
+}
+
+func TestParseID(t *testing.T) {
+	t.Parallel()
+
+	got, err := authctx.ParseID("0190A1B2-C3D4-7E5F-8A9B-0C1D2E3F4A5B")
+	if err != nil || got != "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b" {
+		t.Fatalf("ParseID = %q, %v; want the lower-case UUID", got, err)
 	}
 }
 

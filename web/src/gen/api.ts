@@ -6,6 +6,57 @@
  * OpenAPI spec version: 0.1.0
  */
 import { apiFetch } from '../api/fetcher';
+export interface CurrentUser {
+  id: string;
+  email: string;
+  display_name: string;
+}
+
+export type MembershipTenantStatus = typeof MembershipTenantStatus[keyof typeof MembershipTenantStatus];
+
+
+export const MembershipTenantStatus = {
+  active: 'active',
+  suspended: 'suspended',
+} as const;
+
+export interface Membership {
+  /** The value to send as X-Tenant-ID. */
+  tenant_id: string;
+  tenant_slug: string;
+  tenant_name: string;
+  tenant_status: MembershipTenantStatus;
+  /** The member's role in the app's role catalog. */
+  role: string;
+}
+
+export interface Me {
+  user: CurrentUser;
+  memberships: Membership[];
+}
+
+/**
+ * tenant sees every row of the tenant; own, only the caller's own.
+ */
+export type CurrentTenantScope = typeof CurrentTenantScope[keyof typeof CurrentTenantScope];
+
+
+export const CurrentTenantScope = {
+  tenant: 'tenant',
+  own: 'own',
+} as const;
+
+export interface CurrentTenant {
+  id: string;
+  slug: string;
+  name: string;
+  role: string;
+  /** tenant sees every row of the tenant; own, only the caller's own. */
+  scope: CurrentTenantScope;
+  /** The role's permissions in the app's catalog, sorted; none for an unknown role. */
+  permissions: string[];
+}
+
 export interface Logout {
   /**
      * Where to send the browser to end the AuthKit session too; null if there is none.
@@ -455,6 +506,109 @@ export const authLogoutAll = async ( options?: Parameters<typeof apiFetch>[1]): 
   {
     ...options,
     method: 'POST'
+
+
+  }
+);}
+
+
+
+export type getMeResponse200 = {
+  data: Me
+  status: 200
+}
+
+export type getMeResponse401 = {
+  data: UnauthorizedResponse
+  status: 401
+}
+
+export type getMeResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type getMeResponseSuccess = (getMeResponse200) & {
+  headers: Headers;
+};
+export type getMeResponseError = (getMeResponse401 | getMeResponse500) & {
+  headers: Headers;
+};
+
+export type getMeResponse = (getMeResponseSuccess | getMeResponseError)
+
+export const getGetMeUrl = () => {
+
+
+
+
+  return `/me`
+}
+
+/**
+ * The session's user and every tenant they belong to, with its role, suspended tenants included (acting in one answers 403 auth.tenant_forbidden). Needs no X-Tenant-ID: the front end uses it to pick one.
+ * @summary The current user and their memberships
+ */
+export const getMe = async ( options?: Parameters<typeof apiFetch>[1]): Promise<getMeResponse> => {
+
+  return apiFetch<getMeResponse>(getGetMeUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export type getCurrentTenantResponse200 = {
+  data: CurrentTenant
+  status: 200
+}
+
+export type getCurrentTenantResponse401 = {
+  data: UnauthorizedResponse
+  status: 401
+}
+
+export type getCurrentTenantResponse403 = {
+  data: ForbiddenResponse
+  status: 403
+}
+
+export type getCurrentTenantResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type getCurrentTenantResponseSuccess = (getCurrentTenantResponse200) & {
+  headers: Headers;
+};
+export type getCurrentTenantResponseError = (getCurrentTenantResponse401 | getCurrentTenantResponse403 | getCurrentTenantResponse500) & {
+  headers: Headers;
+};
+
+export type getCurrentTenantResponse = (getCurrentTenantResponseSuccess | getCurrentTenantResponseError)
+
+export const getGetCurrentTenantUrl = () => {
+
+
+
+
+  return `/tenant`
+}
+
+/**
+ * Declares no security, so it takes the default: a session and X-Tenant-ID. The front end uses the permissions to show only what the role allows; the API checks them again in every use case.
+ * @summary The tenant named by X-Tenant-ID, with the caller's role and permissions in it
+ */
+export const getCurrentTenant = async ( options?: Parameters<typeof apiFetch>[1]): Promise<getCurrentTenantResponse> => {
+
+  return apiFetch<getCurrentTenantResponse>(getGetCurrentTenantUrl(),
+  {
+    ...options,
+    method: 'GET'
 
 
   }

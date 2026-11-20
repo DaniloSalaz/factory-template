@@ -58,6 +58,17 @@ func (s *Store) AsUser(ctx context.Context, userID string, fn func(context.Conte
 	return db.MapError(err)
 }
 
+// InTenant implements app.Store with db.WithTenantTx.
+func (s *Store) InTenant(ctx context.Context, p authctx.Principal, fn func(context.Context, app.Repo) error) error {
+	if cur, ok := authctx.PrincipalFrom(ctx); !ok || cur.UserID() != p.UserID() || cur.TenantID() != p.TenantID() {
+		ctx = authctx.WithPrincipal(ctx, p)
+	}
+	err := s.db.WithTenantTx(ctx, func(ctx context.Context, q db.Querier) error {
+		return fn(ctx, repo{q: identitydb.New(q)})
+	})
+	return db.MapError(err)
+}
+
 type repo struct {
 	q *identitydb.Queries
 }
@@ -208,13 +219,9 @@ func (r repo) RevokeUserSessions(ctx context.Context, userID string) (int64, err
 }
 
 func (r repo) RecordAudit(ctx context.Context, e app.AuditEvent) error {
-	meta := e.Metadata
-	if meta == nil {
-		meta = map[string]string{}
-	}
-	b, err := json.Marshal(meta)
+	b, err := auditMetadata(e)
 	if err != nil {
-		return fmt.Errorf("encode audit metadata: %w", err)
+		return err
 	}
 	if err := r.q.RecordAudit(ctx, identitydb.RecordAuditParams{
 		Action: e.Action, TargetType: text(e.TargetType), TargetID: text(e.TargetID),
@@ -223,6 +230,109 @@ func (r repo) RecordAudit(ctx context.Context, e app.AuditEvent) error {
 		return fmt.Errorf("record audit %s: %w", e.Action, err)
 	}
 	return nil
+}
+
+func (r repo) RolesInUse(ctx context.Context) ([]string, error) {
+	roles, err := r.q.RolesInUse(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("roles in use: %w", err)
+	}
+	return roles, nil
+}
+
+func (r repo) RecordTenantAudit(ctx context.Context, tenantID string, e app.AuditEvent) error {
+	tid, err := parseUUID(tenantID)
+	if err != nil {
+		return err
+	}
+	meta, err := auditMetadata(e)
+	if err != nil {
+		return err
+	}
+	if err := r.q.RecordTenantAudit(ctx, identitydb.RecordTenantAuditParams{
+		TenantID: tid, Action: e.Action, TargetType: text(e.TargetType), TargetID: text(e.TargetID),
+		Metadata: meta, IpPrefix: prefix(e.IPPrefix),
+	}); err != nil {
+		return fmt.Errorf("record tenant audit %s: %w", e.Action, err)
+	}
+	return nil
+}
+
+func (r repo) UserByID(ctx context.Context, id string) (app.Profile, bool, error) {
+	uid, err := parseUUID(id)
+	if err != nil {
+		return app.Profile{}, false, err
+	}
+	row, err := r.q.UserByID(ctx, uid)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return app.Profile{}, false, nil
+	}
+	if err != nil {
+		return app.Profile{}, false, fmt.Errorf("user by id: %w", err)
+	}
+	return app.Profile{ID: row.ID.String(), Email: pii.Email(row.Email), DisplayName: row.DisplayName}, true, nil
+}
+
+func (r repo) MembershipsForUser(ctx context.Context) ([]app.TenantMembership, error) {
+	rows, err := r.q.MembershipsForUser(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("memberships for user: %w", err)
+	}
+	out := make([]app.TenantMembership, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, app.TenantMembership{
+			TenantID: row.TenantID.String(), TenantSlug: row.TenantSlug, TenantName: row.TenantName,
+			TenantStatus: row.TenantStatus, Role: row.Role,
+		})
+	}
+	return out, nil
+}
+
+func (r repo) TenantByID(ctx context.Context, id string) (app.Tenant, bool, error) {
+	tid, err := parseUUID(id)
+	if err != nil {
+		return app.Tenant{}, false, err
+	}
+	row, err := r.q.TenantByID(ctx, tid)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return app.Tenant{}, false, nil
+	}
+	if err != nil {
+		return app.Tenant{}, false, fmt.Errorf("tenant by id: %w", err)
+	}
+	return app.Tenant{ID: row.ID.String(), Slug: row.Slug, Name: row.Name}, true, nil
+}
+
+// tenantActive is the tenants.status of a tenant that may be used.
+const tenantActive = "active"
+
+func (r repo) Membership(ctx context.Context, tenantID string) (app.Membership, bool, error) {
+	tid, err := parseUUID(tenantID)
+	if err != nil {
+		return app.Membership{}, false, err
+	}
+	row, err := r.q.AuthMembership(ctx, tid)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return app.Membership{}, false, nil
+	}
+	if err != nil {
+		return app.Membership{}, false, fmt.Errorf("auth membership: %w", err)
+	}
+	return app.Membership{
+		Role: row.Role, TenantActive: row.TenantStatus == tenantActive, UserDisabled: row.UserDisabled,
+	}, true, nil
+}
+
+func auditMetadata(e app.AuditEvent) ([]byte, error) {
+	meta := e.Metadata
+	if meta == nil {
+		meta = map[string]string{}
+	}
+	b, err := json.Marshal(meta)
+	if err != nil {
+		return nil, fmt.Errorf("encode audit metadata: %w", err)
+	}
+	return b, nil
 }
 
 // uniqueViolation is SQLSTATE unique_violation.

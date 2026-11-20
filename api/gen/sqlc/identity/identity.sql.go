@@ -12,6 +12,27 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const authMembership = `-- name: AuthMembership :one
+SELECT m.role::text AS role, m.tenant_status::text AS tenant_status,
+       m.user_disabled::boolean AS user_disabled
+FROM auth_membership($1::uuid) AS m(role, tenant_status, user_disabled)
+`
+
+type AuthMembershipRow struct {
+	Role         string
+	TenantStatus string
+	UserDisabled bool
+}
+
+// The acting user's membership in a tenant (tenant middleware, design 5.4.2). No row:
+// no membership, or no such tenant.
+func (q *Queries) AuthMembership(ctx context.Context, tenantID pgtype.UUID) (AuthMembershipRow, error) {
+	row := q.db.QueryRow(ctx, authMembership, tenantID)
+	var i AuthMembershipRow
+	err := row.Scan(&i.Role, &i.TenantStatus, &i.UserDisabled)
+	return i, err
+}
+
 const createIdentity = `-- name: CreateIdentity :exec
 INSERT INTO user_identities (user_id, provider, subject, email_at_link)
 VALUES ($1, $2, $3, $4::text::extensions.citext)
@@ -93,6 +114,47 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (pgtype.
 	return id, err
 }
 
+const membershipsForUser = `-- name: MembershipsForUser :many
+SELECT m.tenant_id::uuid AS tenant_id, m.tenant_slug::text AS tenant_slug, m.tenant_name::text AS tenant_name,
+       m.tenant_status::text AS tenant_status, m.role::text AS role
+FROM auth_memberships_for_user() AS m(tenant_id, tenant_slug, tenant_name, tenant_status, role)
+`
+
+type MembershipsForUserRow struct {
+	TenantID     pgtype.UUID
+	TenantSlug   string
+	TenantName   string
+	TenantStatus string
+	Role         string
+}
+
+// The acting user's own memberships, never anyone else's (GET /me).
+func (q *Queries) MembershipsForUser(ctx context.Context) ([]MembershipsForUserRow, error) {
+	rows, err := q.db.Query(ctx, membershipsForUser)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MembershipsForUserRow
+	for rows.Next() {
+		var i MembershipsForUserRow
+		if err := rows.Scan(
+			&i.TenantID,
+			&i.TenantSlug,
+			&i.TenantName,
+			&i.TenantStatus,
+			&i.Role,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const recordAudit = `-- name: RecordAudit :exec
 SELECT record_audit(NULL::uuid, $1, $2, $3,
                     $4, $5)
@@ -109,6 +171,33 @@ type RecordAuditParams struct {
 // Events without a tenant: login and logout never have one (record_audit, TN031).
 func (q *Queries) RecordAudit(ctx context.Context, arg RecordAuditParams) error {
 	_, err := q.db.Exec(ctx, recordAudit,
+		arg.Action,
+		arg.TargetType,
+		arg.TargetID,
+		arg.Metadata,
+		arg.IpPrefix,
+	)
+	return err
+}
+
+const recordTenantAudit = `-- name: RecordTenantAudit :exec
+SELECT record_audit($1::uuid, $2, $3, $4,
+                    $5, $6)
+`
+
+type RecordTenantAuditParams struct {
+	TenantID   pgtype.UUID
+	Action     string
+	TargetType pgtype.Text
+	TargetID   pgtype.Text
+	Metadata   []byte
+	IpPrefix   *netip.Prefix
+}
+
+// Events of the transaction's tenant; record_audit refuses any other (TN030).
+func (q *Queries) RecordTenantAudit(ctx context.Context, arg RecordTenantAuditParams) error {
+	_, err := q.db.Exec(ctx, recordTenantAudit,
+		arg.TenantID,
 		arg.Action,
 		arg.TargetType,
 		arg.TargetID,
@@ -146,6 +235,31 @@ func (q *Queries) RevokeUserSessions(ctx context.Context, userID pgtype.UUID) (i
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const rolesInUse = `-- name: RolesInUse :many
+SELECT r.role::text AS role FROM roles_in_use() AS r(role)
+`
+
+// The distinct roles stored in any tenant, without tenant data (design, section 8).
+func (q *Queries) RolesInUse(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, rolesInUse)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var role string
+		if err := rows.Scan(&role); err != nil {
+			return nil, err
+		}
+		items = append(items, role)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const sessionByHash = `-- name: SessionByHash :one
@@ -193,6 +307,24 @@ UPDATE users SET last_login_at = now() WHERE id = $1
 func (q *Queries) SetLastLogin(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, setLastLogin, id)
 	return err
+}
+
+const tenantByID = `-- name: TenantByID :one
+SELECT t.id, t.slug, t.name FROM tenants t WHERE t.id = $1
+`
+
+type TenantByIDRow struct {
+	ID   pgtype.UUID
+	Slug string
+	Name string
+}
+
+// Under RLS, inside the tenant's own transaction; the WHERE is defence in depth.
+func (q *Queries) TenantByID(ctx context.Context, id pgtype.UUID) (TenantByIDRow, error) {
+	row := q.db.QueryRow(ctx, tenantByID, id)
+	var i TenantByIDRow
+	err := row.Scan(&i.ID, &i.Slug, &i.Name)
+	return i, err
 }
 
 const touchSession = `-- name: TouchSession :exec
@@ -247,6 +379,25 @@ func (q *Queries) UserByEmail(ctx context.Context, email string) (UserByEmailRow
 	row := q.db.QueryRow(ctx, userByEmail, email)
 	var i UserByEmailRow
 	err := row.Scan(&i.ID, &i.Email, &i.Disabled)
+	return i, err
+}
+
+const userByID = `-- name: UserByID :one
+SELECT u.id, u.email::text AS email, u.display_name
+FROM users u
+WHERE u.id = $1
+`
+
+type UserByIDRow struct {
+	ID          pgtype.UUID
+	Email       string
+	DisplayName string
+}
+
+func (q *Queries) UserByID(ctx context.Context, id pgtype.UUID) (UserByIDRow, error) {
+	row := q.db.QueryRow(ctx, userByID, id)
+	var i UserByIDRow
+	err := row.Scan(&i.ID, &i.Email, &i.DisplayName)
 	return i, err
 }
 

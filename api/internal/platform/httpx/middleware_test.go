@@ -330,3 +330,46 @@ func TestBodyLimit(t *testing.T) {
 		})
 	}
 }
+
+func TestAccessLog_AttrsFromInnerMiddlewares(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		add  bool
+	}{
+		{"inner middleware adds user_id and tenant_id", true},
+		{"nothing added, nothing logged", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Like the session and tenant middlewares: they replace the request with a copy
+			// carrying a new context, which the outer AccessLog never sees.
+			inner := func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if tc.add {
+						logx.AddAccessAttrs(r.Context(), slog.String("user_id", "u1"))
+						logx.AddAccessAttrs(r.Context(), slog.String("tenant_id", "t1"))
+					}
+					next.ServeHTTP(w, r.WithContext(logx.With(r.Context(), slog.String("k", "v"))))
+				})
+			}
+			var buf bytes.Buffer
+			h := httpx.Chain(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }),
+				httpx.AccessLog(newLogger(&buf)), inner)
+			h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/x", nil))
+
+			lines := logLines(t, &buf)
+			if len(lines) != 1 {
+				t.Fatalf("want one record, got %v", lines)
+			}
+			for _, k := range []string{"user_id", "tenant_id"} {
+				if _, ok := lines[0][k]; ok != tc.add {
+					t.Errorf("%s present = %v, want %v: %v", k, ok, tc.add, lines[0])
+				}
+			}
+		})
+	}
+}

@@ -187,6 +187,12 @@ func PrincipalFrom(ctx context.Context) (Principal, bool) {
 	return p, ok && p.userID != "" && p.tenantID != ""
 }
 
+// ParseID returns s as a lower-case UUID if it is one (canonical form, either case, not
+// the nil UUID), the form the identifiers of this package take.
+func ParseID(s string) (string, error) {
+	return parseUUID("id", s)
+}
+
 // parseUUID accepts a UUID in its canonical 8-4-4-4-12 hex form, in either case, and
 // returns it lower-cased. The nil UUID is refused: it is never a real user or tenant.
 func parseUUID(what, s string) (string, error) {
