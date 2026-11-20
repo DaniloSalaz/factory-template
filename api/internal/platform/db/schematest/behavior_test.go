@@ -151,6 +151,26 @@ func seedTwoTenants(t *testing.T) twoTenants {
 	return s
 }
 
+// auditEvents returns the tenant's audit events as action/actor/target_type/target_id/
+// role/ip_prefix, sorted by action.
+func (f fixtures) auditEvents(tenant string) []string {
+	f.t.Helper()
+	rows, err := f.super.Query(f.t.Context(), `
+		SELECT concat_ws('/', action, actor_user_id, target_type, target_id, metadata->>'role', ip_prefix)
+		FROM audit_log WHERE tenant_id = $1 ORDER BY action`, tenant)
+	if err != nil {
+		f.t.Fatalf("audit events: %v", err)
+	}
+	events, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		f.t.Fatalf("audit events: %v", err)
+	}
+	return events
+}
+
+// testIPPrefix is what the callers pass: the client address already truncated.
+const testIPPrefix = "203.0.113.0/24"
+
 func countRows(t *testing.T, tx pgx.Tx, sql string, args ...any) int {
 	t.Helper()
 	var n int
@@ -544,7 +564,7 @@ func TestFunc_CreateTenantWithOwner(t *testing.T) {
 			var tenantID string
 			conn := connect(t, testDB.RuntimeURL)
 			err := inTx(t, conn, userVars(tc.user), func(tx pgx.Tx) error {
-				return tx.QueryRow(t.Context(), `SELECT tenant_id::text FROM create_tenant_with_owner('Acme', $1)`, tc.slug).Scan(&tenantID)
+				return tx.QueryRow(t.Context(), `SELECT tenant_id::text FROM create_tenant_with_owner('Acme', $1, $2)`, tc.slug, testIPPrefix).Scan(&tenantID)
 			})
 			if tc.wantState != "" {
 				wantSQLState(t, err, tc.wantState)
@@ -553,8 +573,14 @@ func TestFunc_CreateTenantWithOwner(t *testing.T) {
 			if err != nil {
 				t.Fatalf("create_tenant_with_owner: %v", err)
 			}
-			if role := newFixtures(t).scalar(`SELECT role FROM memberships WHERE tenant_id = $1 AND user_id = $2`, tenantID, tc.user); role != "owner" {
-				t.Fatalf("creator role = %q, want owner", role)
+			f := newFixtures(t)
+			membershipID := f.scalar(`SELECT id::text FROM memberships WHERE tenant_id = $1 AND user_id = $2 AND role = 'owner'`, tenantID, tc.user)
+			want := []string{
+				"membership.created/" + tc.user + "/membership/" + membershipID + "/owner/" + testIPPrefix,
+				"tenant.created/" + tc.user + "/tenant/" + tenantID + "/" + testIPPrefix,
+			}
+			if got := f.auditEvents(tenantID); !slices.Equal(got, want) {
+				t.Fatalf("audit events = %v, want %v", got, want)
 			}
 		})
 	}
@@ -618,7 +644,7 @@ func TestFunc_AcceptInvitation(t *testing.T) {
 			var membershipID string
 			conn := connect(t, testDB.RuntimeURL)
 			err := inTx(t, conn, userVars(u.id), func(tx pgx.Tx) error {
-				return tx.QueryRow(t.Context(), `SELECT membership_id::text FROM accept_invitation($1)`, token).Scan(&membershipID)
+				return tx.QueryRow(t.Context(), `SELECT membership_id::text FROM accept_invitation($1, $2)`, token, testIPPrefix).Scan(&membershipID)
 			})
 			if tc.wantState != "" {
 				wantSQLState(t, err, tc.wantState)
@@ -632,6 +658,18 @@ func TestFunc_AcceptInvitation(t *testing.T) {
 			}
 			if got := f.scalar(`SELECT user_id::text FROM memberships WHERE id = $1`, membershipID); got != u.id {
 				t.Fatalf("membership user = %s, want %s", got, u.id)
+			}
+			var tenant, invitationID string
+			if err := f.super.QueryRow(t.Context(), `SELECT tenant_id::text, id::text FROM invitations WHERE token_hash = $1`, token).
+				Scan(&tenant, &invitationID); err != nil {
+				t.Fatal(err)
+			}
+			want := []string{
+				"invitation.accepted/" + u.id + "/invitation/" + invitationID + "/" + testIPPrefix,
+				"membership.created/" + u.id + "/membership/" + membershipID + "/member/" + testIPPrefix,
+			}
+			if got := f.auditEvents(tenant); !slices.Equal(got, want) {
+				t.Fatalf("audit events = %v, want %v", got, want)
 			}
 		})
 	}
@@ -691,8 +729,14 @@ func TestFunc_AcceptInvitationConcurrently(t *testing.T) {
 	if n := f.scalar(`SELECT count(*)::text FROM memberships WHERE tenant_id = $1 AND user_id = $2`, tenant, u.id); n != "1" {
 		t.Fatalf("memberships = %s, want 1", n)
 	}
+	if got := f.auditEvents(tenant); len(got) != 2 {
+		t.Fatalf("audit events = %v, want one invitation.accepted and one membership.created", got)
+	}
 }
 
+// record_audit writes an event into a tenant's trail only from that tenant's
+// transaction: without app.tenant_id (WithUserTx, WithAnonTx, a reused connection) the
+// event has no tenant (TN031), and with it the event's tenant is that one or none (TN030).
 func TestFunc_RecordAudit(t *testing.T) {
 	t.Parallel()
 
@@ -707,8 +751,11 @@ func TestFunc_RecordAudit(t *testing.T) {
 		wantActor   string
 		wantState   string
 	}{
-		{"anonymous event has no actor", nil, &tenant, "", ""},
-		{"actor comes from app.user_id", userVars(actor.id), &tenant, actor.id, ""},
+		{"anonymous event without tenant", nil, nil, "", ""},
+		{"anonymous event with a tenant", nil, &tenant, "", "TN031"},
+		{"user event without tenant, actor from app.user_id", userVars(actor.id), nil, actor.id, ""},
+		{"user event with a tenant", userVars(actor.id), &tenant, "", "TN031"},
+		{"empty app.tenant_id is no tenant", []setting{{"app.tenant_id", ""}, {"app.user_id", actor.id}}, &tenant, "", "TN031"},
 		{"event of the current tenant", tenantVars(tenant, actor.id, "tenant"), &tenant, actor.id, ""},
 		{"event without tenant inside a tenant transaction", tenantVars(tenant, actor.id, "tenant"), nil, actor.id, ""},
 		{"event of another tenant", tenantVars(tenant, actor.id, "tenant"), &other, "", "TN030"},
@@ -736,16 +783,26 @@ func TestFunc_RecordAudit(t *testing.T) {
 		})
 	}
 
-	// A reused connection has app.tenant_id back to '', which means no tenant.
+	// A reused connection has app.tenant_id back to '', which means no tenant: an event
+	// without tenant is fine, one with a tenant is refused.
 	conn := connect(t, testDB.RuntimeURL)
 	if err := inTx(t, conn, tenantVars(tenant, actor.id, "tenant"), func(pgx.Tx) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if err := inTx(t, conn, nil, func(tx pgx.Tx) error {
+	err := inTx(t, conn, nil, func(tx pgx.Tx) error {
+		_, err := tx.Exec(t.Context(), `SELECT record_audit(NULL, 'test.recorded')`)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("record_audit without tenant on a reused connection: %v", err)
+	}
+	err = inTx(t, conn, nil, func(tx pgx.Tx) error {
 		_, err := tx.Exec(t.Context(), `SELECT record_audit($1, 'test.recorded')`, other)
 		return err
-	}); err != nil {
-		t.Fatalf("record_audit on a reused connection without app.tenant_id: %v", err)
+	})
+	wantSQLState(t, err, "TN031")
+	if events := f.auditEvents(other); len(events) != 0 {
+		t.Fatalf("tenant %s got events from outside its transactions: %v", other, events)
 	}
 }
 

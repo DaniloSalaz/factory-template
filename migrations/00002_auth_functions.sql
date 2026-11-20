@@ -29,8 +29,14 @@
 --   TN016 user is already a member of the tenant
 --   TN020 tenant slug already taken
 --   TN030 audit event tenant does not match app.tenant_id
+--   TN031 audit event has a tenant but app.tenant_id is not set
 -- A missing or empty app.user_id is a programming error and surfaces as Postgres' own
 -- 42704 / 22P02 from current_setting and the uuid cast.
+--
+-- create_tenant_with_owner and accept_invitation run without app.tenant_id, so
+-- record_audit would refuse their tenant's events (TN031): they write those events
+-- themselves, in the same transaction. Their p_ip_prefix is the client IP already
+-- truncated by the caller, never the full address.
 
 -- What the functions read and write, and nothing else. Column-level UPDATE on
 -- invitations is the minimum for SELECT ... FOR UPDATE and for marking it accepted.
@@ -86,10 +92,10 @@ ALTER FUNCTION auth_memberships_for_user() OWNER TO app_security;
 -- create_tenant_with_owner: POST /tenants (section 5.5). Creates the tenant and makes
 -- the acting user its owner in one step, so a tenant never exists without an owner and
 -- app_runtime never inserts a membership outside RLS. Revalidates that the user exists
--- and is not disabled.
+-- and is not disabled, and records tenant.created and membership.created.
 ------------------------------------------------------------------------------------
 -- +goose StatementBegin
-CREATE FUNCTION create_tenant_with_owner(p_name text, p_slug text)
+CREATE FUNCTION create_tenant_with_owner(p_name text, p_slug text, p_ip_prefix cidr DEFAULT NULL)
 RETURNS TABLE (tenant_id uuid, membership_id uuid)
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER
 SET search_path = pg_catalog, extensions, pg_temp
@@ -120,13 +126,18 @@ BEGIN
   VALUES (v_tenant, v_user, 'owner')
   RETURNING id INTO v_member;
 
+  INSERT INTO public.audit_log (tenant_id, actor_user_id, action, target_type, target_id, metadata, ip_prefix)
+  VALUES (v_tenant, v_user, 'tenant.created', 'tenant', v_tenant::text, '{}', p_ip_prefix),
+         (v_tenant, v_user, 'membership.created', 'membership', v_member::text,
+          jsonb_build_object('role', 'owner'), p_ip_prefix);
+
   RETURN QUERY SELECT v_tenant, v_member;
 END;
 $$;
 -- +goose StatementEnd
-REVOKE EXECUTE ON FUNCTION create_tenant_with_owner(text, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION create_tenant_with_owner(text, text) TO app_runtime;
-ALTER FUNCTION create_tenant_with_owner(text, text) OWNER TO app_security;
+REVOKE EXECUTE ON FUNCTION create_tenant_with_owner(text, text, cidr) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION create_tenant_with_owner(text, text, cidr) TO app_runtime;
+ALTER FUNCTION create_tenant_with_owner(text, text, cidr) OWNER TO app_security;
 
 ------------------------------------------------------------------------------------
 -- accept_invitation: POST /invitations/accept (section 5.6.5), all in one call.
@@ -135,10 +146,11 @@ ALTER FUNCTION create_tenant_with_owner(text, text) OWNER TO app_security;
 -- is revalidated here, including the user's verified email read from users, never
 -- passed in. Users and tenants are not locked: disabling the user or suspending the
 -- tenant during an accept leaves a membership that grants nothing (a disabled user
--- cannot log in; a suspended tenant admits no one).
+-- cannot log in; a suspended tenant admits no one). Records invitation.accepted and
+-- membership.created.
 ------------------------------------------------------------------------------------
 -- +goose StatementBegin
-CREATE FUNCTION accept_invitation(p_token_hash bytea)
+CREATE FUNCTION accept_invitation(p_token_hash bytea, p_ip_prefix cidr DEFAULT NULL)
 RETURNS TABLE (membership_id uuid, tenant_id uuid, role text)
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER
 SET search_path = pg_catalog, extensions, pg_temp
@@ -202,13 +214,18 @@ BEGIN
 
   UPDATE public.invitations i SET accepted_at = now() WHERE i.id = v_inv.id;
 
+  INSERT INTO public.audit_log (tenant_id, actor_user_id, action, target_type, target_id, metadata, ip_prefix)
+  VALUES (v_inv.tenant_id, v_user, 'invitation.accepted', 'invitation', v_inv.id::text, '{}', p_ip_prefix),
+         (v_inv.tenant_id, v_user, 'membership.created', 'membership', v_member::text,
+          jsonb_build_object('role', v_inv.role), p_ip_prefix);
+
   RETURN QUERY SELECT v_member, v_inv.tenant_id, v_inv.role;
 END;
 $$;
 -- +goose StatementEnd
-REVOKE EXECUTE ON FUNCTION accept_invitation(bytea) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION accept_invitation(bytea) TO app_runtime;
-ALTER FUNCTION accept_invitation(bytea) OWNER TO app_security;
+REVOKE EXECUTE ON FUNCTION accept_invitation(bytea, cidr) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION accept_invitation(bytea, cidr) TO app_runtime;
+ALTER FUNCTION accept_invitation(bytea, cidr) OWNER TO app_security;
 
 ------------------------------------------------------------------------------------
 -- tenant_status: system jobs check the tenant without a membership (section 7.6).
@@ -248,9 +265,10 @@ ALTER FUNCTION roles_in_use() OWNER TO app_security;
 -- record_audit: the only way the application writes to audit_log, which it cannot
 -- modify or delete. The actor is app.user_id, or NULL for anonymous events (login
 -- failures): this is the one place allowed to read it with missing_ok. Inside a tenant
--- transaction the event belongs to that tenant or to none, so a bug cannot plant
--- events in another tenant's trail. The id is generated here so app_security needs no
--- SELECT on audit_log.
+-- transaction the event belongs to that tenant or to none (TN030); without app.tenant_id
+-- it belongs to none (TN031). Either way a bug cannot plant events in another tenant's
+-- trail, nor can a request that names a tenant it has no access to. The id is generated
+-- here so app_security needs no SELECT on audit_log.
 ------------------------------------------------------------------------------------
 -- +goose StatementBegin
 CREATE FUNCTION record_audit(
@@ -270,6 +288,9 @@ DECLARE
   v_actor  uuid := nullif(current_setting('app.user_id', true), '')::uuid;
   v_tenant uuid := nullif(current_setting('app.tenant_id', true), '')::uuid;
 BEGIN
+  IF v_tenant IS NULL AND p_tenant_id IS NOT NULL THEN
+    RAISE EXCEPTION 'audit event has a tenant but app.tenant_id is not set' USING ERRCODE = 'TN031';
+  END IF;
   IF v_tenant IS NOT NULL AND p_tenant_id IS NOT NULL AND p_tenant_id <> v_tenant THEN
     RAISE EXCEPTION 'audit event tenant does not match app.tenant_id' USING ERRCODE = 'TN030';
   END IF;
@@ -290,8 +311,8 @@ ALTER FUNCTION record_audit(uuid, text, text, text, jsonb, cidr) OWNER TO app_se
 DROP FUNCTION record_audit(uuid, text, text, text, jsonb, cidr);
 DROP FUNCTION roles_in_use();
 DROP FUNCTION tenant_status(uuid);
-DROP FUNCTION accept_invitation(bytea);
-DROP FUNCTION create_tenant_with_owner(text, text);
+DROP FUNCTION accept_invitation(bytea, cidr);
+DROP FUNCTION create_tenant_with_owner(text, text, cidr);
 DROP FUNCTION auth_memberships_for_user();
 DROP FUNCTION auth_membership(uuid);
 REVOKE UPDATE (accepted_at) ON public.invitations FROM app_security;
