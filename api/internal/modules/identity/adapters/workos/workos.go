@@ -125,11 +125,10 @@ func (p *Provider) ExchangeCode(ctx context.Context, code, codeVerifier string) 
 		SessionID:     claims.SessionID,
 		Method:        method,
 		MFA: domain.ProviderMFA{
-			AuthTime: time.Unix(*claims.AuthTime, 0).UTC(),
-			// WorkOS does not apply its MFA requirement to SSO users.
-			ExemptFromPolicy: method == string(sdk.AuthenticateResponseAuthenticationMethodSSO),
-			AMR:              claims.AMR,
-			HasAMR:           claims.AMR != nil,
+			AuthTime:        time.Unix(*claims.AuthTime, 0).UTC(),
+			CoveredByPolicy: coveredByMFAPolicy(method),
+			AMR:             claims.AMR,
+			HasAMR:          claims.AMR != nil,
 		},
 	}, nil
 }
@@ -141,6 +140,20 @@ func (p *Provider) LogoutURL(providerSessionID string) (string, error) {
 		return "", errors.New("workos: empty session id")
 	}
 	return p.um.GetLogoutURL(&sdk.UserManagementGetLogoutURLParams{SessionID: providerSessionID}), nil
+}
+
+// coveredByMFAPolicy is the allowlist of authentication methods confirmed, with a test in
+// staging, to make AuthKit ask for the second factor when MFA is Required (design, 5.2).
+// Every other method, unknown ones included, never counts as MFA: WorkOS documents that
+// its MFA does not apply to SSO and says nothing about Magic Auth, passkeys or OAuth.
+// Adding one follows docs/runbooks/auth.md.
+func coveredByMFAPolicy(method string) bool {
+	switch sdk.AuthenticateResponseAuthenticationMethod(method) { //nolint:exhaustive // an allowlist: every other method is not covered
+	case sdk.AuthenticateResponseAuthenticationMethodPassword:
+		return true
+	default:
+		return false
+	}
 }
 
 type accessClaims struct {

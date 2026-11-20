@@ -222,9 +222,9 @@ func TestMFAAuthTime(t *testing.T) {
 		wantOK   bool
 		wantErr  bool
 	}{
-		{"inferred when the provider enforces MFA", ProviderMFA{AuthTime: at}, true, true, false},
-		{"nothing when it does not", ProviderMFA{AuthTime: at}, false, false, false},
-		{"methods outside the policy (SSO) are not MFA", ProviderMFA{AuthTime: at, ExemptFromPolicy: true}, true, false, false},
+		{"inferred for an allowlisted method when the provider enforces MFA", ProviderMFA{AuthTime: at, CoveredByPolicy: true}, true, true, false},
+		{"nothing when the provider does not enforce it", ProviderMFA{AuthTime: at, CoveredByPolicy: true}, false, false, false},
+		{"methods off the allowlist are not MFA", ProviderMFA{AuthTime: at}, true, false, false},
 		{"reported amr with mfa wins", ProviderMFA{AuthTime: at, HasAMR: true, AMR: []string{"pwd", "mfa"}}, false, true, false},
 		{"reported amr without mfa is refused when required", ProviderMFA{AuthTime: at, HasAMR: true, AMR: []string{"pwd"}}, true, false, true},
 		{"reported amr without mfa, not required", ProviderMFA{AuthTime: at, HasAMR: true, AMR: []string{"pwd"}}, false, false, false},

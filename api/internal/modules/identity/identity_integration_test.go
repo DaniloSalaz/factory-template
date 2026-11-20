@@ -331,7 +331,7 @@ func (e *env) person() app.Authentication {
 		Subject:       fmt.Sprintf("user_%s_%d", strings.ReplaceAll(e.t.Name(), "/", "_"), n),
 		Email:         pii.Email(fmt.Sprintf("u%d.%d@example.test", n, time.Now().UnixNano())),
 		EmailVerified: true, DisplayName: "Test User", SessionID: fmt.Sprintf("session_%d", n), Method: "Password",
-		MFA: domain.ProviderMFA{AuthTime: e.clock.Now().Add(-time.Second)},
+		MFA: domain.ProviderMFA{AuthTime: e.clock.Now().Add(-time.Second), CoveredByPolicy: true},
 	}
 }
 
@@ -745,11 +745,11 @@ func TestLogin_MFA(t *testing.T) {
 		t.Fatalf("with MFA required at the provider, mfa_auth_time = auth_time; got %s", got)
 	}
 
-	sso := e.person()
-	sso.MFA.ExemptFromPolicy = true
-	e.browser().login(sso)
-	if got := mfaOf(sso); got != "<null>" {
-		t.Fatalf("SSO is outside the provider's MFA policy; got %s", got)
+	offList := e.person()
+	offList.MFA.CoveredByPolicy = false
+	e.browser().login(offList)
+	if got := mfaOf(offList); got != "<null>" {
+		t.Fatalf("a method off the allowlist is never MFA; got %s", got)
 	}
 
 	noMFA := e.person()

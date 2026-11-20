@@ -15,9 +15,9 @@ import (
 type ProviderMFA struct {
 	// AuthTime is when the user actively authenticated, per the provider.
 	AuthTime time.Time
-	// ExemptFromPolicy is true when the provider's MFA policy does not cover the method
-	// used (WorkOS does not apply its MFA to SSO users).
-	ExemptFromPolicy bool
+	// CoveredByPolicy is true only when the method used is confirmed to go through the
+	// provider's MFA policy. It is an allowlist: unknown methods are not covered.
+	CoveredByPolicy bool
 	// AMR are the authentication methods reported by the provider; HasAMR is false when
 	// it reports none, which is the case of WorkOS today.
 	AMR    []string
@@ -31,7 +31,8 @@ const amrMFA = "mfa"
 //
 // With reported methods, MFA is what they say: if the environment requires MFA and they
 // do not include it, the login is refused. Without them, MFA is inferred only when the
-// provider enforces it (providerEnforcesMFA) and the method is covered by that policy.
+// provider enforces it (providerEnforcesMFA) and the method is on the allowlist of
+// methods confirmed to ask for the second factor (CoveredByPolicy).
 func MFAAuthTime(m ProviderMFA, providerEnforcesMFA bool) (time.Time, bool, error) {
 	if m.HasAMR {
 		if slices.Contains(m.AMR, amrMFA) {
@@ -42,7 +43,7 @@ func MFAAuthTime(m ProviderMFA, providerEnforcesMFA bool) (time.Time, bool, erro
 		}
 		return time.Time{}, false, nil
 	}
-	if providerEnforcesMFA && !m.ExemptFromPolicy {
+	if providerEnforcesMFA && m.CoveredByPolicy {
 		return m.AuthTime, true, nil
 	}
 	return time.Time{}, false, nil

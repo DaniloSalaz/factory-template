@@ -231,7 +231,7 @@ func person(n int) app.Authentication {
 	return app.Authentication{
 		Subject: fmt.Sprintf("sub-%d", n), Email: pii.Email(fmt.Sprintf("p%d@example.test", n)), EmailVerified: true,
 		SessionID: fmt.Sprintf("sid-%d", n), Method: "Password",
-		MFA: domain.ProviderMFA{AuthTime: time.Unix(1_799_999_990, 0)},
+		MFA: domain.ProviderMFA{AuthTime: time.Unix(1_799_999_990, 0), CoveredByPolicy: true},
 	}
 }
 
@@ -426,7 +426,7 @@ func TestComplete_MFA(t *testing.T) {
 	}{
 		{"provider enforces MFA", true, func(*app.Authentication) {}, true},
 		{"provider does not", false, func(*app.Authentication) {}, false},
-		{"SSO is outside the policy", true, func(a *app.Authentication) { a.MFA.ExemptFromPolicy = true }, false},
+		{"method off the allowlist", true, func(a *app.Authentication) { a.MFA.CoveredByPolicy = false }, false},
 		{"reported mfa", false, func(a *app.Authentication) { a.MFA.HasAMR, a.MFA.AMR = true, []string{"mfa"} }, true},
 	}
 	for _, tc := range tests {

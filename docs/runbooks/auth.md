@@ -44,8 +44,9 @@ la respuesta de autenticación solo da `authentication_method` (`Password`, `Goo
 
 - cada login fuerza una autenticación nueva (`max_age=0`), así que `auth_time` es la
   hora real de esa autenticación;
-- si `WORKOS_MFA_REQUIRED=true` y el método no es `SSO` (al que WorkOS no aplica su
-  MFA), la sesión guarda `mfa_auth_time = auth_time`; si no, `NULL`;
+- si `WORKOS_MFA_REQUIRED=true` y el método está en la **lista blanca** de métodos que
+  piden el segundo factor, la sesión guarda `mfa_auth_time = auth_time`; con cualquier
+  otro método, también los desconocidos, `NULL`. Lista actual: `Password`;
 - si algún rol del catálogo exige MFA y `WORKOS_MFA_REQUIRED=false`, la API no arranca.
 
 Si `WORKOS_MFA_REQUIRED=true` pero el panel no la exige, la app trataría como MFA
@@ -58,6 +59,25 @@ panel**, comprueba:
 4. En los logs de la API (nivel debug), el registro `workos access token claims` lista
    los nombres de los claims del token. Si algún día aparece `amr` (o un claim de MFA),
    avisa: el diseño pide comprobarlo en lugar de deducirlo (sección 13).
+
+### Añadir un método a la lista blanca de MFA
+
+La lista está en `coveredByMFAPolicy`
+(`api/internal/modules/identity/adapters/workos/workos.go`). Un método (`MagicAuth`,
+`Passkey`, `GoogleOAuth`…) solo entra con una **prueba en staging que demuestre que
+AuthKit pide el segundo factor** con ese método:
+
+1. Staging con *Multi-factor auth* en `Required` y `WORKOS_MFA_REQUIRED=true`.
+2. Un usuario de prueba con TOTP configurado entra con ese método, en una ventana
+   privada (sin sesión de AuthKit).
+3. AuthKit pide el código TOTP **antes** de volver al callback. Si no lo pide, o si el
+   usuario puede saltárselo, el método no entra.
+4. Repite el paso 2 con un usuario sin TOTP configurado: AuthKit debe obligarle a
+   configurarlo antes de terminar.
+5. El PR que añade el método enlaza la evidencia (capturas o vídeo, con fecha y entorno)
+   y añade el método al test `TestExchangeCode_MFAAllowlist` con MFA.
+
+`SSO` nunca entra: WorkOS documenta que su MFA no se aplica a usuarios SSO.
 
 ## Prueba manual en desarrollo
 
