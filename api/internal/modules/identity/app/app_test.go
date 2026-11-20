@@ -15,6 +15,7 @@ import (
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/authz"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
 )
 
@@ -36,6 +37,7 @@ type state struct {
 	sessions   map[string]memSession
 	audit      []memAudit
 	nextID     int
+	rolesInUse []string
 }
 
 type memUser struct {
@@ -62,7 +64,7 @@ func newMemStore() *memStore {
 func (s state) clone() state {
 	return state{
 		users: maps.Clone(s.users), identities: maps.Clone(s.identities), sessions: maps.Clone(s.sessions),
-		audit: slices.Clone(s.audit), nextID: s.nextID,
+		audit: slices.Clone(s.audit), nextID: s.nextID, rolesInUse: slices.Clone(s.rolesInUse),
 	}
 }
 
@@ -220,6 +222,10 @@ func (r *memRepo) RecordAudit(_ context.Context, e app.AuditEvent) error {
 // ------------------------------------------------------------------------------------
 
 const front = "https://front.test"
+
+func (r *memRepo) RolesInUse(context.Context) ([]string, error) {
+	return slices.Clone(r.st.rolesInUse), nil
+}
 
 type fixture struct {
 	idp      *fakeidp.Provider
@@ -593,5 +599,23 @@ func TestSessions(t *testing.T) {
 	}
 	if a := f.store.snapshot().audit; a[len(a)-1].Action != app.AuditLogout || a[len(a)-1].actor != cur.UserID {
 		t.Fatalf("audit = %+v", a[len(a)-1])
+	}
+}
+
+func TestUnknownRolesInUse(t *testing.T) {
+	t.Parallel()
+
+	store := newMemStore()
+	store.st.rolesInUse = []string{"admin", "ghost", "owner"}
+	catalog, err := authz.NewCatalog(
+		authz.Role{Name: authz.RoleOwner, Permissions: authz.PlatformPermissions()},
+		authz.Role{Name: "admin"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := app.UnknownRolesInUse(t.Context(), store, catalog)
+	if err != nil || !slices.Equal(got, []string{"ghost"}) {
+		t.Fatalf("UnknownRolesInUse = %v, %v; want [ghost]", got, err)
 	}
 }

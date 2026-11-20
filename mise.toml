@@ -29,8 +29,10 @@ FRONTEND_ORIGIN = "http://localhost:5173"
 ALLOWED_ORIGINS = "http://localhost:5173"
 WORKOS_CLIENT_ID = "client_01M7V77YXSVNXZYGAW64XGHV92"
 WORKOS_REDIRECT_URI = "http://localhost:5173/auth/callback"
-# Must match the MFA setting of the WorkOS staging dashboard (docs/runbooks/auth.md).
-WORKOS_MFA_REQUIRED = "false"
+# Must match the MFA setting of the WorkOS staging dashboard (docs/runbooks/auth.md):
+# Multi-factor auth is Required there. The role catalog has roles that require MFA, so
+# the API does not start with false.
+WORKOS_MFA_REQUIRED = "true"
 # WORKOS_API_KEY lives in secrets.env (SOPS + age). mise cannot decrypt dotenv files
 # (it would load the ciphertext), so `dev` runs under `sops exec-env` instead of _.file.
 _.file = ".env"

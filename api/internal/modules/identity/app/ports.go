@@ -65,6 +65,9 @@ type Repo interface {
 	RevokeUserSessions(ctx context.Context, userID string) (int64, error)
 
 	RecordAudit(ctx context.Context, e AuditEvent) error
+
+	// RolesInUse returns the distinct roles stored in any membership.
+	RolesInUse(ctx context.Context) ([]string, error)
 }
 
 // ErrAlreadyExists is what a Repo returns when a create hits a unique constraint: a

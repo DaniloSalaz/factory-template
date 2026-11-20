@@ -29,6 +29,8 @@ import (
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/adapters/fakeidp"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/authz"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/clientip"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/config"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/db"
@@ -107,17 +109,38 @@ func (s *syncBuffer) String() string {
 }
 
 type env struct {
-	t     *testing.T
-	srv   *httptest.Server
-	idp   *fakeidp.Provider
-	clock *clock
-	super *pgx.Conn
-	logs  *syncBuffer
+	t      *testing.T
+	srv    *httptest.Server
+	idp    *fakeidp.Provider
+	clock  *clock
+	super  *pgx.Conn
+	logs   *syncBuffer
+	module *identity.Module
 }
 
 type options struct {
 	mfaRequired bool
 	rateLimit   int
+	// catalog defaults to testCatalog.
+	catalog *authz.Catalog
+}
+
+// testCatalog has the example roles but no MFA, so tests that do not care about MFA run
+// with WORKOS_MFA_REQUIRED=false.
+func testCatalog(t *testing.T, ownerMFA time.Duration) *authz.Catalog {
+	t.Helper()
+	c, err := authz.NewCatalog(
+		authz.Role{Name: authz.RoleOwner, Permissions: authz.PlatformPermissions(), RequiresMFA: ownerMFA > 0, MFAMaxAge: ownerMFA},
+		authz.Role{Name: "admin", Permissions: []authctx.Permission{
+			authz.PermMembersRead, authz.PermMembersInvite, authz.PermMembersManage, authz.PermAuditRead, authctx.PermScopeTenant,
+		}},
+		authz.Role{Name: "member", Permissions: []authctx.Permission{authz.PermMembersRead, authctx.PermScopeTenant}},
+		authz.Role{Name: "client"},
+	)
+	if err != nil {
+		t.Fatalf("test catalog: %v", err)
+	}
+	return c
 }
 
 func newEnv(t *testing.T, opts options) *env {
@@ -145,6 +168,9 @@ func newEnv(t *testing.T, opts options) *env {
 	if opts.rateLimit == 0 {
 		opts.rateLimit = 1000
 	}
+	if opts.catalog == nil {
+		opts.catalog = testCatalog(t, 0)
+	}
 
 	m, err := identity.New(identity.Deps{
 		DB: db.New(pool), Logger: logger,
@@ -152,6 +178,7 @@ func newEnv(t *testing.T, opts options) *env {
 		Auth:        config.Auth{SessionIdleTTL: idleTTL, SessionAbsoluteTTL: absoluteTTL},
 		WorkOS:      config.WorkOS{ClientID: "client_test", APIKey: pii.Secret(apiKey), MFARequired: opts.mfaRequired},
 		RateLimiter: ratelimit.NewMemory(opts.rateLimit, time.Minute, nil),
+		Catalog:     opts.catalog,
 		Provider:    idp, Now: clk.Now,
 	})
 	if err != nil {
@@ -182,7 +209,7 @@ func newEnv(t *testing.T, opts options) *env {
 	)
 	srv := httptest.NewTLSServer(h)
 	t.Cleanup(srv.Close)
-	return &env{t: t, srv: srv, idp: idp, clock: clk, super: super, logs: logs}
+	return &env{t: t, srv: srv, idp: idp, clock: clk, super: super, logs: logs, module: m}
 }
 
 // browser is one cookie jar: one user agent.
@@ -951,9 +978,17 @@ func TestLogin_MFA(t *testing.T) {
 func TestNew_RefusesRolesRequiringMFAWithoutProviderMFA(t *testing.T) {
 	t.Parallel()
 
-	_, err := identity.New(identity.Deps{
-		WorkOS:            config.WorkOS{APIKey: pii.Secret(apiKey), MFARequired: false},
-		RolesRequiringMFA: []string{"owner", "lawyer"},
+	catalog, err := authz.NewCatalog(
+		authz.Role{Name: authz.RoleOwner, Permissions: authz.PlatformPermissions(), RequiresMFA: true, MFAMaxAge: time.Hour},
+		authz.Role{Name: "lawyer", RequiresMFA: true, MFAMaxAge: time.Hour},
+		authz.Role{Name: "client"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = identity.New(identity.Deps{
+		WorkOS:  config.WorkOS{APIKey: pii.Secret(apiKey), MFARequired: false},
+		Catalog: catalog,
 	})
 	if err == nil || !strings.Contains(err.Error(), "lawyer, owner require MFA but WORKOS_MFA_REQUIRED is false") ||
 		!strings.Contains(err.Error(), "docs/runbooks/auth.md") {
@@ -967,4 +1002,49 @@ func mustURL(s string) *url.URL {
 		panic(err)
 	}
 	return u
+}
+
+// tenant creates an active tenant as the superuser (POST /tenants arrives in step 5)
+// and returns its id.
+func (e *env) tenant() string {
+	e.t.Helper()
+	seq.mu.Lock()
+	seq.n++
+	n := seq.n
+	seq.mu.Unlock()
+	slug := fmt.Sprintf("t-%d-%d", n, time.Now().UnixNano())
+	return e.scalar(`INSERT INTO tenants (name, slug) VALUES ($1, $2) RETURNING id::text`, "Tenant "+slug, slug)
+}
+
+// member makes the user of who a member of tenantID with role.
+func (e *env) member(who app.Authentication, tenantID, role string) {
+	e.t.Helper()
+	e.exec(`INSERT INTO memberships (tenant_id, user_id, role)
+		SELECT $1, user_id, $3 FROM user_identities WHERE subject = $2`, tenantID, who.Subject, role)
+}
+
+func TestCheckRolesInUse_LogsUnknownRoles(t *testing.T) {
+	e := newEnv(t, options{})
+	who := e.person()
+	e.browser().login(who)
+	e.member(who, e.tenant(), "ghost-role")
+	e.member(who, e.tenant(), "member")
+
+	e.module.CheckRolesInUse(t.Context())
+	var found bool
+	for line := range strings.Lines(e.logs.String()) {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatal(err)
+		}
+		if m["role"] == "member" {
+			t.Fatalf("a role of the catalog was reported: %v", m)
+		}
+		if m["role"] == "ghost-role" && m["level"] == "ERROR" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no error for the unknown role:\n%s", e.logs.String())
+	}
 }

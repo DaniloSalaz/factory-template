@@ -225,6 +225,14 @@ func (r repo) RecordAudit(ctx context.Context, e app.AuditEvent) error {
 	return nil
 }
 
+func (r repo) RolesInUse(ctx context.Context) ([]string, error) {
+	roles, err := r.q.RolesInUse(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("roles in use: %w", err)
+	}
+	return roles, nil
+}
+
 // uniqueViolation is SQLSTATE unique_violation.
 const uniqueViolation = "23505"
 

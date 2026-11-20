@@ -65,3 +65,7 @@ UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL
 -- name: RecordAudit :exec
 SELECT record_audit(NULL::uuid, sqlc.arg(action), sqlc.narg(target_type), sqlc.narg(target_id),
                     sqlc.arg(metadata), sqlc.narg(ip_prefix));
+
+-- The distinct roles stored in any tenant, without tenant data (design, section 8).
+-- name: RolesInUse :many
+SELECT r.role::text AS role FROM roles_in_use() AS r(role);

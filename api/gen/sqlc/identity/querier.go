@@ -19,6 +19,8 @@ type Querier interface {
 	RevokeSession(ctx context.Context, id pgtype.UUID) error
 	RevokeSessionByHash(ctx context.Context, tokenHash []byte) error
 	RevokeUserSessions(ctx context.Context, userID pgtype.UUID) (int64, error)
+	// The distinct roles stored in any tenant, without tenant data (design, section 8).
+	RolesInUse(ctx context.Context) ([]string, error)
 	SessionByHash(ctx context.Context, tokenHash []byte) (SessionByHashRow, error)
 	SetLastLogin(ctx context.Context, id pgtype.UUID) error
 	// The WHERE on last_seen_at makes concurrent touches of the same session a no-op.

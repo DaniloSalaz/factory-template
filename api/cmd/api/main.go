@@ -53,6 +53,12 @@ func main() {
 func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	logger.InfoContext(ctx, "config loaded", slog.Any("config", cfg))
 
+	// An invalid catalog stops the start-up before anything else (design, section 8).
+	catalog, err := roleCatalog()
+	if err != nil {
+		return err
+	}
+
 	pool, err := db.NewPool(ctx, cfg.DB.URL.Reveal())
 	if err != nil {
 		return fmt.Errorf("connect database: %w", err)
@@ -62,10 +68,12 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	idm, err := identity.New(identity.Deps{
 		DB: db.New(pool), Logger: logger, Web: cfg.Web, Auth: cfg.Auth, WorkOS: cfg.WorkOS,
 		RateLimiter: ratelimit.NewMemory(authRateLimit, authRateWindow, nil),
+		Catalog:     catalog,
 	})
 	if err != nil {
 		return fmt.Errorf("wire identity module: %w", err)
 	}
+	idm.CheckRolesInUse(ctx)
 
 	mux := http.NewServeMux()
 	health.New(health.Deps{DB: pool, Logger: logger}).Register(mux)

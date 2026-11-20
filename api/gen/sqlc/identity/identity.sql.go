@@ -148,6 +148,31 @@ func (q *Queries) RevokeUserSessions(ctx context.Context, userID pgtype.UUID) (i
 	return result.RowsAffected(), nil
 }
 
+const rolesInUse = `-- name: RolesInUse :many
+SELECT r.role::text AS role FROM roles_in_use() AS r(role)
+`
+
+// The distinct roles stored in any tenant, without tenant data (design, section 8).
+func (q *Queries) RolesInUse(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, rolesInUse)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var role string
+		if err := rows.Scan(&role); err != nil {
+			return nil, err
+		}
+		items = append(items, role)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const sessionByHash = `-- name: SessionByHash :one
 SELECT s.id, s.user_id, s.mfa_auth_time, s.last_seen_at, s.idle_expires_at,
        s.absolute_expires_at, s.revoked_at, s.provider_session_id,
