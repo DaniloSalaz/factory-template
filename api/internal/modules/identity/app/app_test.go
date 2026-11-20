@@ -1,0 +1,516 @@
+package app_test
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/adapters/fakeidp"
+	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
+	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
+)
+
+// memStore is an in-memory app.Store. A transaction works on a copy of the state that
+// replaces it only on success, so a failed transaction leaves no writes behind.
+type memStore struct {
+	mu sync.Mutex
+	st state
+}
+
+type state struct {
+	users      map[string]memUser
+	identities map[string]string // provider|subject -> user id
+	sessions   map[string]memSession
+	audit      []memAudit
+	nextID     int
+}
+
+type memUser struct {
+	email     pii.Email
+	verified  bool
+	disabled  bool
+	lastLogin bool
+}
+
+type memSession struct {
+	app.NewSession
+	revoked bool
+}
+
+type memAudit struct {
+	actor string
+	app.AuditEvent
+}
+
+func newMemStore() *memStore {
+	return &memStore{st: state{users: map[string]memUser{}, identities: map[string]string{}, sessions: map[string]memSession{}}}
+}
+
+func (s state) clone() state {
+	return state{
+		users: maps.Clone(s.users), identities: maps.Clone(s.identities), sessions: maps.Clone(s.sessions),
+		audit: slices.Clone(s.audit), nextID: s.nextID,
+	}
+}
+
+func (m *memStore) Anon(ctx context.Context, fn func(context.Context, app.Repo) error) error {
+	return m.tx(ctx, "", fn)
+}
+
+func (m *memStore) AsUser(ctx context.Context, userID string, fn func(context.Context, app.Repo) error) error {
+	return m.tx(ctx, userID, fn)
+}
+
+func (m *memStore) tx(ctx context.Context, actor string, fn func(context.Context, app.Repo) error) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r := &memRepo{st: m.st.clone(), actor: actor}
+	if err := fn(ctx, r); err != nil {
+		return err
+	}
+	m.st = r.st
+	return nil
+}
+
+func (m *memStore) snapshot() state {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.st.clone()
+}
+
+type memRepo struct {
+	st    state
+	actor string
+}
+
+func (r *memRepo) id(prefix string) string {
+	r.st.nextID++
+	return fmt.Sprintf("%s-%d", prefix, r.st.nextID)
+}
+
+func (r *memRepo) UserByIdentity(_ context.Context, provider, subject string) (app.User, bool, error) {
+	id, ok := r.st.identities[provider+"|"+subject]
+	if !ok {
+		return app.User{}, false, nil
+	}
+	u := r.st.users[id]
+	return app.User{ID: id, Email: u.email, Disabled: u.disabled}, true, nil
+}
+
+func (r *memRepo) UserByEmail(_ context.Context, email pii.Email) (app.User, bool, error) {
+	for id, u := range r.st.users {
+		if strings.EqualFold(u.email.Reveal(), email.Reveal()) {
+			return app.User{ID: id, Email: u.email, Disabled: u.disabled}, true, nil
+		}
+	}
+	return app.User{}, false, nil
+}
+
+func (r *memRepo) CreateUser(_ context.Context, email pii.Email, verified bool, _ string) (string, error) {
+	id := r.id("user")
+	r.st.users[id] = memUser{email: email, verified: verified}
+	return id, nil
+}
+
+func (r *memRepo) CreateIdentity(_ context.Context, userID, provider, subject string, _ pii.Email) error {
+	r.st.identities[provider+"|"+subject] = userID
+	return nil
+}
+
+func (r *memRepo) UpdateUserEmail(_ context.Context, userID string, email pii.Email, verified bool) error {
+	u := r.st.users[userID]
+	u.email, u.verified = email, verified
+	r.st.users[userID] = u
+	return nil
+}
+
+func (r *memRepo) SetLastLogin(_ context.Context, userID string) error {
+	u := r.st.users[userID]
+	u.lastLogin = true
+	r.st.users[userID] = u
+	return nil
+}
+
+func (r *memRepo) CreateSession(_ context.Context, s app.NewSession) (string, error) {
+	id := r.id("session")
+	r.st.sessions[id] = memSession{NewSession: s}
+	return id, nil
+}
+
+func (r *memRepo) SessionByHash(_ context.Context, hash []byte) (app.Session, bool, error) {
+	for id, s := range r.st.sessions {
+		if string(s.TokenHash) == string(hash) {
+			return app.Session{
+				ID: id, UserID: s.UserID, MFAAuthTime: s.MFAAuthTime, ProviderSessionID: s.ProviderSessionID,
+				State: domain.SessionState{
+					LastSeenAt: s.Now, IdleExpiresAt: s.IdleExpiresAt, AbsoluteExpiresAt: s.AbsoluteExpiresAt,
+					Revoked: s.revoked, UserDisabled: r.st.users[s.UserID].disabled,
+				},
+			}, true, nil
+		}
+	}
+	return app.Session{}, false, nil
+}
+
+func (r *memRepo) TouchSession(_ context.Context, id string, now, idle time.Time) error {
+	s := r.st.sessions[id]
+	s.Now, s.IdleExpiresAt = now, idle
+	r.st.sessions[id] = s
+	return nil
+}
+
+func (r *memRepo) RevokeSessionByHash(_ context.Context, hash []byte) error {
+	for id, s := range r.st.sessions {
+		if string(s.TokenHash) == string(hash) {
+			s.revoked = true
+			r.st.sessions[id] = s
+		}
+	}
+	return nil
+}
+
+func (r *memRepo) RevokeSession(_ context.Context, id string) error {
+	s := r.st.sessions[id]
+	s.revoked = true
+	r.st.sessions[id] = s
+	return nil
+}
+
+func (r *memRepo) RevokeUserSessions(_ context.Context, userID string) (int64, error) {
+	var n int64
+	for id, s := range r.st.sessions {
+		if s.UserID == userID && !s.revoked {
+			s.revoked = true
+			r.st.sessions[id] = s
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (r *memRepo) RecordAudit(_ context.Context, e app.AuditEvent) error {
+	r.st.audit = append(r.st.audit, memAudit{actor: r.actor, AuditEvent: e})
+	return nil
+}
+
+// ------------------------------------------------------------------------------------
+
+const front = "https://front.test"
+
+type fixture struct {
+	idp      *fakeidp.Provider
+	store    *memStore
+	login    *app.Login
+	sessions *app.Sessions
+	now      time.Time
+}
+
+func newFixture(t *testing.T, mfaEnforced bool) *fixture {
+	t.Helper()
+	codec, err := domain.NewIntentCodec([]byte(strings.Repeat("k", 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := &fixture{idp: fakeidp.New(), store: newMemStore(), now: time.Unix(1_800_000_000, 0)}
+	clock := func() time.Time { return f.now }
+	policy := domain.SessionPolicy{IdleTTL: time.Hour, AbsoluteTTL: 24 * time.Hour}
+	f.login = app.NewLogin(f.idp, f.store, codec, app.LoginConfig{FrontendOrigin: front, Policy: policy, ProviderEnforcesMFA: mfaEnforced}, clock)
+	f.sessions = app.NewSessions(f.idp, f.store, policy, clock)
+	return f
+}
+
+func person(n int) app.Authentication {
+	return app.Authentication{
+		Subject: fmt.Sprintf("sub-%d", n), Email: pii.Email(fmt.Sprintf("p%d@example.test", n)), EmailVerified: true,
+		SessionID: fmt.Sprintf("sid-%d", n), Method: "Password",
+		MFA: domain.ProviderMFA{AuthTime: time.Unix(1_799_999_990, 0)},
+	}
+}
+
+// complete runs Start and Complete for authn, with previous as the browser's token.
+func (f *fixture) complete(t *testing.T, authn app.Authentication, previous string) (app.Completed, error) {
+	t.Helper()
+	started, err := f.login.Start("/x", nil)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	f.idp.Authenticate(started.State, "code-"+started.State, authn)
+	return f.login.Complete(t.Context(), app.Callback{
+		State: started.State, IntentValue: started.Value, Code: "code-" + started.State, PreviousToken: previous,
+	})
+}
+
+func wantCode(t *testing.T, err error, code string) {
+	t.Helper()
+	if e, ok := apperr.As(err); !ok || e.Code != code {
+		t.Fatalf("err = %v, want %s", err, code)
+	}
+}
+
+func TestComplete_NewUser(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, false)
+
+	done, err := f.complete(t, person(1), "")
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if done.ReturnTo != front+"/x" || !done.ExpiresAt.Equal(f.now.Add(24*time.Hour)) || !domain.WellFormed(done.Token) {
+		t.Fatalf("completed = %+v", done)
+	}
+	st := f.store.snapshot()
+	if len(st.users) != 1 || len(st.sessions) != 1 {
+		t.Fatalf("state = %+v", st)
+	}
+	for _, s := range st.sessions {
+		if string(s.TokenHash) != string(domain.HashToken(done.Token)) || !s.MFAAuthTime.IsZero() || s.ProviderSessionID != "sid-1" {
+			t.Fatalf("session = %+v", s)
+		}
+	}
+	last := st.audit[len(st.audit)-1]
+	if last.Action != app.AuditLogin || last.actor == "" {
+		t.Fatalf("audit = %+v, want auth.login by the user", last)
+	}
+}
+
+func TestComplete_RejectionsWriteOnlyTheAudit(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		setup  func(t *testing.T, f *fixture)
+		authn  func() app.Authentication
+		mfa    bool
+		code   string
+		action string
+	}{
+		{
+			name:   "unverified email",
+			authn:  func() app.Authentication { a := person(1); a.EmailVerified = false; return a },
+			code:   "auth.email_unverified",
+			action: app.AuditLoginFailed,
+		},
+		{
+			name:   "reported methods without mfa",
+			authn:  func() app.Authentication { a := person(1); a.MFA.HasAMR, a.MFA.AMR = true, []string{"pwd"}; return a },
+			mfa:    true,
+			code:   "auth.mfa_required",
+			action: app.AuditLoginFailed,
+		},
+		{
+			name: "email already used by another user",
+			setup: func(t *testing.T, f *fixture) {
+				t.Helper()
+				if _, err := f.complete(t, person(9), ""); err != nil {
+					t.Fatal(err)
+				}
+			},
+			authn:  func() app.Authentication { a := person(1); a.Email = person(9).Email; return a },
+			code:   "auth.email_in_use",
+			action: app.AuditEmailInUse,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := newFixture(t, tc.mfa)
+			if tc.setup != nil {
+				tc.setup(t, f)
+			}
+			before := f.store.snapshot()
+			_, err := f.complete(t, tc.authn(), "")
+			wantCode(t, err, tc.code)
+
+			after := f.store.snapshot()
+			if len(after.users) != len(before.users) || len(after.identities) != len(before.identities) || len(after.sessions) != len(before.sessions) {
+				t.Fatal("a rejected login wrote users, identities or sessions")
+			}
+			if len(after.audit) != len(before.audit)+1 || after.audit[len(after.audit)-1].Action != tc.action {
+				t.Fatalf("audit = %+v, want one %s", after.audit[len(before.audit):], tc.action)
+			}
+		})
+	}
+}
+
+func TestComplete_DisabledUser(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, false)
+	if _, err := f.complete(t, person(1), ""); err != nil {
+		t.Fatal(err)
+	}
+	f.store.mu.Lock()
+	for id, u := range f.store.st.users {
+		u.disabled = true
+		f.store.st.users[id] = u
+	}
+	f.store.mu.Unlock()
+
+	before := f.store.snapshot()
+	_, err := f.complete(t, person(1), "")
+	wantCode(t, err, "auth.user_disabled")
+	after := f.store.snapshot()
+	if len(after.sessions) != len(before.sessions) || after.audit[len(after.audit)-1].Action != app.AuditLoginFailed {
+		t.Fatalf("a disabled user must leave only auth.login_failed: %+v", after.audit[len(before.audit):])
+	}
+}
+
+func TestComplete_EmailChange(t *testing.T) {
+	t.Parallel()
+
+	t.Run("takes the provider's verification", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, false)
+		if _, err := f.complete(t, person(1), ""); err != nil {
+			t.Fatal(err)
+		}
+		f.store.mu.Lock()
+		for id, u := range f.store.st.users {
+			u.verified = false
+			f.store.st.users[id] = u
+		}
+		f.store.mu.Unlock()
+
+		changed := person(1)
+		changed.Email = "new@example.test"
+		if _, err := f.complete(t, changed, ""); err != nil {
+			t.Fatal(err)
+		}
+		for _, u := range f.store.snapshot().users {
+			if u.email != "new@example.test" || !u.verified {
+				t.Fatalf("user = %+v, want the new email, verified", u)
+			}
+		}
+	})
+
+	t.Run("keeps the old one if another user has it", func(t *testing.T) {
+		t.Parallel()
+		f := newFixture(t, false)
+		for _, n := range []int{1, 2} {
+			if _, err := f.complete(t, person(n), ""); err != nil {
+				t.Fatal(err)
+			}
+		}
+		changed := person(1)
+		changed.Email = person(2).Email
+		if _, err := f.complete(t, changed, ""); err != nil {
+			t.Fatalf("the login itself must succeed: %v", err)
+		}
+		n := 0
+		for _, u := range f.store.snapshot().users {
+			if u.email == person(2).Email {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Fatalf("%d users have the email", n)
+		}
+	})
+}
+
+func TestComplete_MFA(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		enforced bool
+		mutate   func(*app.Authentication)
+		wantMFA  bool
+	}{
+		{"provider enforces MFA", true, func(*app.Authentication) {}, true},
+		{"provider does not", false, func(*app.Authentication) {}, false},
+		{"SSO is outside the policy", true, func(a *app.Authentication) { a.MFA.ExemptFromPolicy = true }, false},
+		{"reported mfa", false, func(a *app.Authentication) { a.MFA.HasAMR, a.MFA.AMR = true, []string{"mfa"} }, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := newFixture(t, tc.enforced)
+			a := person(1)
+			tc.mutate(&a)
+			if _, err := f.complete(t, a, ""); err != nil {
+				t.Fatal(err)
+			}
+			for _, s := range f.store.snapshot().sessions {
+				if got := !s.MFAAuthTime.IsZero(); got != tc.wantMFA {
+					t.Fatalf("mfa = %v, want %v", got, tc.wantMFA)
+				}
+				if tc.wantMFA && !s.MFAAuthTime.Equal(a.MFA.AuthTime) {
+					t.Fatalf("mfa_auth_time = %v, want the provider's auth_time", s.MFAAuthTime)
+				}
+			}
+		})
+	}
+}
+
+func TestComplete_IntentAndProvider(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, false)
+	started, err := f.login.Start("/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = f.login.Complete(t.Context(), app.Callback{State: started.State, IntentValue: "", Code: "c"})
+	wantCode(t, err, "auth.intent_invalid")
+
+	_, err = f.login.Complete(t.Context(), app.Callback{State: started.State, IntentValue: started.Value, ProviderError: "access_denied"})
+	wantCode(t, err, "auth.provider_error")
+
+	// A code issued for another state does not match this intent's PKCE verifier.
+	other, _ := f.login.Start("/", nil)
+	f.idp.Authenticate(other.State, "stolen", person(1))
+	_, err = f.login.Complete(t.Context(), app.Callback{State: started.State, IntentValue: started.Value, Code: "stolen"})
+	wantCode(t, err, "auth.code_invalid")
+
+	if _, err := f.login.Start("//evil.com", nil); !errors.Is(err, domain.ErrReturnToInvalid()) {
+		t.Fatalf("Start(//evil.com) = %v", err)
+	}
+}
+
+func TestSessions(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, false)
+	first, err := f.complete(t, person(1), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := f.sessions.Authenticate(t.Context(), first.Token); err != nil {
+		t.Fatalf("Authenticate: %v", err)
+	}
+	if _, err := f.sessions.Authenticate(t.Context(), "not-a-token"); !errors.Is(err, domain.ErrSessionInvalid()) {
+		t.Fatalf("malformed token: %v", err)
+	}
+
+	// A new login in the same browser revokes the previous session.
+	second, err := f.complete(t, person(1), first.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.sessions.Authenticate(t.Context(), first.Token); !errors.Is(err, domain.ErrSessionInvalid()) {
+		t.Fatalf("previous session after a new login: %v", err)
+	}
+
+	cur, err := f.sessions.Authenticate(t.Context(), second.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logoutURL, err := f.sessions.Logout(t.Context(), cur)
+	if err != nil || !strings.Contains(logoutURL, "sid-1") {
+		t.Fatalf("Logout = %q, %v", logoutURL, err)
+	}
+	if _, err := f.sessions.Authenticate(t.Context(), second.Token); !errors.Is(err, domain.ErrSessionInvalid()) {
+		t.Fatalf("after logout: %v", err)
+	}
+	if a := f.store.snapshot().audit; a[len(a)-1].Action != app.AuditLogout || a[len(a)-1].actor != cur.UserID {
+		t.Fatalf("audit = %+v", a[len(a)-1])
+	}
+}

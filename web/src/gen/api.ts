@@ -5,6 +5,14 @@
  * Source of truth for the HTTP contract. Go server and TS client are generated from this file.
  * OpenAPI spec version: 0.1.0
  */
+export interface Logout {
+  /**
+     * Where to send the browser to end the AuthKit session too; null if there is none.
+     * @nullable
+     */
+  logout_url: string | null;
+}
+
 export type StatusStatus = typeof StatusStatus[keyof typeof StatusStatus];
 
 
@@ -44,6 +52,36 @@ export interface Problem {
 }
 
 /**
+ * Redirect; cookies are set or cleared with Set-Cookie.
+ */
+export type RedirectResponse = void;
+
+/**
+ * The session is revoked and its cookie cleared.
+ */
+export type LoggedOutResponse = Logout;
+
+/**
+ * No valid session.
+ */
+export type UnauthorizedResponse = Problem;
+
+/**
+ * The request is not allowed (for instance, a foreign Origin).
+ */
+export type ForbiddenResponse = Problem;
+
+/**
+ * The request conflicts with the current state.
+ */
+export type ConflictResponse = Problem;
+
+/**
+ * Rate limit exceeded; retry later.
+ */
+export type TooManyRequestsResponse = Problem;
+
+/**
  * The request is malformed.
  */
 export type BadRequestResponse = Problem;
@@ -72,6 +110,25 @@ export type InternalErrorResponse = Problem;
  * A dependency is unavailable; retry later.
  */
 export type ServiceUnavailableResponse = Problem;
+
+export type AuthLoginParams = {
+  /**
+   * Path (or URL) of the front end to return to; it must resolve to FRONTEND_ORIGIN.
+   * @maxLength 2048
+   */
+  return_to?: string;
+};
+
+export type AuthCallbackParams = {
+  /** @maxLength 512 */
+  code?: string;
+  /** @maxLength 128 */
+  state?: string;
+  /** @maxLength 256 */
+  error?: string;
+  /** @maxLength 1024 */
+  error_description?: string;
+};
 
 export type getHealthzResponse200 = {
   data: Status
@@ -174,4 +231,272 @@ export const getReadyz = async ( options?: RequestInit): Promise<getReadyzRespon
 
   const data: getReadyzResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getReadyzResponse
+}
+
+
+
+export type authLoginResponse302 = {
+  data: RedirectResponse
+  status: 302
+}
+
+export type authLoginResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type authLoginResponse429 = {
+  data: TooManyRequestsResponse
+  status: 429
+}
+
+export type authLoginResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+;
+export type authLoginResponseError = (authLoginResponse302 | authLoginResponse400 | authLoginResponse429 | authLoginResponse500) & {
+  headers: Headers;
+};
+
+export type authLoginResponse = (authLoginResponseError)
+
+export const getAuthLoginUrl = (params?: AuthLoginParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/auth/login?${stringifiedParams}` : `/auth/login`
+}
+
+/**
+ * Stores the login intent in a __Host-oauth_<state> cookie (PKCE verifier, return_to, purpose, start time; 5 minutes, at most 3 alive) and redirects to AuthKit, always forcing a fresh authentication. Rate limited per IP.
+ * @summary Start a login with AuthKit
+ */
+export const authLogin = async (params?: AuthLoginParams, options?: RequestInit): Promise<authLoginResponse> => {
+
+  const res = await fetch(getAuthLoginUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: authLoginResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as authLoginResponse
+}
+
+
+
+export type authCallbackResponse302 = {
+  data: RedirectResponse
+  status: 302
+}
+
+export type authCallbackResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type authCallbackResponse403 = {
+  data: ForbiddenResponse
+  status: 403
+}
+
+export type authCallbackResponse409 = {
+  data: ConflictResponse
+  status: 409
+}
+
+export type authCallbackResponse429 = {
+  data: TooManyRequestsResponse
+  status: 429
+}
+
+export type authCallbackResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type authCallbackResponse503 = {
+  data: ServiceUnavailableResponse
+  status: 503
+}
+
+;
+export type authCallbackResponseError = (authCallbackResponse302 | authCallbackResponse400 | authCallbackResponse403 | authCallbackResponse409 | authCallbackResponse429 | authCallbackResponse500 | authCallbackResponse503) & {
+  headers: Headers;
+};
+
+export type authCallbackResponse = (authCallbackResponseError)
+
+export const getAuthCallbackUrl = (params?: AuthCallbackParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/auth/callback?${stringifiedParams}` : `/auth/callback`
+}
+
+/**
+ * Completes the intent named by state: exchanges the code, resolves the user and sets the __Host-session cookie. What the callback does is decided by the stored intent, never by the URL. Rate limited per IP.
+ * @summary AuthKit redirects here after authenticating
+ */
+export const authCallback = async (params?: AuthCallbackParams, options?: RequestInit): Promise<authCallbackResponse> => {
+
+  const res = await fetch(getAuthCallbackUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: authCallbackResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as authCallbackResponse
+}
+
+
+
+export type authLogoutResponse200 = {
+  data: LoggedOutResponse
+  status: 200
+}
+
+export type authLogoutResponse401 = {
+  data: UnauthorizedResponse
+  status: 401
+}
+
+export type authLogoutResponse403 = {
+  data: ForbiddenResponse
+  status: 403
+}
+
+export type authLogoutResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type authLogoutResponseSuccess = (authLogoutResponse200) & {
+  headers: Headers;
+};
+export type authLogoutResponseError = (authLogoutResponse401 | authLogoutResponse403 | authLogoutResponse500) & {
+  headers: Headers;
+};
+
+export type authLogoutResponse = (authLogoutResponseSuccess | authLogoutResponseError)
+
+export const getAuthLogoutUrl = () => {
+
+
+
+
+  return `/auth/logout`
+}
+
+/**
+ * Revokes the current session and clears its cookie. The front end then sends the browser to logout_url to end the AuthKit session as well.
+ * @summary End this session
+ */
+export const authLogout = async ( options?: RequestInit): Promise<authLogoutResponse> => {
+
+  const res = await fetch(getAuthLogoutUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: authLogoutResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as authLogoutResponse
+}
+
+
+
+export type authLogoutAllResponse200 = {
+  data: LoggedOutResponse
+  status: 200
+}
+
+export type authLogoutAllResponse401 = {
+  data: UnauthorizedResponse
+  status: 401
+}
+
+export type authLogoutAllResponse403 = {
+  data: ForbiddenResponse
+  status: 403
+}
+
+export type authLogoutAllResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type authLogoutAllResponseSuccess = (authLogoutAllResponse200) & {
+  headers: Headers;
+};
+export type authLogoutAllResponseError = (authLogoutAllResponse401 | authLogoutAllResponse403 | authLogoutAllResponse500) & {
+  headers: Headers;
+};
+
+export type authLogoutAllResponse = (authLogoutAllResponseSuccess | authLogoutAllResponseError)
+
+export const getAuthLogoutAllUrl = () => {
+
+
+
+
+  return `/auth/logout-all`
+}
+
+/**
+ * @summary End every session of the user
+ */
+export const authLogoutAll = async ( options?: RequestInit): Promise<authLogoutAllResponse> => {
+
+  const res = await fetch(getAuthLogoutAllUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: authLogoutAllResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as authLogoutAllResponse
 }

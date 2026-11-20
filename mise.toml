@@ -60,6 +60,7 @@ depends = ["web:install"]
 run = [
   "cd api && sqlc generate",
   "cd api && oapi-codegen -config oapi-codegen.yaml ../api-spec/openapi.yaml",
+  "cd api && oapi-codegen -config oapi-codegen.identity.yaml ../api-spec/openapi.yaml",
   "cd web && npm run generate",
 ]
 
