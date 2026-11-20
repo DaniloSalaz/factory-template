@@ -1,62 +1,120 @@
-// Package httpx holds HTTP server plumbing shared by every module.
+// Package httpx holds HTTP plumbing shared by every module.
 package httpx
 
 import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/logx"
 )
 
 // ProblemContentType is the media type defined by RFC 9457.
 const ProblemContentType = "application/problem+json"
 
-// Problem is an RFC 9457 problem details object.
+const (
+	internalCode   = "internal"
+	internalDetail = "An unexpected error occurred."
+)
+
+// Problem is an RFC 9457 problem details object with this API's extension members.
 type Problem struct {
-	Type     string `json:"type"`
-	Title    string `json:"title"`
-	Status   int    `json:"status"`
-	Detail   string `json:"detail,omitempty"`
-	Instance string `json:"instance,omitempty"`
+	Type      string              `json:"type"`
+	Title     string              `json:"title"`
+	Status    int                 `json:"status"`
+	Detail    string              `json:"detail,omitempty"`
+	Instance  string              `json:"instance,omitempty"`
+	Code      string              `json:"code,omitempty"`
+	Errors    []apperr.FieldError `json:"errors,omitempty"`
+	RequestID string              `json:"request_id,omitempty"`
 }
 
-// NewProblem returns a Problem of type about:blank whose title is the standard status text.
-func NewProblem(status int, detail string) Problem {
+// WriteProblem translates err into a problem+json response. apperr errors expose their
+// code, message and field errors; anything else, and KindInternal, becomes a generic 500
+// whose real cause is only logged.
+func WriteProblem(w http.ResponseWriter, r *http.Request, err error, logger *slog.Logger) {
+	ctx := r.Context()
+	p := problemFor(err)
+	p.Instance = r.URL.Path
+	if id, ok := logx.RequestIDFrom(ctx); ok {
+		p.RequestID = id
+	}
+
+	if p.Status >= http.StatusInternalServerError {
+		logger.ErrorContext(ctx, "request failed",
+			slog.String("method", r.Method),
+			slog.String("path", r.URL.Path),
+			slog.Int("status", p.Status),
+			slog.Any("error", err),
+		)
+	}
+
+	w.Header().Set("Content-Type", ProblemContentType)
+	w.WriteHeader(p.Status)
+	if encErr := json.NewEncoder(w).Encode(p); encErr != nil {
+		logger.WarnContext(ctx, "write problem response", slog.Any("error", encErr))
+	}
+}
+
+// RequestErrorHandler answers requests the generated server could not decode. The decoder
+// error may echo client input, so it is not returned in the body.
+func RequestErrorHandler(logger *slog.Logger) func(http.ResponseWriter, *http.Request, error) {
+	return func(w http.ResponseWriter, r *http.Request, err error) {
+		WriteProblem(w, r, apperr.Wrap(err, apperr.KindValidation, "invalid_request",
+			"The request is malformed or has invalid parameters."), logger)
+	}
+}
+
+// ResponseErrorHandler answers errors returned by strict handlers.
+func ResponseErrorHandler(logger *slog.Logger) func(http.ResponseWriter, *http.Request, error) {
+	return func(w http.ResponseWriter, r *http.Request, err error) {
+		WriteProblem(w, r, err, logger)
+	}
+}
+
+func problemFor(err error) Problem {
+	e, ok := apperr.As(err)
+	status := http.StatusInternalServerError
+	if ok {
+		status = statusFor(e.Kind)
+	}
+	if !ok || status == http.StatusInternalServerError {
+		return Problem{
+			Type:   "about:blank",
+			Title:  http.StatusText(http.StatusInternalServerError),
+			Status: http.StatusInternalServerError,
+			Detail: internalDetail,
+			Code:   internalCode,
+		}
+	}
 	return Problem{
 		Type:   "about:blank",
 		Title:  http.StatusText(status),
 		Status: status,
-		Detail: detail,
+		Detail: e.Message,
+		Code:   e.Code,
+		Errors: e.Fields,
 	}
 }
 
-// WriteProblem writes p as the response body with the problem+json content type.
-func WriteProblem(w http.ResponseWriter, logger *slog.Logger, p Problem) {
-	w.Header().Set("Content-Type", ProblemContentType)
-	w.WriteHeader(p.Status)
-	if err := json.NewEncoder(w).Encode(p); err != nil {
-		logger.Error("write problem response", slog.Any("error", err))
-	}
-}
-
-// RequestErrorHandler answers requests the generated server could not decode with a 400 problem.
-func RequestErrorHandler(logger *slog.Logger) func(http.ResponseWriter, *http.Request, error) {
-	return func(w http.ResponseWriter, r *http.Request, err error) {
-		WriteProblem(w, logger, Problem{
-			Type:     "about:blank",
-			Title:    http.StatusText(http.StatusBadRequest),
-			Status:   http.StatusBadRequest,
-			Detail:   err.Error(),
-			Instance: r.URL.Path,
-		})
-	}
-}
-
-// ResponseErrorHandler logs handler failures and answers with a 500 problem without leaking internals.
-func ResponseErrorHandler(logger *slog.Logger) func(http.ResponseWriter, *http.Request, error) {
-	return func(w http.ResponseWriter, r *http.Request, err error) {
-		logger.ErrorContext(r.Context(), "handler failed", slog.String("path", r.URL.Path), slog.Any("error", err))
-		p := NewProblem(http.StatusInternalServerError, "")
-		p.Instance = r.URL.Path
-		WriteProblem(w, logger, p)
+func statusFor(kind apperr.Kind) int {
+	switch kind {
+	case apperr.KindNotFound:
+		return http.StatusNotFound
+	case apperr.KindConflict:
+		return http.StatusConflict
+	case apperr.KindValidation:
+		return http.StatusUnprocessableEntity
+	case apperr.KindUnauthorized:
+		return http.StatusUnauthorized
+	case apperr.KindForbidden:
+		return http.StatusForbidden
+	case apperr.KindRateLimited:
+		return http.StatusTooManyRequests
+	case apperr.KindInternal:
+		return http.StatusInternalServerError
+	default:
+		return http.StatusInternalServerError
 	}
 }
