@@ -53,9 +53,10 @@ el código anterior trataba como MFA cualquier login con contraseña mientras
 3. Si tienes `WORKOS_MFA_REQUIRED` en tu `.env` local, bórrala: la variable ya no existe y
    la configuración la ignoraría.
 4. Comprueba el flujo con un usuario de prueba, como en "Prueba manual: MFA de un rol"
-   (más abajo): entra sin que AuthKit pida un código, `GET /tenant` con un tenant donde
-   es `owner` da `403 auth.mfa_enrollment_required`, da de alta el factor, verifica y
-   `GET /tenant` da 200.
+   (más abajo): entra (sin factor, AuthKit no debe pedir código), `GET /tenant` con un
+   tenant donde es `owner` da `403 auth.mfa_enrollment_required`, da de alta el factor,
+   verifica y `GET /tenant` da 200. Después, su paso 7: si AuthKit pide el código a un
+   usuario que ya tiene factor.
 5. Producción: los mismos pasos 1 a 4, en su panel, cuando exista.
 
 ## MFA: cómo funciona
@@ -354,7 +355,24 @@ psql_su -v email="$EMAIL" <<< "UPDATE memberships SET role = 'owner' WHERE tenan
      -H "Origin: http://localhost:5173"; echo
    ```
 
-7. En la auditoría, como `app_admin`: `mfa.factor_enrolled`, `mfa.verified`,
+7. **¿Doble petición de código?** Con el panel ya sin `Required` y este usuario con un
+   factor verificado, cierra sesión (`POST /auth/logout` o **Salir**) y entra otra vez en
+   una ventana privada. Los factores se dan de alta con la API de usuarios de AuthKit
+   (`/user_management/users/{id}/auth_factors`), y WorkOS no documenta si AuthKit pide su
+   código en el login cuando la MFA no es `Required` (diseño, sección 13). Anota qué pasa:
+   - **AuthKit no pide el código**: lo esperado. Solo la app lo pide, y solo cuando un rol
+     lo exige.
+   - **AuthKit pide el código TOTP**: el usuario lo teclea dos veces, en el login y en la
+     app. La app sigue siendo correcta, porque no se fía de ese primero, pero es una
+     molestia. Anótalo (fecha, entorno, método de login, captura) en la sección 13 del
+     diseño y abre una issue para decidir. Opciones: aceptarlo; dar de alta los factores
+     con la API de MFA independiente (`/auth/factors/enroll`, sin `user_id`), que AuthKit
+     no asocia al usuario; o pedir el código en la app solo si el login no lo pidió, lo
+     que exigiría una señal que WorkOS no da.
+
+   Repite la prueba con cada método de login que use la app (contraseña, Magic Auth,
+   Google…): el comportamiento puede cambiar de uno a otro.
+8. En la auditoría, como `app_admin`: `mfa.factor_enrolled`, `mfa.verified`,
    `mfa.verify_failed` (con `reason`) y `mfa.verify_locked`.
-8. Limpieza: borra el factor como en "Recuperación" (pasos 2 y 3) y los tenants como en
+9. Limpieza: borra el factor como en "Recuperación" (pasos 2 y 3) y los tenants como en
    la sección anterior.
