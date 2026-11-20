@@ -174,7 +174,19 @@ func (l *Login) Complete(ctx context.Context, cb Callback) (Completed, error) {
 
 // resolveUser finds or creates the user of authn (design, 5.1.5 to 5.1.7): reads first,
 // and writes only once the identity is known to be usable.
+//
+// Two first logins of the same identity can race to create it. The loser's insert
+// fails on the unique constraint and aborts its transaction, so it runs once more and
+// then finds the identity the winner committed.
 func (l *Login) resolveUser(ctx context.Context, cb Callback, authn Authentication) (string, error) {
+	userID, err := l.resolveUserOnce(ctx, cb, authn)
+	if errors.Is(err, ErrAlreadyExists()) {
+		return l.resolveUserOnce(ctx, cb, authn)
+	}
+	return userID, err
+}
+
+func (l *Login) resolveUserOnce(ctx context.Context, cb Callback, authn Authentication) (string, error) {
 	provider := l.idp.Name()
 	var userID string
 	var rejected error
@@ -190,9 +202,19 @@ func (l *Login) resolveUser(ctx context.Context, cb Callback, authn Authenticati
 				return fmt.Errorf("find user by email: %w", err)
 			}
 			if taken {
-				rejected = domain.ErrEmailInUse()
-				return r.RecordAudit(ctx, AuditEvent{Action: AuditEmailInUse, IPPrefix: cb.IPPrefix,
-					Metadata: map[string]string{"provider": provider}})
+				// Each statement sees what was committed before it: a concurrent first login
+				// of this same identity may have committed the user and its identity between
+				// the two reads. Only if the identity is still missing is the email someone
+				// else's.
+				user, found, err = r.UserByIdentity(ctx, provider, authn.Subject)
+				if err != nil {
+					return fmt.Errorf("find identity again: %w", err)
+				}
+				if !found {
+					rejected = domain.ErrEmailInUse()
+					return r.RecordAudit(ctx, AuditEvent{Action: AuditEmailInUse, IPPrefix: cb.IPPrefix,
+						Metadata: map[string]string{"provider": provider}})
+				}
 			}
 		}
 		if found && user.Disabled {

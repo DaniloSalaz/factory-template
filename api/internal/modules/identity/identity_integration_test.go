@@ -533,6 +533,65 @@ func TestLogin_DisabledUserLeavesOnlyLoginFailed(t *testing.T) {
 	}
 }
 
+// The first login of a new identity from several tabs or devices at once: every
+// callback must end in a session of the same, single user, never in a 500.
+func TestLogin_ConcurrentFirstLogin(t *testing.T) {
+	e := newEnv(t, options{})
+	who := e.person()
+	const n = 8
+
+	type attempt struct {
+		b     *browser
+		state string
+	}
+	attempts := make([]attempt, n)
+	for i := range attempts {
+		b := e.browser()
+		state := b.startLogin("/")
+		e.idp.Authenticate(state, fmt.Sprintf("c%d", i), who)
+		attempts[i] = attempt{b: b, state: state}
+	}
+
+	statuses := make([]int, n)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i, a := range attempts {
+		wg.Go(func() {
+			<-start
+			u := e.srv.URL + "/auth/callback?state=" + url.QueryEscape(a.state) + "&code=" + fmt.Sprintf("c%d", i)
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, u, nil)
+			if err != nil {
+				return
+			}
+			res, err := a.b.client.Do(req)
+			if err != nil {
+				return
+			}
+			_ = res.Body.Close()
+			statuses[i] = res.StatusCode
+		})
+	}
+	close(start)
+	wg.Wait()
+
+	for i, s := range statuses {
+		if s != http.StatusFound {
+			t.Errorf("callback %d: status %d, want 302", i, s)
+		}
+	}
+	if got := e.count(`SELECT count(*) FROM users WHERE email = $1::text::extensions.citext`, who.Email.Reveal()); got != 1 {
+		t.Fatalf("%d users for one identity", got)
+	}
+	if got := e.count(`SELECT count(DISTINCT user_id) FROM sessions WHERE user_id IN
+		(SELECT user_id FROM user_identities WHERE subject = $1)`, who.Subject); got != 1 {
+		t.Fatalf("sessions belong to %d users", got)
+	}
+	if got := e.count(`SELECT count(*) FROM sessions WHERE user_id IN
+		(SELECT user_id FROM user_identities WHERE subject = $1)`, who.Subject); got != n {
+		t.Fatalf("%d sessions, want %d", got, n)
+	}
+}
+
 func TestLogin_ImpersonationIsRefused(t *testing.T) {
 	e := newEnv(t, options{mfaRequired: true})
 	victim := e.person()

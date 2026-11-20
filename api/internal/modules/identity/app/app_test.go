@@ -23,6 +23,11 @@ import (
 type memStore struct {
 	mu sync.Mutex
 	st state
+	// raceWinner, when set, makes the next CreateUser lose a race: the winner's user and
+	// identity are committed as if by a concurrent login, and CreateUser fails with
+	// app.ErrAlreadyExists, aborting its transaction.
+	raceWinner *app.Authentication
+	committed  *app.Authentication
 }
 
 type state struct {
@@ -72,8 +77,14 @@ func (m *memStore) AsUser(ctx context.Context, userID string, fn func(context.Co
 func (m *memStore) tx(ctx context.Context, actor string, fn func(context.Context, app.Repo) error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	r := &memRepo{st: m.st.clone(), actor: actor}
+	r := &memRepo{st: m.st.clone(), actor: actor, store: m}
 	if err := fn(ctx, r); err != nil {
+		if w := m.committed; w != nil {
+			m.committed = nil
+			id := fmt.Sprintf("user-winner-%s", w.Subject)
+			m.st.users[id] = memUser{email: w.Email, verified: true}
+			m.st.identities["fake|"+w.Subject] = id
+		}
 		return err
 	}
 	m.st = r.st
@@ -89,6 +100,7 @@ func (m *memStore) snapshot() state {
 type memRepo struct {
 	st    state
 	actor string
+	store *memStore
 }
 
 func (r *memRepo) id(prefix string) string {
@@ -115,6 +127,10 @@ func (r *memRepo) UserByEmail(_ context.Context, email pii.Email) (app.User, boo
 }
 
 func (r *memRepo) CreateUser(_ context.Context, email pii.Email, verified bool, _ string) (string, error) {
+	if w := r.store.raceWinner; w != nil {
+		r.store.raceWinner, r.store.committed = nil, w
+		return "", fmt.Errorf("create user: %w", app.ErrAlreadyExists())
+	}
 	id := r.id("user")
 	r.st.users[id] = memUser{email: email, verified: verified}
 	return id, nil
@@ -350,6 +366,28 @@ func TestComplete_RejectionsWriteOnlyTheAudit(t *testing.T) {
 				t.Fatalf("audit = %+v, want one %s", after.audit[len(before.audit):], tc.action)
 			}
 		})
+	}
+}
+
+// A concurrent first login of the same identity wins the race to create it: this one
+// fails on the unique constraint, runs again and logs in as the winner's user.
+func TestComplete_LosesTheRaceToCreateTheUser(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, false)
+	who := person(1)
+	f.store.raceWinner = &who
+
+	if _, err := f.complete(t, who, ""); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	st := f.store.snapshot()
+	if len(st.users) != 1 || len(st.sessions) != 1 {
+		t.Fatalf("users = %d, sessions = %d; want the winner's user and one session", len(st.users), len(st.sessions))
+	}
+	for _, s := range st.sessions {
+		if s.UserID != "user-winner-"+who.Subject {
+			t.Fatalf("session of %s, want the winner's user", s.UserID)
+		}
 	}
 }
 
