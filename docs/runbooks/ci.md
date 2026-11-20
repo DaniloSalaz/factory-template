@@ -13,14 +13,14 @@ mismo PR se cancelan; las de `main` siempre terminan.
 |---|---|---|
 | `lint` | golangci-lint (incluye las reglas de arquitectura de depguard y forbidigo), actionlint + shellcheck sobre los workflows y los tests de arquitectura | `mise run lint:go`, `mise run lint:actions`, `mise run arch` |
 | `test` | `go test -race -cover ./...`; la integración de `/readyz` arranca Postgres con Testcontainers en el Docker del runner | `mise run test` (Docker arrancado) |
-| `generate` | Regenera sqlc, oapi-codegen y orval y falla si cambia algo en `api/gen` o `web/src/gen` | `mise run generate:check` |
+| `generate` | Regenera sqlc, oapi-codegen, orval y la seguridad por ruta del front (`web/src/gen/routeSecurity.ts`) y falla si cambia algo en `api/gen` o `web/src/gen` | `mise run generate:check` |
 | `security` | govulncheck, gitleaks sobre todo el historial y `trivy fs` (dependencias y Dockerfile), fallando con HIGH o CRITICAL | `mise run security` |
-| `web` | `npm ci`, Biome, `tsc` y `npm run build`. Aún no hay tests de front: cuando existan, se añaden a `web:check` | `mise run web:check` |
+| `web` | `npm ci`, Biome, `tsc`, `npm run build` (que regenera `web/src/routeTree.gen.ts` y falla si no coincide con el commit) y los tests unitarios con Vitest, incluido el de arquitectura del front. El recorrido de Playwright (`web:e2e`) es solo local por ahora | `mise run web:check`, `mise run web:test` |
 | `docker` | Construye la imagen de la API (sin publicarla) y la escanea con Trivy | `mise run docker:scan` |
 | `ci-ok` | Depende de todos los anteriores y falla si alguno no terminó en `success` (también si se saltó o se canceló) | — |
 
 `mise run ci` ejecuta en orden: `lint:go`, `lint:actions`, `arch`, `test`, `generate:check`,
-`security:govulncheck`, `security:gitleaks` y `web:check`. Los escaneos de Trivy (`security:trivy`
+`security:govulncheck`, `security:gitleaks`, `web:check` y `web:test`. Los escaneos de Trivy (`security:trivy`
 y `docker:scan`) no están en `ci` porque descargan su base de datos y tardan más; ejecútalos con
 `mise run security` y `mise run docker:scan` cuando toques dependencias o el Dockerfile.
 
@@ -33,6 +33,7 @@ y `docker:scan`) no están en `ci` porque descargan su base de datos y tardan m�
 | `[apperr-stdlib-only]`: `apperr` solo importa la stdlib | depguard | `…/testdata/lint/apperr-stdlib-only` |
 | `[domain-pure]`: `domain` solo importa la stdlib y `platform/apperr` | depguard | `…/testdata/lint/domain-pure` |
 | `[module-boundaries]`: fuera de `internal/modules/<x>` solo se importa su paquete raíz; `gen/openapi/<x>` y `gen/sqlc/<x>` son privados de `<x>` | `api/internal/archtest/boundaries_test.go` | `…/testdata/arch` |
+| `[platform-imports-app]`: `web/src/platform` no importa `web/src/app` salvo en `platform/app-registry.ts` | `web/src/platform/architecture.test.ts` (Vitest, `mise run web:test`) | El propio test, con cada forma de importar |
 
 Los fixtures son mini-módulos con el mismo module path que `api/`, para que las reglas les
 apliquen. `TestLintRules` ejecuta golangci-lint con `api/.golangci.yml` sobre cada uno y comprueba
@@ -47,6 +48,7 @@ Los tests de arquitectura llevan el build tag `arch`: `go test ./...` no los eje
 - **lint / arch**: el mensaje empieza por el nombre de la regla y dice cómo arreglarlo. Se corrige
   el código; un `//nolint` solo con un comentario que explique por qué.
 - **generate**: ejecuta `mise run generate` y commitea `api/gen` y `web/src/gen`.
+- **web** con `routeTree.gen.ts`: ejecuta `npm run build` en `web/` y commitea `web/src/routeTree.gen.ts`.
   En local, `generate:check` también falla si has regenerado pero aún no has hecho `git add`.
 - **security**:
   - govulncheck: actualiza el módulo afectado (`go get <módulo>@<versión corregida>`).

@@ -161,14 +161,33 @@ run = [
 ]
 
 [tasks."web:check"]
-description = "Check the web app: lint, types and production build"
+description = "Check the web app: lint, types, production build and an up-to-date route tree"
 dir = "web"
 run = [
   "npm ci",
   "npm run lint",
   "npm run typecheck",
   "npm run build",
+  # The router plugin regenerates src/routeTree.gen.ts on build; it must match the commit.
+  """
+  if ! git diff --quiet -- src/routeTree.gen.ts; then
+    echo "src/routeTree.gen.ts is out of date. Run 'npm run build' in web/ and commit it." >&2
+    exit 1
+  fi
+  """,
 ]
+
+[tasks."web:test"]
+description = "Run the web unit tests (Vitest)"
+depends = ["web:install"]
+dir = "web"
+run = "npm test"
+
+[tasks."web:e2e"]
+description = "Run the browser journey (Playwright) against the local API; needs `up`, `migrate` and `dev`"
+depends = ["web:install"]
+dir = "web"
+run = "npx playwright install chromium && npm run e2e"
 
 [tasks."docker:build"]
 description = "Build the API image locally (not published)"
@@ -190,4 +209,5 @@ run = [
   { task = "security:govulncheck" },
   { task = "security:gitleaks" },
   { task = "web:check" },
+  { task = "web:test" },
 ]

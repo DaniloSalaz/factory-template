@@ -1,7 +1,10 @@
+import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import "./index.css";
-import App from "./App.tsx";
+import "./platform/styles.css";
+import "./app/theme.css";
+import { PlatformProvider } from "./platform/bootstrap";
+import { platform, router } from "./router";
 
 const root = document.getElementById("root");
 if (!root) {
@@ -10,6 +13,8 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <PlatformProvider value={platform.context}>
+      <RouterProvider router={router} />
+    </PlatformProvider>
   </StrictMode>,
 );

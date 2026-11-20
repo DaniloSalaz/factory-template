@@ -485,6 +485,17 @@ El email del invitado no va en `metadata`. Los eventos de miembros (`membership.
 
 Los `{id}` de las invitaciones son de la invitación. Los miembros se nombran por su `userId`: dentro de un tenant identifica a una sola membresía, y quien no es miembro de este tenant da `404` exista o no, así que no revela usuarios de otros tenants. El rol `client` de la app legal no tiene `members:read`, `members:invite`, `members:manage` ni `audit:read`.
 
+### 10.1 Front: el tenant actual vive en la URL
+
+Decisión del paso 8a. El front (`web/`, detalle en `web/README.md`) no guarda el tenant en ningún estado:
+
+- **Rutas**: todo lo que actúa en un tenant cuelga de `/t/$tenantId/…`. Un enlace o una pestaña llevan su tenant, y dos pestañas pueden estar en tenants distintos sin pisarse.
+- **`X-Tenant-ID`**: lo pone el fetcher del cliente generado con el `$tenantId` de la ruta activa, y **solo** en las operaciones cuyo `security` en el contrato incluye `tenant` (`web/src/gen/routeSecurity.ts`, generado del contrato como `routegen`). Llamar a una de ellas fuera de `/t/$tenantId` es un error del front, no una petición sin cabecera.
+- **Caché**: las claves de TanStack Query de las operaciones con tenant incluyen el de la ruta, para que `/t/B` nunca muestre datos leídos en `/t/A`.
+- **Último tenant usado**: lo único que se guarda (`localStorage`), y solo para redirigir desde `/`. Se usa si `GET /me` lo sigue listando como activo; si no, o si da `403 auth.tenant_forbidden`, se borra y se va al selector (`/tenants`, con aviso en el segundo caso).
+- **Errores**: `401` lleva a `/login` con `return_to` de la ruta actual (el servidor lo valida, 5.1.1); `403 auth.mfa_required` a la verificación (challenge y código, 5.2) y `auth.mfa_enrollment_required` al alta, y las dos vuelven a la ruta. Tras verificar, la sesión se sustituye y el front invalida toda su caché. Se decide en un solo sitio (`web/src/platform/errors/handle.ts`), nunca en cada pantalla.
+- **Permisos**: el front oculta lo que el rol no permite según `GET /tenant`; es solo UX, la API los comprueba en cada caso de uso (5.4.5).
+
 ## 11. Pruebas obligatorias
 
 **Estructura de la BD** (test de migraciones y de funciones, sección 7.3 y 7.4)
@@ -556,4 +567,4 @@ Vincular identidades desde la sesión, borrado de un tenant (será un comando de
 5. **Tenants, invitaciones, miembros y auditoría**, con la revocación automática y el evento `identity.member_removed`. Se hace en tres partes: 5a, tenants y miembros (hecho, ADR 0003); 5b, invitaciones (hecho: 5.6 y 5.7.5; queda la revocación al deshabilitar, paso 7, y el email real, con el despliegue); 5c, consulta de la auditoría.
 6. **Trabajos**: workers de usuario y de sistema.
 7. **Administración**: deshabilitar y borrar usuario.
-8. **Front**: login (también al caducar la MFA de un rol), selector de tenant, `X-Tenant-ID`, invitaciones (con `sessionStorage`) y miembros.
+8. **Front**: login (también al caducar la MFA de un rol), selector de tenant, `X-Tenant-ID`, invitaciones (con `sessionStorage`) y miembros. Se hace en dos partes: 8a, base del front, login, tenant y MFA (hecho, 10.1); 8b, miembros e invitaciones.

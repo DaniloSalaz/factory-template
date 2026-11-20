@@ -148,8 +148,9 @@ mise run dev                      # terminal 1: API en :8080
 cd web && npm run dev             # terminal 2: front en :5173
 ```
 
-1. Abre `http://localhost:5173` y pulsa **Entrar**. AuthKit pide credenciales (siempre:
-   `max_age=0`), sin código de MFA, y vuelve a `http://localhost:5173/`.
+1. Abre `http://localhost:5173`: sin sesión, el front lleva a `/login`. Pulsa **Entrar**.
+   AuthKit pide credenciales (siempre: `max_age=0`), sin código de MFA, y vuelve a
+   `http://localhost:5173/`, que lleva al selector de organizaciones.
 2. DevTools → Application → Cookies → `http://localhost:5173`: existe `__Host-session`
    (`HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`) y ya no queda ninguna `__Host-oauth_*`.
 3. La sesión está en Postgres, solo con el hash:
@@ -177,6 +178,61 @@ cd web && npm run dev             # terminal 2: front en :5173
 5. Pulsa **Salir**: la API revoca la sesión (`revoked_at` deja de ser `NULL`), borra la
    cookie y el navegador pasa por el logout de AuthKit antes de volver al front.
 6. Pulsa **Entrar** de nuevo: AuthKit vuelve a pedir credenciales.
+
+## Prueba manual: el front con WorkOS (paso 8a)
+
+Diseño: 5.1, 5.2, 5.5 y 10.1; front: `web/README.md`. Con WorkOS de verdad y una app de
+autenticación. Mismos requisitos que "Prueba manual en desarrollo" (Chrome o Firefox, el
+panel de staging sin MFA `Required`). Usa un usuario **sin factor de MFA** en WorkOS para
+ver el alta; si ya tiene uno, bórralo antes como en "Recuperación".
+
+```sh
+mise run up && mise run migrate
+mise run dev                      # terminal 1: API en :8080
+cd web && npm run dev             # terminal 2: front en :5173
+psql_su()  { docker compose exec -T postgres psql -U factory -d factory -v ON_ERROR_STOP=1 -At "$@"; }
+```
+
+1. **Login**: abre `http://localhost:5173/tenants`. Sin sesión, el front lleva a
+   `/login?return_to=%2Ftenants`. Pulsa **Entrar**; tras AuthKit vuelves a `/tenants` (el
+   `return_to`), con tu email arriba a la derecha.
+2. **Crear tenant**: en "Crear una organización", prueba el identificador `Con Mayúsculas`
+   (error de formato bajo el campo) y `admin` (reservado). Después uno libre, p. ej.
+   `prueba-front`. Al crearla, el front entra en `/t/<id>` y, como eres `owner` y el rol
+   exige MFA, `GET /tenant` responde `403 auth.mfa_enrollment_required`: el front te lleva a
+   **Dar de alta la verificación en dos pasos**.
+3. **Alta de MFA como owner**: pulsa **Empezar el alta**, escanea el QR (o escribe la clave)
+   y escribe el código. Vuelves a `/t/<id>` con el nombre, tu rol (`owner`) y los permisos.
+   - DevTools → Application → Cookies: el valor de `__Host-session` ha cambiado (la sesión
+     se sustituye al verificar).
+   - DevTools → Application → Local Storage: solo `platform.lastTenantId`; ni la clave ni el
+     URI de MFA están en ningún almacenamiento ni en la consola.
+   - Recarga la página: el QR y la clave ya no se muestran en ningún sitio.
+   - **Seguridad** (`/account/mfa`) muestra el factor como verificado y la hora de la
+     verificación de esta sesión.
+4. **Verificación al caducar la ventana** (owner: 12 h). En vez de esperar, envejece la MFA
+   de tu sesión como superusuario, solo en local:
+
+   ```sh
+   psql_su -v email='<tu email>' <<'SQL'
+   UPDATE sessions SET mfa_auth_time = now() - interval '13 hours'
+   WHERE user_id = (SELECT id FROM users WHERE email = :'email') AND revoked_at IS NULL;
+   SQL
+   ```
+
+   Recarga `/t/<id>`: `GET /tenant` responde `403 auth.mfa_required` y el front te lleva a
+   **Introduce tu código** (`/account/mfa/verify?return_to=…`). Escribe un código mal: el
+   error sale bajo el campo y el siguiente intento usa otro challenge. Con el bueno vuelves
+   a `/t/<id>`.
+5. **Volver desde `/`**: abre `http://localhost:5173/`: te lleva directamente a `/t/<id>`
+   (el último tenant usado).
+6. **Logout**: pulsa **Salir**. La API revoca la sesión y el navegador pasa por el logout de
+   AuthKit antes de volver al front, que, sin sesión, te lleva a `/login`. Entra otra vez y
+   prueba **Cerrar todas las sesiones**: con una segunda ventana privada con sesión abierta,
+   su siguiente acción también acaba en `/login`.
+7. Anota cualquier diferencia con lo esperado (paso, captura, consola) en el PR o en una
+   issue. Limpieza: borra el factor como en "Recuperación" y el tenant como en "Prueba
+   manual: tenants y miembros" (paso 10).
 
 ## Prueba manual: `/me`, tenant y `X-Tenant-ID` ajeno
 

@@ -5,7 +5,27 @@
  * Source of truth for the HTTP contract. Go server and TS client are generated from this file.
  * OpenAPI spec version: 0.1.0
  */
-import { apiFetch } from '../api/fetcher';
+import {
+  useMutation,
+  useQuery
+} from '@tanstack/react-query';
+import type {
+  DataTag,
+  DefinedInitialDataOptions,
+  DefinedUseQueryResult,
+  MutationFunction,
+  QueryClient,
+  QueryFunction,
+  QueryKey,
+  UndefinedInitialDataOptions,
+  UseMutationOptions,
+  UseMutationResult,
+  UseQueryOptions,
+  UseQueryResult
+} from '@tanstack/react-query';
+
+import { apiFetch } from '../platform/api/fetcher';
+import type { ErrorType } from '../platform/api/fetcher';
 export interface CurrentUser {
   id: string;
   email: string;
@@ -345,6 +365,9 @@ export type ListInvitationsParams = {
   limit?: number;
 };
 
+type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
+
 const getHeaders = (...sources: (RequestInit['headers'] | Record<string, string | undefined>)[]) => {
   const seen = new Set<string>();
   const layers: [string, string | readonly string[]][][] = [];
@@ -365,24 +388,21 @@ const getHeaders = (...sources: (RequestInit['headers'] | Record<string, string 
   return Object.fromEntries(layers.reverse().flat()) as Extract<RequestInit['headers'], Record<string, unknown>>;
 };
 
-export type getHealthzResponse200 = {
-  data: Status
-  status: 200
-}
 
-export type getHealthzResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
-
-export type getHealthzResponseSuccess = (getHealthzResponse200) & {
-  headers: Headers;
+const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
+  const result = { queryKey } as T & { queryKey: K };
+  for (const key of Object.keys(query)) {
+    // The explicit queryKey always wins, matching the previous
+    // `{ ...query, queryKey }` spread where it was set last.
+    if (key === 'queryKey') continue;
+    Object.defineProperty(result, key, {
+      enumerable: true,
+      configurable: true,
+      get: () => (query as Record<string, unknown>)[key],
+    });
+  }
+  return result;
 };
-export type getHealthzResponseError = (getHealthzResponse500) & {
-  headers: Headers;
-};
-
-export type getHealthzResponse = (getHealthzResponseSuccess | getHealthzResponseError)
 
 export const getGetHealthzUrl = () => {
 
@@ -395,9 +415,9 @@ export const getGetHealthzUrl = () => {
 /**
  * @summary Liveness probe
  */
-export const getHealthz = async ( options?: Parameters<typeof apiFetch>[1]): Promise<getHealthzResponse> => {
+export const getHealthz = async ( options?: Parameters<typeof apiFetch>[1]): Promise<Status> => {
 
-  return apiFetch<getHealthzResponse>(getGetHealthzUrl(),
+  return apiFetch<Status>(getGetHealthzUrl(),
   {
     ...options,
     method: 'GET'
@@ -408,29 +428,82 @@ export const getHealthz = async ( options?: Parameters<typeof apiFetch>[1]): Pro
 
 
 
-export type getReadyzResponse200 = {
-  data: Status
-  status: 200
+
+
+export const getGetHealthzQueryKey = () => {
+    return [
+    `/healthz`
+    ] as const;
+    }
+
+
+export const getGetHealthzQueryOptions = <TData = Awaited<ReturnType<typeof getHealthz>>, TError = ErrorType<InternalErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHealthz>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetHealthzQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getHealthz>>> = ({ signal }) => getHealthz({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getHealthz>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
 }
 
-export type getReadyzResponse500 = {
-  data: InternalErrorResponse
-  status: 500
+export type GetHealthzQueryResult = NonNullable<Awaited<ReturnType<typeof getHealthz>>>
+export type GetHealthzQueryError = ErrorType<InternalErrorResponse>
+
+
+/** @summary Liveness probe */
+export function useGetHealthz<TData = Awaited<ReturnType<typeof getHealthz>>, TError = ErrorType<InternalErrorResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHealthz>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getHealthz>>,
+          TError,
+          Awaited<ReturnType<typeof getHealthz>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/** @summary Liveness probe */
+export function useGetHealthz<TData = Awaited<ReturnType<typeof getHealthz>>, TError = ErrorType<InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHealthz>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getHealthz>>,
+          TError,
+          Awaited<ReturnType<typeof getHealthz>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/** @summary Liveness probe */
+export function useGetHealthz<TData = Awaited<ReturnType<typeof getHealthz>>, TError = ErrorType<InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHealthz>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/** @summary Liveness probe */
+export function useGetHealthz<TData = Awaited<ReturnType<typeof getHealthz>>, TError = ErrorType<InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHealthz>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetHealthzQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
 }
 
-export type getReadyzResponse503 = {
-  data: ServiceUnavailableResponse
-  status: 503
-}
 
-export type getReadyzResponseSuccess = (getReadyzResponse200) & {
-  headers: Headers;
-};
-export type getReadyzResponseError = (getReadyzResponse500 | getReadyzResponse503) & {
-  headers: Headers;
-};
 
-export type getReadyzResponse = (getReadyzResponseSuccess | getReadyzResponseError)
+
+
+
 
 export const getGetReadyzUrl = () => {
 
@@ -443,9 +516,9 @@ export const getGetReadyzUrl = () => {
 /**
  * @summary Readiness probe (checks dependencies such as the database)
  */
-export const getReadyz = async ( options?: Parameters<typeof apiFetch>[1]): Promise<getReadyzResponse> => {
+export const getReadyz = async ( options?: Parameters<typeof apiFetch>[1]): Promise<Status> => {
 
-  return apiFetch<getReadyzResponse>(getGetReadyzUrl(),
+  return apiFetch<Status>(getGetReadyzUrl(),
   {
     ...options,
     method: 'GET'
@@ -456,32 +529,82 @@ export const getReadyz = async ( options?: Parameters<typeof apiFetch>[1]): Prom
 
 
 
-export type authLoginResponse302 = {
-  data: RedirectResponse
-  status: 302
+
+
+export const getGetReadyzQueryKey = () => {
+    return [
+    `/readyz`
+    ] as const;
+    }
+
+
+export const getGetReadyzQueryOptions = <TData = Awaited<ReturnType<typeof getReadyz>>, TError = ErrorType<InternalErrorResponse | ServiceUnavailableResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getReadyz>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetReadyzQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getReadyz>>> = ({ signal }) => getReadyz({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getReadyz>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
 }
 
-export type authLoginResponse400 = {
-  data: BadRequestResponse
-  status: 400
+export type GetReadyzQueryResult = NonNullable<Awaited<ReturnType<typeof getReadyz>>>
+export type GetReadyzQueryError = ErrorType<InternalErrorResponse | ServiceUnavailableResponse>
+
+
+/** @summary Readiness probe (checks dependencies such as the database) */
+export function useGetReadyz<TData = Awaited<ReturnType<typeof getReadyz>>, TError = ErrorType<InternalErrorResponse | ServiceUnavailableResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getReadyz>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getReadyz>>,
+          TError,
+          Awaited<ReturnType<typeof getReadyz>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/** @summary Readiness probe (checks dependencies such as the database) */
+export function useGetReadyz<TData = Awaited<ReturnType<typeof getReadyz>>, TError = ErrorType<InternalErrorResponse | ServiceUnavailableResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getReadyz>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getReadyz>>,
+          TError,
+          Awaited<ReturnType<typeof getReadyz>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/** @summary Readiness probe (checks dependencies such as the database) */
+export function useGetReadyz<TData = Awaited<ReturnType<typeof getReadyz>>, TError = ErrorType<InternalErrorResponse | ServiceUnavailableResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getReadyz>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/** @summary Readiness probe (checks dependencies such as the database) */
+export function useGetReadyz<TData = Awaited<ReturnType<typeof getReadyz>>, TError = ErrorType<InternalErrorResponse | ServiceUnavailableResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getReadyz>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetReadyzQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
 }
 
-export type authLoginResponse429 = {
-  data: TooManyRequestsResponse
-  status: 429
-}
 
-export type authLoginResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
 
-;
-export type authLoginResponseError = (authLoginResponse302 | authLoginResponse400 | authLoginResponse429 | authLoginResponse500) & {
-  headers: Headers;
-};
 
-export type authLoginResponse = (authLoginResponseError)
+
+
 
 export const getAuthLoginUrl = (params?: AuthLoginParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -502,9 +625,9 @@ export const getAuthLoginUrl = (params?: AuthLoginParams,) => {
  * Stores the login intent in a __Host-oauth_<state> cookie (PKCE verifier, return_to, purpose, start time; 5 minutes, at most 3 alive) and redirects to AuthKit, always forcing a fresh authentication. Rate limited per IP.
  * @summary Start a login with AuthKit
  */
-export const authLogin = async (params?: AuthLoginParams, options?: Parameters<typeof apiFetch>[1]): Promise<authLoginResponse> => {
+export const authLogin = async (params?: AuthLoginParams, options?: Parameters<typeof apiFetch>[1]): Promise<unknown> => {
 
-  return apiFetch<authLoginResponse>(getAuthLoginUrl(params),
+  return apiFetch<unknown>(getAuthLoginUrl(params),
   {
     ...options,
     method: 'GET'
@@ -515,47 +638,94 @@ export const authLogin = async (params?: AuthLoginParams, options?: Parameters<t
 
 
 
-export type authCallbackResponse302 = {
-  data: RedirectResponse
-  status: 302
+
+
+export const getAuthLoginQueryKey = (params?: AuthLoginParams,) => {
+    return [
+    `/auth/login`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAuthLoginQueryOptions = <TData = Awaited<ReturnType<typeof authLogin>>, TError = ErrorType<RedirectResponse | BadRequestResponse | TooManyRequestsResponse | InternalErrorResponse>>(params?: AuthLoginParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authLogin>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthLoginQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authLogin>>> = ({ signal }) => authLogin(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authLogin>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
 }
 
-export type authCallbackResponse400 = {
-  data: BadRequestResponse
-  status: 400
+export type AuthLoginQueryResult = NonNullable<Awaited<ReturnType<typeof authLogin>>>
+export type AuthLoginQueryError = ErrorType<RedirectResponse | BadRequestResponse | TooManyRequestsResponse | InternalErrorResponse>
+
+
+/**
+ * Stores the login intent in a __Host-oauth_<state> cookie (PKCE verifier, return_to, purpose, start time; 5 minutes, at most 3 alive) and redirects to AuthKit, always forcing a fresh authentication. Rate limited per IP.
+ * @summary Start a login with AuthKit
+ */
+export function useAuthLogin<TData = Awaited<ReturnType<typeof authLogin>>, TError = ErrorType<RedirectResponse | BadRequestResponse | TooManyRequestsResponse | InternalErrorResponse>>(
+ params: undefined |  AuthLoginParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authLogin>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authLogin>>,
+          TError,
+          Awaited<ReturnType<typeof authLogin>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * Stores the login intent in a __Host-oauth_<state> cookie (PKCE verifier, return_to, purpose, start time; 5 minutes, at most 3 alive) and redirects to AuthKit, always forcing a fresh authentication. Rate limited per IP.
+ * @summary Start a login with AuthKit
+ */
+export function useAuthLogin<TData = Awaited<ReturnType<typeof authLogin>>, TError = ErrorType<RedirectResponse | BadRequestResponse | TooManyRequestsResponse | InternalErrorResponse>>(
+ params?: AuthLoginParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authLogin>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authLogin>>,
+          TError,
+          Awaited<ReturnType<typeof authLogin>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * Stores the login intent in a __Host-oauth_<state> cookie (PKCE verifier, return_to, purpose, start time; 5 minutes, at most 3 alive) and redirects to AuthKit, always forcing a fresh authentication. Rate limited per IP.
+ * @summary Start a login with AuthKit
+ */
+export function useAuthLogin<TData = Awaited<ReturnType<typeof authLogin>>, TError = ErrorType<RedirectResponse | BadRequestResponse | TooManyRequestsResponse | InternalErrorResponse>>(
+ params?: AuthLoginParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authLogin>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * Stores the login intent in a __Host-oauth_<state> cookie (PKCE verifier, return_to, purpose, start time; 5 minutes, at most 3 alive) and redirects to AuthKit, always forcing a fresh authentication. Rate limited per IP.
+ * @summary Start a login with AuthKit
+ */
+export function useAuthLogin<TData = Awaited<ReturnType<typeof authLogin>>, TError = ErrorType<RedirectResponse | BadRequestResponse | TooManyRequestsResponse | InternalErrorResponse>>(
+ params?: AuthLoginParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authLogin>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAuthLoginQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
 }
 
-export type authCallbackResponse403 = {
-  data: ForbiddenResponse
-  status: 403
-}
 
-export type authCallbackResponse409 = {
-  data: ConflictResponse
-  status: 409
-}
 
-export type authCallbackResponse429 = {
-  data: TooManyRequestsResponse
-  status: 429
-}
 
-export type authCallbackResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
 
-export type authCallbackResponse503 = {
-  data: ServiceUnavailableResponse
-  status: 503
-}
 
-;
-export type authCallbackResponseError = (authCallbackResponse302 | authCallbackResponse400 | authCallbackResponse403 | authCallbackResponse409 | authCallbackResponse429 | authCallbackResponse500 | authCallbackResponse503) & {
-  headers: Headers;
-};
-
-export type authCallbackResponse = (authCallbackResponseError)
 
 export const getAuthCallbackUrl = (params?: AuthCallbackParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -576,9 +746,9 @@ export const getAuthCallbackUrl = (params?: AuthCallbackParams,) => {
  * Completes the intent named by state: exchanges the code, resolves the user and sets the __Host-session cookie. What the callback does is decided by the stored intent, never by the URL. Rate limited per IP.
  * @summary AuthKit redirects here after authenticating
  */
-export const authCallback = async (params?: AuthCallbackParams, options?: Parameters<typeof apiFetch>[1]): Promise<authCallbackResponse> => {
+export const authCallback = async (params?: AuthCallbackParams, options?: Parameters<typeof apiFetch>[1]): Promise<unknown> => {
 
-  return apiFetch<authCallbackResponse>(getAuthCallbackUrl(params),
+  return apiFetch<unknown>(getAuthCallbackUrl(params),
   {
     ...options,
     method: 'GET'
@@ -589,34 +759,94 @@ export const authCallback = async (params?: AuthCallbackParams, options?: Parame
 
 
 
-export type authLogoutResponse200 = {
-  data: LoggedOutResponse
-  status: 200
+
+
+export const getAuthCallbackQueryKey = (params?: AuthCallbackParams,) => {
+    return [
+    `/auth/callback`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAuthCallbackQueryOptions = <TData = Awaited<ReturnType<typeof authCallback>>, TError = ErrorType<RedirectResponse | BadRequestResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse | InternalErrorResponse | ServiceUnavailableResponse>>(params?: AuthCallbackParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authCallback>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthCallbackQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authCallback>>> = ({ signal }) => authCallback(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authCallback>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
 }
 
-export type authLogoutResponse401 = {
-  data: UnauthorizedResponse
-  status: 401
+export type AuthCallbackQueryResult = NonNullable<Awaited<ReturnType<typeof authCallback>>>
+export type AuthCallbackQueryError = ErrorType<RedirectResponse | BadRequestResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse | InternalErrorResponse | ServiceUnavailableResponse>
+
+
+/**
+ * Completes the intent named by state: exchanges the code, resolves the user and sets the __Host-session cookie. What the callback does is decided by the stored intent, never by the URL. Rate limited per IP.
+ * @summary AuthKit redirects here after authenticating
+ */
+export function useAuthCallback<TData = Awaited<ReturnType<typeof authCallback>>, TError = ErrorType<RedirectResponse | BadRequestResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse | InternalErrorResponse | ServiceUnavailableResponse>>(
+ params: undefined |  AuthCallbackParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authCallback>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authCallback>>,
+          TError,
+          Awaited<ReturnType<typeof authCallback>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * Completes the intent named by state: exchanges the code, resolves the user and sets the __Host-session cookie. What the callback does is decided by the stored intent, never by the URL. Rate limited per IP.
+ * @summary AuthKit redirects here after authenticating
+ */
+export function useAuthCallback<TData = Awaited<ReturnType<typeof authCallback>>, TError = ErrorType<RedirectResponse | BadRequestResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse | InternalErrorResponse | ServiceUnavailableResponse>>(
+ params?: AuthCallbackParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authCallback>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authCallback>>,
+          TError,
+          Awaited<ReturnType<typeof authCallback>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * Completes the intent named by state: exchanges the code, resolves the user and sets the __Host-session cookie. What the callback does is decided by the stored intent, never by the URL. Rate limited per IP.
+ * @summary AuthKit redirects here after authenticating
+ */
+export function useAuthCallback<TData = Awaited<ReturnType<typeof authCallback>>, TError = ErrorType<RedirectResponse | BadRequestResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse | InternalErrorResponse | ServiceUnavailableResponse>>(
+ params?: AuthCallbackParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authCallback>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * Completes the intent named by state: exchanges the code, resolves the user and sets the __Host-session cookie. What the callback does is decided by the stored intent, never by the URL. Rate limited per IP.
+ * @summary AuthKit redirects here after authenticating
+ */
+export function useAuthCallback<TData = Awaited<ReturnType<typeof authCallback>>, TError = ErrorType<RedirectResponse | BadRequestResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse | InternalErrorResponse | ServiceUnavailableResponse>>(
+ params?: AuthCallbackParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authCallback>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAuthCallbackQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
 }
 
-export type authLogoutResponse403 = {
-  data: ForbiddenResponse
-  status: 403
-}
 
-export type authLogoutResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
 
-export type authLogoutResponseSuccess = (authLogoutResponse200) & {
-  headers: Headers;
-};
-export type authLogoutResponseError = (authLogoutResponse401 | authLogoutResponse403 | authLogoutResponse500) & {
-  headers: Headers;
-};
 
-export type authLogoutResponse = (authLogoutResponseSuccess | authLogoutResponseError)
+
+
 
 export const getAuthLogoutUrl = () => {
 
@@ -630,9 +860,9 @@ export const getAuthLogoutUrl = () => {
  * Revokes the current session and clears its cookie. The front end then sends the browser to logout_url to end the AuthKit session as well.
  * @summary End this session
  */
-export const authLogout = async ( options?: Parameters<typeof apiFetch>[1]): Promise<authLogoutResponse> => {
+export const authLogout = async ( options?: Parameters<typeof apiFetch>[1]): Promise<LoggedOutResponse> => {
 
-  return apiFetch<authLogoutResponse>(getAuthLogoutUrl(),
+  return apiFetch<LoggedOutResponse>(getAuthLogoutUrl(),
   {
     ...options,
     method: 'POST'
@@ -643,34 +873,56 @@ export const authLogout = async ( options?: Parameters<typeof apiFetch>[1]): Pro
 
 
 
-export type authLogoutAllResponse200 = {
-  data: LoggedOutResponse
-  status: 200
-}
 
-export type authLogoutAllResponse401 = {
-  data: UnauthorizedResponse
-  status: 401
-}
 
-export type authLogoutAllResponse403 = {
-  data: ForbiddenResponse
-  status: 403
-}
+export const getAuthLogoutMutationKey = () => ['authLogout'] as const;
 
-export type authLogoutAllResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
+export const getAuthLogoutMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authLogout>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof authLogout>>, TError,void, TContext> => {
 
-export type authLogoutAllResponseSuccess = (authLogoutAllResponse200) & {
-  headers: Headers;
-};
-export type authLogoutAllResponseError = (authLogoutAllResponse401 | authLogoutAllResponse403 | authLogoutAllResponse500) & {
-  headers: Headers;
-};
+const mutationKey = getAuthLogoutMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
 
-export type authLogoutAllResponse = (authLogoutAllResponseSuccess | authLogoutAllResponseError)
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authLogout>>, void> = () => {
+
+
+          return  authLogout(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthLogoutMutationResult = NonNullable<Awaited<ReturnType<typeof authLogout>>>
+
+    export type AuthLogoutMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>
+
+
+    /**
+ * Revokes the current session and clears its cookie. The front end then sends the browser to logout_url to end the AuthKit session as well.
+ * @summary End this session
+ */
+export const useAuthLogout = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authLogout>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authLogout>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getAuthLogoutMutationOptions(options), queryClient);
+    }
 
 export const getAuthLogoutAllUrl = () => {
 
@@ -683,9 +935,9 @@ export const getAuthLogoutAllUrl = () => {
 /**
  * @summary End every session of the user
  */
-export const authLogoutAll = async ( options?: Parameters<typeof apiFetch>[1]): Promise<authLogoutAllResponse> => {
+export const authLogoutAll = async ( options?: Parameters<typeof apiFetch>[1]): Promise<LoggedOutResponse> => {
 
-  return apiFetch<authLogoutAllResponse>(getAuthLogoutAllUrl(),
+  return apiFetch<LoggedOutResponse>(getAuthLogoutAllUrl(),
   {
     ...options,
     method: 'POST'
@@ -696,29 +948,53 @@ export const authLogoutAll = async ( options?: Parameters<typeof apiFetch>[1]): 
 
 
 
-export type getMeResponse200 = {
-  data: Me
-  status: 200
-}
 
-export type getMeResponse401 = {
-  data: UnauthorizedResponse
-  status: 401
-}
 
-export type getMeResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
+export const getAuthLogoutAllMutationKey = () => ['authLogoutAll'] as const;
 
-export type getMeResponseSuccess = (getMeResponse200) & {
-  headers: Headers;
-};
-export type getMeResponseError = (getMeResponse401 | getMeResponse500) & {
-  headers: Headers;
-};
+export const getAuthLogoutAllMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authLogoutAll>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof authLogoutAll>>, TError,void, TContext> => {
 
-export type getMeResponse = (getMeResponseSuccess | getMeResponseError)
+const mutationKey = getAuthLogoutAllMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authLogoutAll>>, void> = () => {
+
+
+          return  authLogoutAll(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthLogoutAllMutationResult = NonNullable<Awaited<ReturnType<typeof authLogoutAll>>>
+
+    export type AuthLogoutAllMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>
+
+
+    /** @summary End every session of the user */
+export const useAuthLogoutAll = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authLogoutAll>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authLogoutAll>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getAuthLogoutAllMutationOptions(options), queryClient);
+    }
 
 export const getGetMeUrl = () => {
 
@@ -732,9 +1008,9 @@ export const getGetMeUrl = () => {
  * The session's user and every tenant they belong to, with its role, suspended tenants included (acting in one answers 403 auth.tenant_forbidden). Needs no X-Tenant-ID: the front end uses it to pick one.
  * @summary The current user and their memberships
  */
-export const getMe = async ( options?: Parameters<typeof apiFetch>[1]): Promise<getMeResponse> => {
+export const getMe = async ( options?: Parameters<typeof apiFetch>[1]): Promise<Me> => {
 
-  return apiFetch<getMeResponse>(getGetMeUrl(),
+  return apiFetch<Me>(getGetMeUrl(),
   {
     ...options,
     method: 'GET'
@@ -745,49 +1021,94 @@ export const getMe = async ( options?: Parameters<typeof apiFetch>[1]): Promise<
 
 
 
-export type enrollTOTPResponse201 = {
-  data: TOTPEnrollment
-  status: 201
+
+
+export const getGetMeQueryKey = () => {
+    return [
+    `/me`
+    ] as const;
+    }
+
+
+export const getGetMeQueryOptions = <TData = Awaited<ReturnType<typeof getMe>>, TError = ErrorType<UnauthorizedResponse | InternalErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMeQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMe>>> = ({ signal }) => getMe({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
 }
 
-export type enrollTOTPResponse401 = {
-  data: UnauthorizedResponse
-  status: 401
+export type GetMeQueryResult = NonNullable<Awaited<ReturnType<typeof getMe>>>
+export type GetMeQueryError = ErrorType<UnauthorizedResponse | InternalErrorResponse>
+
+
+/**
+ * The session's user and every tenant they belong to, with its role, suspended tenants included (acting in one answers 403 auth.tenant_forbidden). Needs no X-Tenant-ID: the front end uses it to pick one.
+ * @summary The current user and their memberships
+ */
+export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = ErrorType<UnauthorizedResponse | InternalErrorResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMe>>,
+          TError,
+          Awaited<ReturnType<typeof getMe>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * The session's user and every tenant they belong to, with its role, suspended tenants included (acting in one answers 403 auth.tenant_forbidden). Needs no X-Tenant-ID: the front end uses it to pick one.
+ * @summary The current user and their memberships
+ */
+export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = ErrorType<UnauthorizedResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMe>>,
+          TError,
+          Awaited<ReturnType<typeof getMe>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * The session's user and every tenant they belong to, with its role, suspended tenants included (acting in one answers 403 auth.tenant_forbidden). Needs no X-Tenant-ID: the front end uses it to pick one.
+ * @summary The current user and their memberships
+ */
+export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = ErrorType<UnauthorizedResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * The session's user and every tenant they belong to, with its role, suspended tenants included (acting in one answers 403 auth.tenant_forbidden). Needs no X-Tenant-ID: the front end uses it to pick one.
+ * @summary The current user and their memberships
+ */
+export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = ErrorType<UnauthorizedResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetMeQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
 }
 
-export type enrollTOTPResponse403 = {
-  data: ForbiddenResponse
-  status: 403
-}
 
-export type enrollTOTPResponse409 = {
-  data: ConflictResponse
-  status: 409
-}
 
-export type enrollTOTPResponse429 = {
-  data: TooManyRequestsResponse
-  status: 429
-}
 
-export type enrollTOTPResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
 
-export type enrollTOTPResponse503 = {
-  data: ServiceUnavailableResponse
-  status: 503
-}
 
-export type enrollTOTPResponseSuccess = (enrollTOTPResponse201) & {
-  headers: Headers;
-};
-export type enrollTOTPResponseError = (enrollTOTPResponse401 | enrollTOTPResponse403 | enrollTOTPResponse409 | enrollTOTPResponse429 | enrollTOTPResponse500 | enrollTOTPResponse503) & {
-  headers: Headers;
-};
-
-export type enrollTOTPResponse = (enrollTOTPResponseSuccess | enrollTOTPResponseError)
 
 export const getEnrollTOTPUrl = () => {
 
@@ -801,9 +1122,9 @@ export const getEnrollTOTPUrl = () => {
  * Creates a TOTP factor at the identity provider and its first challenge, valid 5 minutes. Show the QR code (or the secret) to the user once; the factor counts only after its first code is verified with POST /me/mfa/totp/verify. If the user already has a verified factor, the session must have verified one in the last 10 minutes (otherwise 403 auth.mfa_required). Rate limited per user.
  * @summary Enroll a TOTP factor
  */
-export const enrollTOTP = async ( options?: Parameters<typeof apiFetch>[1]): Promise<enrollTOTPResponse> => {
+export const enrollTOTP = async ( options?: Parameters<typeof apiFetch>[1]): Promise<TOTPEnrollment> => {
 
-  return apiFetch<enrollTOTPResponse>(getEnrollTOTPUrl(),
+  return apiFetch<TOTPEnrollment>(getEnrollTOTPUrl(),
   {
     ...options,
     method: 'POST'
@@ -814,59 +1135,56 @@ export const enrollTOTP = async ( options?: Parameters<typeof apiFetch>[1]): Pro
 
 
 
-export type createMFAChallengeResponse201 = {
-  data: MFAChallenge
-  status: 201
-}
 
-export type createMFAChallengeResponse400 = {
-  data: BadRequestResponse
-  status: 400
-}
 
-export type createMFAChallengeResponse401 = {
-  data: UnauthorizedResponse
-  status: 401
-}
+export const getEnrollTOTPMutationKey = () => ['enrollTOTP'] as const;
 
-export type createMFAChallengeResponse403 = {
-  data: ForbiddenResponse
-  status: 403
-}
+export const getEnrollTOTPMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse | InternalErrorResponse | ServiceUnavailableResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof enrollTOTP>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof enrollTOTP>>, TError,void, TContext> => {
 
-export type createMFAChallengeResponse404 = {
-  data: NotFoundResponse
-  status: 404
-}
+const mutationKey = getEnrollTOTPMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
 
-export type createMFAChallengeResponse409 = {
-  data: ConflictResponse
-  status: 409
-}
 
-export type createMFAChallengeResponse429 = {
-  data: TooManyRequestsResponse
-  status: 429
-}
 
-export type createMFAChallengeResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
 
-export type createMFAChallengeResponse503 = {
-  data: ServiceUnavailableResponse
-  status: 503
-}
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof enrollTOTP>>, void> = () => {
 
-export type createMFAChallengeResponseSuccess = (createMFAChallengeResponse201) & {
-  headers: Headers;
-};
-export type createMFAChallengeResponseError = (createMFAChallengeResponse400 | createMFAChallengeResponse401 | createMFAChallengeResponse403 | createMFAChallengeResponse404 | createMFAChallengeResponse409 | createMFAChallengeResponse429 | createMFAChallengeResponse500 | createMFAChallengeResponse503) & {
-  headers: Headers;
-};
 
-export type createMFAChallengeResponse = (createMFAChallengeResponseSuccess | createMFAChallengeResponseError)
+          return  enrollTOTP(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EnrollTOTPMutationResult = NonNullable<Awaited<ReturnType<typeof enrollTOTP>>>
+
+    export type EnrollTOTPMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse | InternalErrorResponse | ServiceUnavailableResponse>
+
+
+    /**
+ * Creates a TOTP factor at the identity provider and its first challenge, valid 5 minutes. Show the QR code (or the secret) to the user once; the factor counts only after its first code is verified with POST /me/mfa/totp/verify. If the user already has a verified factor, the session must have verified one in the last 10 minutes (otherwise 403 auth.mfa_required). Rate limited per user.
+ * @summary Enroll a TOTP factor
+ */
+export const useEnrollTOTP = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | ConflictResponse | TooManyRequestsResponse | InternalErrorResponse | ServiceUnavailableResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof enrollTOTP>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof enrollTOTP>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getEnrollTOTPMutationOptions(options), queryClient);
+    }
 
 export const getCreateMFAChallengeUrl = () => {
 
@@ -880,9 +1198,9 @@ export const getCreateMFAChallengeUrl = () => {
  * Creates a challenge of the factor, bound to this session, single-use and valid 5 minutes. Use it to answer 403 auth.mfa_required. Rate limited per user.
  * @summary Challenge one of the user's factors
  */
-export const createMFAChallenge = async (mFAChallengeRequest: MFAChallengeRequest, options?: Parameters<typeof apiFetch>[1]): Promise<createMFAChallengeResponse> => {
+export const createMFAChallenge = async (mFAChallengeRequest: MFAChallengeRequest, options?: Parameters<typeof apiFetch>[1]): Promise<MFAChallenge> => {
 
-  return apiFetch<createMFAChallengeResponse>(getCreateMFAChallengeUrl(),
+  return apiFetch<MFAChallenge>(getCreateMFAChallengeUrl(),
   {
     ...options,
     method: 'POST',
@@ -893,64 +1211,56 @@ export const createMFAChallenge = async (mFAChallengeRequest: MFAChallengeReques
 
 
 
-export type verifyTOTPResponse200 = {
-  data: MFAVerified
-  status: 200
-}
 
-export type verifyTOTPResponse400 = {
-  data: BadRequestResponse
-  status: 400
-}
 
-export type verifyTOTPResponse401 = {
-  data: UnauthorizedResponse
-  status: 401
-}
+export const getCreateMFAChallengeMutationKey = () => ['createMFAChallenge'] as const;
 
-export type verifyTOTPResponse403 = {
-  data: ForbiddenResponse
-  status: 403
-}
+export const getCreateMFAChallengeMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | InternalErrorResponse | ServiceUnavailableResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMFAChallenge>>, TError,CreateMFAChallengeMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createMFAChallenge>>, TError,CreateMFAChallengeMutationVariables, TContext> => {
 
-export type verifyTOTPResponse404 = {
-  data: NotFoundResponse
-  status: 404
-}
+const mutationKey = getCreateMFAChallengeMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
 
-export type verifyTOTPResponse409 = {
-  data: ConflictResponse
-  status: 409
-}
 
-export type verifyTOTPResponse422 = {
-  data: UnprocessableEntityResponse
-  status: 422
-}
 
-export type verifyTOTPResponse429 = {
-  data: TooManyRequestsResponse
-  status: 429
-}
 
-export type verifyTOTPResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createMFAChallenge>>, CreateMFAChallengeMutationVariables> = (props) => {
+          const {data} = props ?? {};
 
-export type verifyTOTPResponse503 = {
-  data: ServiceUnavailableResponse
-  status: 503
-}
+          return  createMFAChallenge(data,requestOptions)
+        }
 
-export type verifyTOTPResponseSuccess = (verifyTOTPResponse200) & {
-  headers: Headers;
-};
-export type verifyTOTPResponseError = (verifyTOTPResponse400 | verifyTOTPResponse401 | verifyTOTPResponse403 | verifyTOTPResponse404 | verifyTOTPResponse409 | verifyTOTPResponse422 | verifyTOTPResponse429 | verifyTOTPResponse500 | verifyTOTPResponse503) & {
-  headers: Headers;
-};
 
-export type verifyTOTPResponse = (verifyTOTPResponseSuccess | verifyTOTPResponseError)
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateMFAChallengeMutationResult = NonNullable<Awaited<ReturnType<typeof createMFAChallenge>>>
+    export type CreateMFAChallengeMutationBody = MFAChallengeRequest
+    export type CreateMFAChallengeMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | InternalErrorResponse | ServiceUnavailableResponse>
+    export type CreateMFAChallengeMutationVariables = {data: MFAChallengeRequest}
+
+    /**
+ * Creates a challenge of the factor, bound to this session, single-use and valid 5 minutes. Use it to answer 403 auth.mfa_required. Rate limited per user.
+ * @summary Challenge one of the user's factors
+ */
+export const useCreateMFAChallenge = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | InternalErrorResponse | ServiceUnavailableResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMFAChallenge>>, TError,CreateMFAChallengeMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createMFAChallenge>>,
+        TError,
+        CreateMFAChallengeMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateMFAChallengeMutationOptions(options), queryClient);
+    }
 
 export const getVerifyTOTPUrl = () => {
 
@@ -964,9 +1274,9 @@ export const getVerifyTOTPUrl = () => {
  * Answers a challenge of this session with a code. The challenge is used up by the attempt, right or wrong. On success the session is replaced by a new one, whose MFA counts from now: the response sets a new __Host-session cookie and the old one stops working. The first code of a new factor also verifies the factor. At most 5 attempts per user and per session in 15 minutes (429 mfa.rate_limited). A code already accepted with the factor is refused (409 mfa.code_reused).
  * @summary Verify a TOTP code
  */
-export const verifyTOTP = async (mFAVerifyRequest: MFAVerifyRequest, options?: Parameters<typeof apiFetch>[1]): Promise<verifyTOTPResponse> => {
+export const verifyTOTP = async (mFAVerifyRequest: MFAVerifyRequest, options?: Parameters<typeof apiFetch>[1]): Promise<MFAVerified> => {
 
-  return apiFetch<verifyTOTPResponse>(getVerifyTOTPUrl(),
+  return apiFetch<MFAVerified>(getVerifyTOTPUrl(),
   {
     ...options,
     method: 'POST',
@@ -977,49 +1287,56 @@ export const verifyTOTP = async (mFAVerifyRequest: MFAVerifyRequest, options?: P
 
 
 
-export type removeTOTPResponse204 = {
-  data: void
-  status: 204
-}
 
-export type removeTOTPResponse400 = {
-  data: BadRequestResponse
-  status: 400
-}
 
-export type removeTOTPResponse401 = {
-  data: UnauthorizedResponse
-  status: 401
-}
+export const getVerifyTOTPMutationKey = () => ['verifyTOTP'] as const;
 
-export type removeTOTPResponse403 = {
-  data: ForbiddenResponse
-  status: 403
-}
+export const getVerifyTOTPMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | UnprocessableEntityResponse | TooManyRequestsResponse | InternalErrorResponse | ServiceUnavailableResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof verifyTOTP>>, TError,VerifyTOTPMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof verifyTOTP>>, TError,VerifyTOTPMutationVariables, TContext> => {
 
-export type removeTOTPResponse404 = {
-  data: NotFoundResponse
-  status: 404
-}
+const mutationKey = getVerifyTOTPMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
 
-export type removeTOTPResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
 
-export type removeTOTPResponse503 = {
-  data: ServiceUnavailableResponse
-  status: 503
-}
 
-export type removeTOTPResponseSuccess = (removeTOTPResponse204) & {
-  headers: Headers;
-};
-export type removeTOTPResponseError = (removeTOTPResponse400 | removeTOTPResponse401 | removeTOTPResponse403 | removeTOTPResponse404 | removeTOTPResponse500 | removeTOTPResponse503) & {
-  headers: Headers;
-};
 
-export type removeTOTPResponse = (removeTOTPResponseSuccess | removeTOTPResponseError)
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof verifyTOTP>>, VerifyTOTPMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  verifyTOTP(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type VerifyTOTPMutationResult = NonNullable<Awaited<ReturnType<typeof verifyTOTP>>>
+    export type VerifyTOTPMutationBody = MFAVerifyRequest
+    export type VerifyTOTPMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | UnprocessableEntityResponse | TooManyRequestsResponse | InternalErrorResponse | ServiceUnavailableResponse>
+    export type VerifyTOTPMutationVariables = {data: MFAVerifyRequest}
+
+    /**
+ * Answers a challenge of this session with a code. The challenge is used up by the attempt, right or wrong. On success the session is replaced by a new one, whose MFA counts from now: the response sets a new __Host-session cookie and the old one stops working. The first code of a new factor also verifies the factor. At most 5 attempts per user and per session in 15 minutes (429 mfa.rate_limited). A code already accepted with the factor is refused (409 mfa.code_reused).
+ * @summary Verify a TOTP code
+ */
+export const useVerifyTOTP = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | UnprocessableEntityResponse | TooManyRequestsResponse | InternalErrorResponse | ServiceUnavailableResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof verifyTOTP>>, TError,VerifyTOTPMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof verifyTOTP>>,
+        TError,
+        VerifyTOTPMutationVariables,
+        TContext
+      > => {
+      return useMutation(getVerifyTOTPMutationOptions(options), queryClient);
+    }
 
 export const getRemoveTOTPUrl = (factorId: string,) => {
 
@@ -1033,9 +1350,9 @@ export const getRemoveTOTPUrl = (factorId: string,) => {
  * Removes the factor here and at the identity provider. If the user has a verified factor, the session must have verified one in the last 10 minutes (403 auth.mfa_required). The last verified factor cannot be removed while a role of the user, in an active tenant, requires MFA (403 mfa.last_factor_required).
  * @summary Remove one of the user's factors
  */
-export const removeTOTP = async (factorId: string, options?: Parameters<typeof apiFetch>[1]): Promise<removeTOTPResponse> => {
+export const removeTOTP = async (factorId: string, options?: Parameters<typeof apiFetch>[1]): Promise<void> => {
 
-  return apiFetch<removeTOTPResponse>(getRemoveTOTPUrl(factorId),
+  return apiFetch<void>(getRemoveTOTPUrl(factorId),
   {
     ...options,
     method: 'DELETE'
@@ -1046,34 +1363,56 @@ export const removeTOTP = async (factorId: string, options?: Parameters<typeof a
 
 
 
-export type getCurrentTenantResponse200 = {
-  data: CurrentTenant
-  status: 200
-}
 
-export type getCurrentTenantResponse401 = {
-  data: UnauthorizedResponse
-  status: 401
-}
 
-export type getCurrentTenantResponse403 = {
-  data: ForbiddenResponse
-  status: 403
-}
+export const getRemoveTOTPMutationKey = () => ['removeTOTP'] as const;
 
-export type getCurrentTenantResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
+export const getRemoveTOTPMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | InternalErrorResponse | ServiceUnavailableResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeTOTP>>, TError,RemoveTOTPMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeTOTP>>, TError,RemoveTOTPMutationVariables, TContext> => {
 
-export type getCurrentTenantResponseSuccess = (getCurrentTenantResponse200) & {
-  headers: Headers;
-};
-export type getCurrentTenantResponseError = (getCurrentTenantResponse401 | getCurrentTenantResponse403 | getCurrentTenantResponse500) & {
-  headers: Headers;
-};
+const mutationKey = getRemoveTOTPMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
 
-export type getCurrentTenantResponse = (getCurrentTenantResponseSuccess | getCurrentTenantResponseError)
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeTOTP>>, RemoveTOTPMutationVariables> = (props) => {
+          const {factorId} = props ?? {};
+
+          return  removeTOTP(factorId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveTOTPMutationResult = NonNullable<Awaited<ReturnType<typeof removeTOTP>>>
+
+    export type RemoveTOTPMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | InternalErrorResponse | ServiceUnavailableResponse>
+    export type RemoveTOTPMutationVariables = {factorId: string}
+
+    /**
+ * Removes the factor here and at the identity provider. If the user has a verified factor, the session must have verified one in the last 10 minutes (403 auth.mfa_required). The last verified factor cannot be removed while a role of the user, in an active tenant, requires MFA (403 mfa.last_factor_required).
+ * @summary Remove one of the user's factors
+ */
+export const useRemoveTOTP = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | InternalErrorResponse | ServiceUnavailableResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeTOTP>>, TError,RemoveTOTPMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof removeTOTP>>,
+        TError,
+        RemoveTOTPMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRemoveTOTPMutationOptions(options), queryClient);
+    }
 
 export const getGetCurrentTenantUrl = () => {
 
@@ -1087,9 +1426,9 @@ export const getGetCurrentTenantUrl = () => {
  * Declares no security, so it takes the default: a session and X-Tenant-ID. The front end uses the permissions to show only what the role allows; the API checks them again in every use case.
  * @summary The tenant named by X-Tenant-ID, with the caller's role and permissions in it
  */
-export const getCurrentTenant = async ( options?: Parameters<typeof apiFetch>[1]): Promise<getCurrentTenantResponse> => {
+export const getCurrentTenant = async ( options?: Parameters<typeof apiFetch>[1]): Promise<CurrentTenant> => {
 
-  return apiFetch<getCurrentTenantResponse>(getGetCurrentTenantUrl(),
+  return apiFetch<CurrentTenant>(getGetCurrentTenantUrl(),
   {
     ...options,
     method: 'GET'
@@ -1100,44 +1439,94 @@ export const getCurrentTenant = async ( options?: Parameters<typeof apiFetch>[1]
 
 
 
-export type updateCurrentTenantResponse200 = {
-  data: Tenant
-  status: 200
+
+
+export const getGetCurrentTenantQueryKey = () => {
+    return [
+    `/tenant`
+    ] as const;
+    }
+
+
+export const getGetCurrentTenantQueryOptions = <TData = Awaited<ReturnType<typeof getCurrentTenant>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCurrentTenant>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCurrentTenantQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCurrentTenant>>> = ({ signal }) => getCurrentTenant({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCurrentTenant>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
 }
 
-export type updateCurrentTenantResponse400 = {
-  data: BadRequestResponse
-  status: 400
+export type GetCurrentTenantQueryResult = NonNullable<Awaited<ReturnType<typeof getCurrentTenant>>>
+export type GetCurrentTenantQueryError = ErrorType<UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>
+
+
+/**
+ * Declares no security, so it takes the default: a session and X-Tenant-ID. The front end uses the permissions to show only what the role allows; the API checks them again in every use case.
+ * @summary The tenant named by X-Tenant-ID, with the caller's role and permissions in it
+ */
+export function useGetCurrentTenant<TData = Awaited<ReturnType<typeof getCurrentTenant>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCurrentTenant>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCurrentTenant>>,
+          TError,
+          Awaited<ReturnType<typeof getCurrentTenant>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * Declares no security, so it takes the default: a session and X-Tenant-ID. The front end uses the permissions to show only what the role allows; the API checks them again in every use case.
+ * @summary The tenant named by X-Tenant-ID, with the caller's role and permissions in it
+ */
+export function useGetCurrentTenant<TData = Awaited<ReturnType<typeof getCurrentTenant>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCurrentTenant>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCurrentTenant>>,
+          TError,
+          Awaited<ReturnType<typeof getCurrentTenant>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * Declares no security, so it takes the default: a session and X-Tenant-ID. The front end uses the permissions to show only what the role allows; the API checks them again in every use case.
+ * @summary The tenant named by X-Tenant-ID, with the caller's role and permissions in it
+ */
+export function useGetCurrentTenant<TData = Awaited<ReturnType<typeof getCurrentTenant>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCurrentTenant>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * Declares no security, so it takes the default: a session and X-Tenant-ID. The front end uses the permissions to show only what the role allows; the API checks them again in every use case.
+ * @summary The tenant named by X-Tenant-ID, with the caller's role and permissions in it
+ */
+export function useGetCurrentTenant<TData = Awaited<ReturnType<typeof getCurrentTenant>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCurrentTenant>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetCurrentTenantQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
 }
 
-export type updateCurrentTenantResponse401 = {
-  data: UnauthorizedResponse
-  status: 401
-}
 
-export type updateCurrentTenantResponse403 = {
-  data: ForbiddenResponse
-  status: 403
-}
 
-export type updateCurrentTenantResponse422 = {
-  data: UnprocessableEntityResponse
-  status: 422
-}
 
-export type updateCurrentTenantResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
 
-export type updateCurrentTenantResponseSuccess = (updateCurrentTenantResponse200) & {
-  headers: Headers;
-};
-export type updateCurrentTenantResponseError = (updateCurrentTenantResponse400 | updateCurrentTenantResponse401 | updateCurrentTenantResponse403 | updateCurrentTenantResponse422 | updateCurrentTenantResponse500) & {
-  headers: Headers;
-};
 
-export type updateCurrentTenantResponse = (updateCurrentTenantResponseSuccess | updateCurrentTenantResponseError)
 
 export const getUpdateCurrentTenantUrl = () => {
 
@@ -1151,9 +1540,9 @@ export const getUpdateCurrentTenantUrl = () => {
  * Needs tenant:update. Only the name changes; the slug is immutable, and sending it (or any other field) is 400 unknown_field. Audited as tenant.updated with the old and the new name.
  * @summary Rename the current tenant
  */
-export const updateCurrentTenant = async (tenantUpdate: TenantUpdate, options?: Parameters<typeof apiFetch>[1]): Promise<updateCurrentTenantResponse> => {
+export const updateCurrentTenant = async (tenantUpdate: TenantUpdate, options?: Parameters<typeof apiFetch>[1]): Promise<Tenant> => {
 
-  return apiFetch<updateCurrentTenantResponse>(getUpdateCurrentTenantUrl(),
+  return apiFetch<Tenant>(getUpdateCurrentTenantUrl(),
   {
     ...options,
     method: 'PATCH',
@@ -1164,49 +1553,56 @@ export const updateCurrentTenant = async (tenantUpdate: TenantUpdate, options?: 
 
 
 
-export type createTenantResponse201 = {
-  data: CreatedTenant
-  status: 201
-}
 
-export type createTenantResponse400 = {
-  data: BadRequestResponse
-  status: 400
-}
 
-export type createTenantResponse401 = {
-  data: UnauthorizedResponse
-  status: 401
-}
+export const getUpdateCurrentTenantMutationKey = () => ['updateCurrentTenant'] as const;
 
-export type createTenantResponse403 = {
-  data: ForbiddenResponse
-  status: 403
-}
+export const getUpdateCurrentTenantMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | UnprocessableEntityResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCurrentTenant>>, TError,UpdateCurrentTenantMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCurrentTenant>>, TError,UpdateCurrentTenantMutationVariables, TContext> => {
 
-export type createTenantResponse409 = {
-  data: ConflictResponse
-  status: 409
-}
+const mutationKey = getUpdateCurrentTenantMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
 
-export type createTenantResponse422 = {
-  data: UnprocessableEntityResponse
-  status: 422
-}
 
-export type createTenantResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
 
-export type createTenantResponseSuccess = (createTenantResponse201) & {
-  headers: Headers;
-};
-export type createTenantResponseError = (createTenantResponse400 | createTenantResponse401 | createTenantResponse403 | createTenantResponse409 | createTenantResponse422 | createTenantResponse500) & {
-  headers: Headers;
-};
 
-export type createTenantResponse = (createTenantResponseSuccess | createTenantResponseError)
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCurrentTenant>>, UpdateCurrentTenantMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateCurrentTenant(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCurrentTenantMutationResult = NonNullable<Awaited<ReturnType<typeof updateCurrentTenant>>>
+    export type UpdateCurrentTenantMutationBody = TenantUpdate
+    export type UpdateCurrentTenantMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | UnprocessableEntityResponse | InternalErrorResponse>
+    export type UpdateCurrentTenantMutationVariables = {data: TenantUpdate}
+
+    /**
+ * Needs tenant:update. Only the name changes; the slug is immutable, and sending it (or any other field) is 400 unknown_field. Audited as tenant.updated with the old and the new name.
+ * @summary Rename the current tenant
+ */
+export const useUpdateCurrentTenant = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | UnprocessableEntityResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCurrentTenant>>, TError,UpdateCurrentTenantMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateCurrentTenant>>,
+        TError,
+        UpdateCurrentTenantMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateCurrentTenantMutationOptions(options), queryClient);
+    }
 
 export const getCreateTenantUrl = () => {
 
@@ -1220,9 +1616,9 @@ export const getCreateTenantUrl = () => {
  * Needs a session but no tenant. The caller becomes the tenant's owner in the same transaction. If the owner role requires MFA, creating the tenant does not: acting in it does, so the first request with its X-Tenant-ID may answer 403 auth.mfa_enrollment_required or auth.mfa_required. Errors: 422 tenant.slug_invalid, 422 tenant.slug_reserved, 422 tenant.name_invalid, 409 tenant.slug_taken, 403 tenant.limit_reached (the caller has created as many tenants as TENANT_MAX_PER_USER allows).
  * @summary Create a tenant, with the caller as its owner
  */
-export const createTenant = async (tenantCreate: TenantCreate, options?: Parameters<typeof apiFetch>[1]): Promise<createTenantResponse> => {
+export const createTenant = async (tenantCreate: TenantCreate, options?: Parameters<typeof apiFetch>[1]): Promise<CreatedTenant> => {
 
-  return apiFetch<createTenantResponse>(getCreateTenantUrl(),
+  return apiFetch<CreatedTenant>(getCreateTenantUrl(),
   {
     ...options,
     method: 'POST',
@@ -1233,39 +1629,56 @@ export const createTenant = async (tenantCreate: TenantCreate, options?: Paramet
 
 
 
-export type listMembersResponse200 = {
-  data: MemberPage
-  status: 200
-}
 
-export type listMembersResponse400 = {
-  data: BadRequestResponse
-  status: 400
-}
 
-export type listMembersResponse401 = {
-  data: UnauthorizedResponse
-  status: 401
-}
+export const getCreateTenantMutationKey = () => ['createTenant'] as const;
 
-export type listMembersResponse403 = {
-  data: ForbiddenResponse
-  status: 403
-}
+export const getCreateTenantMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse | UnprocessableEntityResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTenant>>, TError,CreateTenantMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createTenant>>, TError,CreateTenantMutationVariables, TContext> => {
 
-export type listMembersResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
+const mutationKey = getCreateTenantMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
 
-export type listMembersResponseSuccess = (listMembersResponse200) & {
-  headers: Headers;
-};
-export type listMembersResponseError = (listMembersResponse400 | listMembersResponse401 | listMembersResponse403 | listMembersResponse500) & {
-  headers: Headers;
-};
 
-export type listMembersResponse = (listMembersResponseSuccess | listMembersResponseError)
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createTenant>>, CreateTenantMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createTenant(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateTenantMutationResult = NonNullable<Awaited<ReturnType<typeof createTenant>>>
+    export type CreateTenantMutationBody = TenantCreate
+    export type CreateTenantMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse | UnprocessableEntityResponse | InternalErrorResponse>
+    export type CreateTenantMutationVariables = {data: TenantCreate}
+
+    /**
+ * Needs a session but no tenant. The caller becomes the tenant's owner in the same transaction. If the owner role requires MFA, creating the tenant does not: acting in it does, so the first request with its X-Tenant-ID may answer 403 auth.mfa_enrollment_required or auth.mfa_required. Errors: 422 tenant.slug_invalid, 422 tenant.slug_reserved, 422 tenant.name_invalid, 409 tenant.slug_taken, 403 tenant.limit_reached (the caller has created as many tenants as TENANT_MAX_PER_USER allows).
+ * @summary Create a tenant, with the caller as its owner
+ */
+export const useCreateTenant = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse | UnprocessableEntityResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTenant>>, TError,CreateTenantMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createTenant>>,
+        TError,
+        CreateTenantMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateTenantMutationOptions(options), queryClient);
+    }
 
 export const getListMembersUrl = (params?: ListMembersParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -1286,9 +1699,9 @@ export const getListMembersUrl = (params?: ListMembersParams,) => {
  * Needs members:read. Ordered by membership, oldest first, which is stable; pass the previous page's next_cursor to get the next one. Only members of the tenant of X-Tenant-ID.
  * @summary The members of the current tenant
  */
-export const listMembers = async (params?: ListMembersParams, options?: Parameters<typeof apiFetch>[1]): Promise<listMembersResponse> => {
+export const listMembers = async (params?: ListMembersParams, options?: Parameters<typeof apiFetch>[1]): Promise<MemberPage> => {
 
-  return apiFetch<listMembersResponse>(getListMembersUrl(params),
+  return apiFetch<MemberPage>(getListMembersUrl(params),
   {
     ...options,
     method: 'GET'
@@ -1299,39 +1712,94 @@ export const listMembers = async (params?: ListMembersParams, options?: Paramete
 
 
 
-export type leaveTenantResponse204 = {
-  data: void
-  status: 204
+
+
+export const getListMembersQueryKey = (params?: ListMembersParams,) => {
+    return [
+    `/tenant/members`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListMembersQueryOptions = <TData = Awaited<ReturnType<typeof listMembers>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>>(params?: ListMembersParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembers>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListMembersQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMembers>>> = ({ signal }) => listMembers(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listMembers>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
 }
 
-export type leaveTenantResponse401 = {
-  data: UnauthorizedResponse
-  status: 401
+export type ListMembersQueryResult = NonNullable<Awaited<ReturnType<typeof listMembers>>>
+export type ListMembersQueryError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>
+
+
+/**
+ * Needs members:read. Ordered by membership, oldest first, which is stable; pass the previous page's next_cursor to get the next one. Only members of the tenant of X-Tenant-ID.
+ * @summary The members of the current tenant
+ */
+export function useListMembers<TData = Awaited<ReturnType<typeof listMembers>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>>(
+ params: undefined |  ListMembersParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembers>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMembers>>,
+          TError,
+          Awaited<ReturnType<typeof listMembers>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * Needs members:read. Ordered by membership, oldest first, which is stable; pass the previous page's next_cursor to get the next one. Only members of the tenant of X-Tenant-ID.
+ * @summary The members of the current tenant
+ */
+export function useListMembers<TData = Awaited<ReturnType<typeof listMembers>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>>(
+ params?: ListMembersParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembers>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listMembers>>,
+          TError,
+          Awaited<ReturnType<typeof listMembers>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * Needs members:read. Ordered by membership, oldest first, which is stable; pass the previous page's next_cursor to get the next one. Only members of the tenant of X-Tenant-ID.
+ * @summary The members of the current tenant
+ */
+export function useListMembers<TData = Awaited<ReturnType<typeof listMembers>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>>(
+ params?: ListMembersParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembers>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * Needs members:read. Ordered by membership, oldest first, which is stable; pass the previous page's next_cursor to get the next one. Only members of the tenant of X-Tenant-ID.
+ * @summary The members of the current tenant
+ */
+export function useListMembers<TData = Awaited<ReturnType<typeof listMembers>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>>(
+ params?: ListMembersParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listMembers>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListMembersQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
 }
 
-export type leaveTenantResponse403 = {
-  data: ForbiddenResponse
-  status: 403
-}
 
-export type leaveTenantResponse409 = {
-  data: ConflictResponse
-  status: 409
-}
 
-export type leaveTenantResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
 
-export type leaveTenantResponseSuccess = (leaveTenantResponse204) & {
-  headers: Headers;
-};
-export type leaveTenantResponseError = (leaveTenantResponse401 | leaveTenantResponse403 | leaveTenantResponse409 | leaveTenantResponse500) & {
-  headers: Headers;
-};
 
-export type leaveTenantResponse = (leaveTenantResponseSuccess | leaveTenantResponseError)
+
 
 export const getLeaveTenantUrl = () => {
 
@@ -1345,9 +1813,9 @@ export const getLeaveTenantUrl = () => {
  * Needs only a session and the tenant, whatever the role. The last owner cannot leave (409 membership.last_owner): make someone else owner first.
  * @summary Leave the current tenant
  */
-export const leaveTenant = async ( options?: Parameters<typeof apiFetch>[1]): Promise<leaveTenantResponse> => {
+export const leaveTenant = async ( options?: Parameters<typeof apiFetch>[1]): Promise<void> => {
 
-  return apiFetch<leaveTenantResponse>(getLeaveTenantUrl(),
+  return apiFetch<void>(getLeaveTenantUrl(),
   {
     ...options,
     method: 'DELETE'
@@ -1358,54 +1826,56 @@ export const leaveTenant = async ( options?: Parameters<typeof apiFetch>[1]): Pr
 
 
 
-export type changeMemberRoleResponse200 = {
-  data: Member
-  status: 200
-}
 
-export type changeMemberRoleResponse400 = {
-  data: BadRequestResponse
-  status: 400
-}
 
-export type changeMemberRoleResponse401 = {
-  data: UnauthorizedResponse
-  status: 401
-}
+export const getLeaveTenantMutationKey = () => ['leaveTenant'] as const;
 
-export type changeMemberRoleResponse403 = {
-  data: ForbiddenResponse
-  status: 403
-}
+export const getLeaveTenantMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | ConflictResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof leaveTenant>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof leaveTenant>>, TError,void, TContext> => {
 
-export type changeMemberRoleResponse404 = {
-  data: NotFoundResponse
-  status: 404
-}
+const mutationKey = getLeaveTenantMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
 
-export type changeMemberRoleResponse409 = {
-  data: ConflictResponse
-  status: 409
-}
 
-export type changeMemberRoleResponse422 = {
-  data: UnprocessableEntityResponse
-  status: 422
-}
 
-export type changeMemberRoleResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
 
-export type changeMemberRoleResponseSuccess = (changeMemberRoleResponse200) & {
-  headers: Headers;
-};
-export type changeMemberRoleResponseError = (changeMemberRoleResponse400 | changeMemberRoleResponse401 | changeMemberRoleResponse403 | changeMemberRoleResponse404 | changeMemberRoleResponse409 | changeMemberRoleResponse422 | changeMemberRoleResponse500) & {
-  headers: Headers;
-};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof leaveTenant>>, void> = () => {
 
-export type changeMemberRoleResponse = (changeMemberRoleResponseSuccess | changeMemberRoleResponseError)
+
+          return  leaveTenant(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LeaveTenantMutationResult = NonNullable<Awaited<ReturnType<typeof leaveTenant>>>
+
+    export type LeaveTenantMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | ConflictResponse | InternalErrorResponse>
+
+
+    /**
+ * Needs only a session and the tenant, whatever the role. The last owner cannot leave (409 membership.last_owner): make someone else owner first.
+ * @summary Leave the current tenant
+ */
+export const useLeaveTenant = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | ConflictResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof leaveTenant>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof leaveTenant>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getLeaveTenantMutationOptions(options), queryClient);
+    }
 
 export const getChangeMemberRoleUrl = (userId: string,) => {
 
@@ -1420,9 +1890,9 @@ export const getChangeMemberRoleUrl = (userId: string,) => {
  * @summary Change a member's role
  */
 export const changeMemberRole = async (userId: string,
-    memberRoleChange: MemberRoleChange, options?: Parameters<typeof apiFetch>[1]): Promise<changeMemberRoleResponse> => {
+    memberRoleChange: MemberRoleChange, options?: Parameters<typeof apiFetch>[1]): Promise<Member> => {
 
-  return apiFetch<changeMemberRoleResponse>(getChangeMemberRoleUrl(userId),
+  return apiFetch<Member>(getChangeMemberRoleUrl(userId),
   {
     ...options,
     method: 'PATCH',
@@ -1433,49 +1903,56 @@ export const changeMemberRole = async (userId: string,
 
 
 
-export type removeMemberResponse204 = {
-  data: void
-  status: 204
-}
 
-export type removeMemberResponse400 = {
-  data: BadRequestResponse
-  status: 400
-}
 
-export type removeMemberResponse401 = {
-  data: UnauthorizedResponse
-  status: 401
-}
+export const getChangeMemberRoleMutationKey = () => ['changeMemberRole'] as const;
 
-export type removeMemberResponse403 = {
-  data: ForbiddenResponse
-  status: 403
-}
+export const getChangeMemberRoleMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | UnprocessableEntityResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof changeMemberRole>>, TError,ChangeMemberRoleMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof changeMemberRole>>, TError,ChangeMemberRoleMutationVariables, TContext> => {
 
-export type removeMemberResponse404 = {
-  data: NotFoundResponse
-  status: 404
-}
+const mutationKey = getChangeMemberRoleMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
 
-export type removeMemberResponse409 = {
-  data: ConflictResponse
-  status: 409
-}
 
-export type removeMemberResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
 
-export type removeMemberResponseSuccess = (removeMemberResponse204) & {
-  headers: Headers;
-};
-export type removeMemberResponseError = (removeMemberResponse400 | removeMemberResponse401 | removeMemberResponse403 | removeMemberResponse404 | removeMemberResponse409 | removeMemberResponse500) & {
-  headers: Headers;
-};
 
-export type removeMemberResponse = (removeMemberResponseSuccess | removeMemberResponseError)
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof changeMemberRole>>, ChangeMemberRoleMutationVariables> = (props) => {
+          const {userId,data} = props ?? {};
+
+          return  changeMemberRole(userId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ChangeMemberRoleMutationResult = NonNullable<Awaited<ReturnType<typeof changeMemberRole>>>
+    export type ChangeMemberRoleMutationBody = MemberRoleChange
+    export type ChangeMemberRoleMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | UnprocessableEntityResponse | InternalErrorResponse>
+    export type ChangeMemberRoleMutationVariables = {userId: string;data: MemberRoleChange}
+
+    /**
+ * Needs members:manage. The caller acts only on members whose role is strictly included in theirs (an owner also on other owners) and assigns only roles included in theirs; nobody changes their own role. Errors: 404 membership.not_found (not a member of this tenant, whether or not the user exists), 403 membership.target_forbidden, membership.role_not_assignable or membership.self_change, 422 membership.unknown_role, 409 membership.last_owner or membership.changed (a role changed meanwhile; read again and retry).
+ * @summary Change a member's role
+ */
+export const useChangeMemberRole = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | UnprocessableEntityResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof changeMemberRole>>, TError,ChangeMemberRoleMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof changeMemberRole>>,
+        TError,
+        ChangeMemberRoleMutationVariables,
+        TContext
+      > => {
+      return useMutation(getChangeMemberRoleMutationOptions(options), queryClient);
+    }
 
 export const getRemoveMemberUrl = (userId: string,) => {
 
@@ -1489,9 +1966,9 @@ export const getRemoveMemberUrl = (userId: string,) => {
  * Needs members:manage and the same hierarchy as changing the role. To leave the tenant, use DELETE /tenant/members/me (403 membership.self_change here). The last owner cannot be removed (409 membership.last_owner).
  * @summary Remove a member from the current tenant
  */
-export const removeMember = async (userId: string, options?: Parameters<typeof apiFetch>[1]): Promise<removeMemberResponse> => {
+export const removeMember = async (userId: string, options?: Parameters<typeof apiFetch>[1]): Promise<void> => {
 
-  return apiFetch<removeMemberResponse>(getRemoveMemberUrl(userId),
+  return apiFetch<void>(getRemoveMemberUrl(userId),
   {
     ...options,
     method: 'DELETE'
@@ -1502,39 +1979,56 @@ export const removeMember = async (userId: string, options?: Parameters<typeof a
 
 
 
-export type listInvitationsResponse200 = {
-  data: InvitationPage
-  status: 200
-}
 
-export type listInvitationsResponse400 = {
-  data: BadRequestResponse
-  status: 400
-}
 
-export type listInvitationsResponse401 = {
-  data: UnauthorizedResponse
-  status: 401
-}
+export const getRemoveMemberMutationKey = () => ['removeMember'] as const;
 
-export type listInvitationsResponse403 = {
-  data: ForbiddenResponse
-  status: 403
-}
+export const getRemoveMemberMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeMember>>, TError,RemoveMemberMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeMember>>, TError,RemoveMemberMutationVariables, TContext> => {
 
-export type listInvitationsResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
+const mutationKey = getRemoveMemberMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
 
-export type listInvitationsResponseSuccess = (listInvitationsResponse200) & {
-  headers: Headers;
-};
-export type listInvitationsResponseError = (listInvitationsResponse400 | listInvitationsResponse401 | listInvitationsResponse403 | listInvitationsResponse500) & {
-  headers: Headers;
-};
 
-export type listInvitationsResponse = (listInvitationsResponseSuccess | listInvitationsResponseError)
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeMember>>, RemoveMemberMutationVariables> = (props) => {
+          const {userId} = props ?? {};
+
+          return  removeMember(userId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveMemberMutationResult = NonNullable<Awaited<ReturnType<typeof removeMember>>>
+
+    export type RemoveMemberMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | InternalErrorResponse>
+    export type RemoveMemberMutationVariables = {userId: string}
+
+    /**
+ * Needs members:manage and the same hierarchy as changing the role. To leave the tenant, use DELETE /tenant/members/me (403 membership.self_change here). The last owner cannot be removed (409 membership.last_owner).
+ * @summary Remove a member from the current tenant
+ */
+export const useRemoveMember = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeMember>>, TError,RemoveMemberMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof removeMember>>,
+        TError,
+        RemoveMemberMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRemoveMemberMutationOptions(options), queryClient);
+    }
 
 export const getListInvitationsUrl = (params?: ListInvitationsParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -1555,9 +2049,9 @@ export const getListInvitationsUrl = (params?: ListInvitationsParams,) => {
  * Needs members:invite. Not accepted and not revoked, expired ones included (expired: true; resending renews them), oldest first, by cursor like the members.
  * @summary The pending invitations of the current tenant
  */
-export const listInvitations = async (params?: ListInvitationsParams, options?: Parameters<typeof apiFetch>[1]): Promise<listInvitationsResponse> => {
+export const listInvitations = async (params?: ListInvitationsParams, options?: Parameters<typeof apiFetch>[1]): Promise<InvitationPage> => {
 
-  return apiFetch<listInvitationsResponse>(getListInvitationsUrl(params),
+  return apiFetch<InvitationPage>(getListInvitationsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -1568,54 +2062,94 @@ export const listInvitations = async (params?: ListInvitationsParams, options?: 
 
 
 
-export type createInvitationResponse201 = {
-  data: Invitation
-  status: 201
+
+
+export const getListInvitationsQueryKey = (params?: ListInvitationsParams,) => {
+    return [
+    `/invitations`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListInvitationsQueryOptions = <TData = Awaited<ReturnType<typeof listInvitations>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>>(params?: ListInvitationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvitations>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListInvitationsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listInvitations>>> = ({ signal }) => listInvitations(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listInvitations>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
 }
 
-export type createInvitationResponse400 = {
-  data: BadRequestResponse
-  status: 400
+export type ListInvitationsQueryResult = NonNullable<Awaited<ReturnType<typeof listInvitations>>>
+export type ListInvitationsQueryError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>
+
+
+/**
+ * Needs members:invite. Not accepted and not revoked, expired ones included (expired: true; resending renews them), oldest first, by cursor like the members.
+ * @summary The pending invitations of the current tenant
+ */
+export function useListInvitations<TData = Awaited<ReturnType<typeof listInvitations>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>>(
+ params: undefined |  ListInvitationsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvitations>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listInvitations>>,
+          TError,
+          Awaited<ReturnType<typeof listInvitations>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * Needs members:invite. Not accepted and not revoked, expired ones included (expired: true; resending renews them), oldest first, by cursor like the members.
+ * @summary The pending invitations of the current tenant
+ */
+export function useListInvitations<TData = Awaited<ReturnType<typeof listInvitations>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>>(
+ params?: ListInvitationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvitations>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listInvitations>>,
+          TError,
+          Awaited<ReturnType<typeof listInvitations>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * Needs members:invite. Not accepted and not revoked, expired ones included (expired: true; resending renews them), oldest first, by cursor like the members.
+ * @summary The pending invitations of the current tenant
+ */
+export function useListInvitations<TData = Awaited<ReturnType<typeof listInvitations>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>>(
+ params?: ListInvitationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvitations>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * Needs members:invite. Not accepted and not revoked, expired ones included (expired: true; resending renews them), oldest first, by cursor like the members.
+ * @summary The pending invitations of the current tenant
+ */
+export function useListInvitations<TData = Awaited<ReturnType<typeof listInvitations>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>>(
+ params?: ListInvitationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInvitations>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListInvitationsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
 }
 
-export type createInvitationResponse401 = {
-  data: UnauthorizedResponse
-  status: 401
-}
 
-export type createInvitationResponse403 = {
-  data: ForbiddenResponse
-  status: 403
-}
 
-export type createInvitationResponse409 = {
-  data: ConflictResponse
-  status: 409
-}
 
-export type createInvitationResponse422 = {
-  data: UnprocessableEntityResponse
-  status: 422
-}
 
-export type createInvitationResponse429 = {
-  data: TooManyRequestsResponse
-  status: 429
-}
 
-export type createInvitationResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
-
-export type createInvitationResponseSuccess = (createInvitationResponse201) & {
-  headers: Headers;
-};
-export type createInvitationResponseError = (createInvitationResponse400 | createInvitationResponse401 | createInvitationResponse403 | createInvitationResponse409 | createInvitationResponse422 | createInvitationResponse429 | createInvitationResponse500) & {
-  headers: Headers;
-};
-
-export type createInvitationResponse = (createInvitationResponseSuccess | createInvitationResponseError)
 
 export const getCreateInvitationUrl = () => {
 
@@ -1629,9 +2163,9 @@ export const getCreateInvitationUrl = () => {
  * Needs members:invite, and the role must be one the caller may offer: included in theirs, owner only by an owner (403 invitation.role_not_offerable). The link (/invite#token=…) goes to the email once the invitation is stored; the response never carries it. Errors: 422 invitation.email_invalid or invitation.unknown_role, 409 invitation.already_member, 409 invitation.pending (resend that one), 409 membership.changed, 429 rate_limit.exceeded (20 invitations and resends per user and hour).
  * @summary Invite someone to the current tenant
  */
-export const createInvitation = async (invitationCreate: InvitationCreate, options?: Parameters<typeof apiFetch>[1]): Promise<createInvitationResponse> => {
+export const createInvitation = async (invitationCreate: InvitationCreate, options?: Parameters<typeof apiFetch>[1]): Promise<Invitation> => {
 
-  return apiFetch<createInvitationResponse>(getCreateInvitationUrl(),
+  return apiFetch<Invitation>(getCreateInvitationUrl(),
   {
     ...options,
     method: 'POST',
@@ -1642,54 +2176,56 @@ export const createInvitation = async (invitationCreate: InvitationCreate, optio
 
 
 
-export type acceptInvitationResponse200 = {
-  data: AcceptedInvitation
-  status: 200
-}
 
-export type acceptInvitationResponse400 = {
-  data: BadRequestResponse
-  status: 400
-}
 
-export type acceptInvitationResponse401 = {
-  data: UnauthorizedResponse
-  status: 401
-}
+export const getCreateInvitationMutationKey = () => ['createInvitation'] as const;
 
-export type acceptInvitationResponse403 = {
-  data: ForbiddenResponse
-  status: 403
-}
+export const getCreateInvitationMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse | UnprocessableEntityResponse | TooManyRequestsResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createInvitation>>, TError,CreateInvitationMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createInvitation>>, TError,CreateInvitationMutationVariables, TContext> => {
 
-export type acceptInvitationResponse404 = {
-  data: NotFoundResponse
-  status: 404
-}
+const mutationKey = getCreateInvitationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
 
-export type acceptInvitationResponse409 = {
-  data: ConflictResponse
-  status: 409
-}
 
-export type acceptInvitationResponse429 = {
-  data: TooManyRequestsResponse
-  status: 429
-}
 
-export type acceptInvitationResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
 
-export type acceptInvitationResponseSuccess = (acceptInvitationResponse200) & {
-  headers: Headers;
-};
-export type acceptInvitationResponseError = (acceptInvitationResponse400 | acceptInvitationResponse401 | acceptInvitationResponse403 | acceptInvitationResponse404 | acceptInvitationResponse409 | acceptInvitationResponse429 | acceptInvitationResponse500) & {
-  headers: Headers;
-};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createInvitation>>, CreateInvitationMutationVariables> = (props) => {
+          const {data} = props ?? {};
 
-export type acceptInvitationResponse = (acceptInvitationResponseSuccess | acceptInvitationResponseError)
+          return  createInvitation(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateInvitationMutationResult = NonNullable<Awaited<ReturnType<typeof createInvitation>>>
+    export type CreateInvitationMutationBody = InvitationCreate
+    export type CreateInvitationMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse | UnprocessableEntityResponse | TooManyRequestsResponse | InternalErrorResponse>
+    export type CreateInvitationMutationVariables = {data: InvitationCreate}
+
+    /**
+ * Needs members:invite, and the role must be one the caller may offer: included in theirs, owner only by an owner (403 invitation.role_not_offerable). The link (/invite#token=…) goes to the email once the invitation is stored; the response never carries it. Errors: 422 invitation.email_invalid or invitation.unknown_role, 409 invitation.already_member, 409 invitation.pending (resend that one), 409 membership.changed, 429 rate_limit.exceeded (20 invitations and resends per user and hour).
+ * @summary Invite someone to the current tenant
+ */
+export const useCreateInvitation = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse | UnprocessableEntityResponse | TooManyRequestsResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createInvitation>>, TError,CreateInvitationMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createInvitation>>,
+        TError,
+        CreateInvitationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateInvitationMutationOptions(options), queryClient);
+    }
 
 export const getAcceptInvitationUrl = () => {
 
@@ -1703,9 +2239,9 @@ export const getAcceptInvitationUrl = () => {
  * Needs a session but no tenant. The invitation's email must be the user's, and verified (403 invitation.email_mismatch); the invitation not used (409 invitation.already_accepted), revoked (409 invitation.revoked) or expired (409 invitation.expired); the tenant active (403 tenant.not_active); the user not a member yet (409 invitation.already_member). An unknown token is 404 invitation.not_found. 429 rate_limit.exceeded after 10 attempts per user in 15 minutes.
  * @summary Accept an invitation with its token
  */
-export const acceptInvitation = async (invitationAccept: InvitationAccept, options?: Parameters<typeof apiFetch>[1]): Promise<acceptInvitationResponse> => {
+export const acceptInvitation = async (invitationAccept: InvitationAccept, options?: Parameters<typeof apiFetch>[1]): Promise<AcceptedInvitation> => {
 
-  return apiFetch<acceptInvitationResponse>(getAcceptInvitationUrl(),
+  return apiFetch<AcceptedInvitation>(getAcceptInvitationUrl(),
   {
     ...options,
     method: 'POST',
@@ -1716,49 +2252,56 @@ export const acceptInvitation = async (invitationAccept: InvitationAccept, optio
 
 
 
-export type revokeInvitationResponse204 = {
-  data: void
-  status: 204
-}
 
-export type revokeInvitationResponse400 = {
-  data: BadRequestResponse
-  status: 400
-}
 
-export type revokeInvitationResponse401 = {
-  data: UnauthorizedResponse
-  status: 401
-}
+export const getAcceptInvitationMutationKey = () => ['acceptInvitation'] as const;
 
-export type revokeInvitationResponse403 = {
-  data: ForbiddenResponse
-  status: 403
-}
+export const getAcceptInvitationMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptInvitation>>, TError,AcceptInvitationMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof acceptInvitation>>, TError,AcceptInvitationMutationVariables, TContext> => {
 
-export type revokeInvitationResponse404 = {
-  data: NotFoundResponse
-  status: 404
-}
+const mutationKey = getAcceptInvitationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
 
-export type revokeInvitationResponse409 = {
-  data: ConflictResponse
-  status: 409
-}
 
-export type revokeInvitationResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
 
-export type revokeInvitationResponseSuccess = (revokeInvitationResponse204) & {
-  headers: Headers;
-};
-export type revokeInvitationResponseError = (revokeInvitationResponse400 | revokeInvitationResponse401 | revokeInvitationResponse403 | revokeInvitationResponse404 | revokeInvitationResponse409 | revokeInvitationResponse500) & {
-  headers: Headers;
-};
 
-export type revokeInvitationResponse = (revokeInvitationResponseSuccess | revokeInvitationResponseError)
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof acceptInvitation>>, AcceptInvitationMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  acceptInvitation(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AcceptInvitationMutationResult = NonNullable<Awaited<ReturnType<typeof acceptInvitation>>>
+    export type AcceptInvitationMutationBody = InvitationAccept
+    export type AcceptInvitationMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | InternalErrorResponse>
+    export type AcceptInvitationMutationVariables = {data: InvitationAccept}
+
+    /**
+ * Needs a session but no tenant. The invitation's email must be the user's, and verified (403 invitation.email_mismatch); the invitation not used (409 invitation.already_accepted), revoked (409 invitation.revoked) or expired (409 invitation.expired); the tenant active (403 tenant.not_active); the user not a member yet (409 invitation.already_member). An unknown token is 404 invitation.not_found. 429 rate_limit.exceeded after 10 attempts per user in 15 minutes.
+ * @summary Accept an invitation with its token
+ */
+export const useAcceptInvitation = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptInvitation>>, TError,AcceptInvitationMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof acceptInvitation>>,
+        TError,
+        AcceptInvitationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getAcceptInvitationMutationOptions(options), queryClient);
+    }
 
 export const getRevokeInvitationUrl = (id: string,) => {
 
@@ -1772,9 +2315,9 @@ export const getRevokeInvitationUrl = (id: string,) => {
  * Needs members:invite and that the caller may offer its role. 404 invitation.not_found outside this tenant; 409 invitation.already_accepted or invitation.revoked.
  * @summary Revoke a pending invitation
  */
-export const revokeInvitation = async (id: string, options?: Parameters<typeof apiFetch>[1]): Promise<revokeInvitationResponse> => {
+export const revokeInvitation = async (id: string, options?: Parameters<typeof apiFetch>[1]): Promise<void> => {
 
-  return apiFetch<revokeInvitationResponse>(getRevokeInvitationUrl(id),
+  return apiFetch<void>(getRevokeInvitationUrl(id),
   {
     ...options,
     method: 'DELETE'
@@ -1785,54 +2328,56 @@ export const revokeInvitation = async (id: string, options?: Parameters<typeof a
 
 
 
-export type resendInvitationResponse200 = {
-  data: Invitation
-  status: 200
-}
 
-export type resendInvitationResponse400 = {
-  data: BadRequestResponse
-  status: 400
-}
 
-export type resendInvitationResponse401 = {
-  data: UnauthorizedResponse
-  status: 401
-}
+export const getRevokeInvitationMutationKey = () => ['revokeInvitation'] as const;
 
-export type resendInvitationResponse403 = {
-  data: ForbiddenResponse
-  status: 403
-}
+export const getRevokeInvitationMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeInvitation>>, TError,RevokeInvitationMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokeInvitation>>, TError,RevokeInvitationMutationVariables, TContext> => {
 
-export type resendInvitationResponse404 = {
-  data: NotFoundResponse
-  status: 404
-}
+const mutationKey = getRevokeInvitationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
 
-export type resendInvitationResponse409 = {
-  data: ConflictResponse
-  status: 409
-}
 
-export type resendInvitationResponse429 = {
-  data: TooManyRequestsResponse
-  status: 429
-}
 
-export type resendInvitationResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
 
-export type resendInvitationResponseSuccess = (resendInvitationResponse200) & {
-  headers: Headers;
-};
-export type resendInvitationResponseError = (resendInvitationResponse400 | resendInvitationResponse401 | resendInvitationResponse403 | resendInvitationResponse404 | resendInvitationResponse409 | resendInvitationResponse429 | resendInvitationResponse500) & {
-  headers: Headers;
-};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeInvitation>>, RevokeInvitationMutationVariables> = (props) => {
+          const {id} = props ?? {};
 
-export type resendInvitationResponse = (resendInvitationResponseSuccess | resendInvitationResponseError)
+          return  revokeInvitation(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeInvitationMutationResult = NonNullable<Awaited<ReturnType<typeof revokeInvitation>>>
+
+    export type RevokeInvitationMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | InternalErrorResponse>
+    export type RevokeInvitationMutationVariables = {id: string}
+
+    /**
+ * Needs members:invite and that the caller may offer its role. 404 invitation.not_found outside this tenant; 409 invitation.already_accepted or invitation.revoked.
+ * @summary Revoke a pending invitation
+ */
+export const useRevokeInvitation = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeInvitation>>, TError,RevokeInvitationMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof revokeInvitation>>,
+        TError,
+        RevokeInvitationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRevokeInvitationMutationOptions(options), queryClient);
+    }
 
 export const getResendInvitationUrl = (id: string,) => {
 
@@ -1846,9 +2391,9 @@ export const getResendInvitationUrl = (id: string,) => {
  * Needs members:invite and that the caller may offer its role. Rotates the token (the previous link stops working) and renews the expiry, expired invitations included; the inviter does not change. Shares the quota of POST /invitations.
  * @summary Send a pending invitation again, with a new token
  */
-export const resendInvitation = async (id: string, options?: Parameters<typeof apiFetch>[1]): Promise<resendInvitationResponse> => {
+export const resendInvitation = async (id: string, options?: Parameters<typeof apiFetch>[1]): Promise<Invitation> => {
 
-  return apiFetch<resendInvitationResponse>(getResendInvitationUrl(id),
+  return apiFetch<Invitation>(getResendInvitationUrl(id),
   {
     ...options,
     method: 'POST'
@@ -1856,3 +2401,56 @@ export const resendInvitation = async (id: string, options?: Parameters<typeof a
 
   }
 );}
+
+
+
+
+
+export const getResendInvitationMutationKey = () => ['resendInvitation'] as const;
+
+export const getResendInvitationMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resendInvitation>>, TError,ResendInvitationMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resendInvitation>>, TError,ResendInvitationMutationVariables, TContext> => {
+
+const mutationKey = getResendInvitationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resendInvitation>>, ResendInvitationMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  resendInvitation(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResendInvitationMutationResult = NonNullable<Awaited<ReturnType<typeof resendInvitation>>>
+
+    export type ResendInvitationMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | InternalErrorResponse>
+    export type ResendInvitationMutationVariables = {id: string}
+
+    /**
+ * Needs members:invite and that the caller may offer its role. Rotates the token (the previous link stops working) and renews the expiry, expired invitations included; the inviter does not change. Shares the quota of POST /invitations.
+ * @summary Send a pending invitation again, with a new token
+ */
+export const useResendInvitation = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resendInvitation>>, TError,ResendInvitationMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof resendInvitation>>,
+        TError,
+        ResendInvitationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getResendInvitationMutationOptions(options), queryClient);
+    }
