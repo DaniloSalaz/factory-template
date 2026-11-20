@@ -135,9 +135,9 @@ func TestAccessLog(t *testing.T) {
 	}{
 		{"info for 2xx with route pattern", "/users/42?token=secret-query", 200, true, "INFO", "GET /users/{id}"},
 		{"info for 4xx", "/users/42", 404, true, "INFO", "GET /users/{id}"},
-		{"error for 5xx", "/users/42", 503, true, "ERROR", "GET /users/{id}"},
+		{"info for 5xx too", "/users/42", 503, true, "INFO", "GET /users/{id}"},
 		{"quiet path 2xx is skipped", "/healthz", 200, false, "", ""},
-		{"quiet path failure is logged", "/readyz", 503, true, "ERROR", "GET /readyz"},
+		{"quiet path failure is logged", "/readyz", 503, true, "INFO", "GET /readyz"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

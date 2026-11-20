@@ -68,9 +68,10 @@ func newRequestID() string {
 	return hex.EncodeToString(b)
 }
 
-// AccessLog writes one record per request: Error for 5xx, Info otherwise. Successful
-// requests to quietPaths (typically probes) are not logged. Only r.URL.Path is logged,
-// never the query string, which often carries tokens or personal data.
+// AccessLog writes one Info record per request, 5xx included: failures with their cause
+// are logged once by WriteProblem or Recover, so access records never double-count them.
+// Successful requests to quietPaths (typically probes) are not logged. Only r.URL.Path is
+// logged, never the query string, which often carries tokens or personal data.
 func AccessLog(logger *slog.Logger, quietPaths ...string) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -81,10 +82,6 @@ func AccessLog(logger *slog.Logger, quietPaths ...string) Middleware {
 			status := rw.Status()
 			if status < http.StatusMultipleChoices && slices.Contains(quietPaths, r.URL.Path) {
 				return
-			}
-			level := slog.LevelInfo
-			if status >= http.StatusInternalServerError {
-				level = slog.LevelError
 			}
 			attrs := []slog.Attr{
 				slog.String("method", r.Method),
@@ -99,7 +96,7 @@ func AccessLog(logger *slog.Logger, quietPaths ...string) Middleware {
 				slog.Int64("bytes", rw.bytes),
 				slog.Float64("duration_ms", float64(time.Since(start).Microseconds())/1000),
 			)
-			logger.LogAttrs(r.Context(), level, "http request", attrs...)
+			logger.LogAttrs(r.Context(), slog.LevelInfo, "http request", attrs...)
 		})
 	}
 }
