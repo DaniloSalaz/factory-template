@@ -9,6 +9,10 @@ servers:
 # forgets to declare its security fails closed. Public operations declare
 # `security: []`; those without a tenant, `security: [{session: []}]`. The API reads
 # this from gen/routes (routegen), never from a hand-written list.
+#
+# A JSON body whose schema says `additionalProperties: false` accepts only its declared
+# properties: any other top-level member is answered with 400 unknown_field
+# (httpx.KnownBodyFields, also from gen/routes), never ignored.
 security:
   - session: []
     tenant: []
@@ -363,8 +367,9 @@ paths:
       operationId: updateCurrentTenant
       summary: Rename the current tenant
       description: >-
-        Needs tenant:update. Only the name changes; the slug is immutable. Audited as
-        tenant.updated with the old and the new name.
+        Needs tenant:update. Only the name changes; the slug is immutable, and sending it
+        (or any other field) is 400 unknown_field. Audited as tenant.updated with the old
+        and the new name.
       tags: [identity]
       requestBody:
         required: true

@@ -472,6 +472,8 @@ El email del invitado no va en `metadata`. Los eventos de miembros (`membership.
 | `DELETE /invitations/{id}` | Sí | Sí | `members:invite` | Revocar |
 | `GET /audit` | Sí | Sí | `audit:read` | Auditoría del tenant |
 
+**Cuerpos estrictos.** Un cuerpo JSON cuyo esquema dice `additionalProperties: false` (todos los de hoy) solo admite sus propiedades declaradas: cualquier otro miembro de primer nivel da `400 unknown_field`, con un error por campo, en vez de ignorarse en silencio (un `slug` en `PATCH /tenant` haría creer al cliente que lo cambió). `routegen` saca la lista del contrato (`routes.BodyFields()`) y la aplica `httpx.KnownBodyFields`, después de los middlewares de sesión y tenant. Los objetos anidados no se comprueban.
+
 Los `{id}` de las invitaciones son de la invitación. Los miembros se nombran por su `userId`: dentro de un tenant identifica a una sola membresía, y quien no es miembro de este tenant da `404` exista o no, así que no revela usuarios de otros tenants. El rol `client` de la app legal no tiene `members:read`, `members:invite`, `members:manage` ni `audit:read`.
 
 ## 11. Pruebas obligatorias

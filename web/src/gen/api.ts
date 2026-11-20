@@ -1101,7 +1101,7 @@ export const getUpdateCurrentTenantUrl = () => {
 }
 
 /**
- * Needs tenant:update. Only the name changes; the slug is immutable. Audited as tenant.updated with the old and the new name.
+ * Needs tenant:update. Only the name changes; the slug is immutable, and sending it (or any other field) is 400 unknown_field. Audited as tenant.updated with the old and the new name.
  * @summary Rename the current tenant
  */
 export const updateCurrentTenant = async (tenantUpdate: TenantUpdate, options?: Parameters<typeof apiFetch>[1]): Promise<updateCurrentTenantResponse> => {

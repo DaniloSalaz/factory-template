@@ -101,6 +101,8 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		httpx.RouteSecurity(mux, routes.Security()),
 		idm.SessionMiddleware(),
 		idm.TenantMiddleware(),
+		// After authentication, so a caller without a session gets 401, not 400.
+		httpx.KnownBodyFields(mux, routes.BodyFields(), logger),
 	)
 
 	if err := httpx.NewServer(cfg.HTTP, handler, logger).Run(ctx); err != nil {

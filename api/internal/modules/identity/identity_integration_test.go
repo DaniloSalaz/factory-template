@@ -245,6 +245,7 @@ func newEnv(t *testing.T, opts options) *env {
 		httpx.RouteSecurity(mux, security),
 		m.SessionMiddleware(),
 		m.TenantMiddleware(),
+		httpx.KnownBodyFields(mux, routes.BodyFields(), logger),
 	)
 	srv := httptest.NewTLSServer(h)
 	t.Cleanup(srv.Close)

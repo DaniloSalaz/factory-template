@@ -189,7 +189,13 @@ func TestTenants_Rename(t *testing.T) {
 
 	wantProblem(t, mb.tenantJSON(tenant, http.MethodPatch, "/tenant", map[string]string{"name": "Nope"}), http.StatusForbidden, "authz.denied")
 	wantProblem(t, ab.tenantJSON(tenant, http.MethodPatch, "/tenant", map[string]string{"name": "  "}), http.StatusUnprocessableEntity, "tenant.name_invalid")
-	res := ab.tenantJSON(tenant, http.MethodPatch, "/tenant", map[string]string{"name": "Renamed"})
+	// The slug is immutable and not part of the contract: refused, not silently ignored.
+	res := ab.tenantJSON(tenant, http.MethodPatch, "/tenant", map[string]string{"name": "Renamed", "slug": "other"})
+	wantProblem(t, res, http.StatusBadRequest, "unknown_field")
+	if !strings.Contains(string(res.body), `"field":"slug"`) || e.scalar(`SELECT name FROM tenants WHERE id = $1`, tenant) != old {
+		t.Fatalf("PATCH with slug: %d %s", res.status, res.body)
+	}
+	res = ab.tenantJSON(tenant, http.MethodPatch, "/tenant", map[string]string{"name": "Renamed"})
 	if res.status != http.StatusOK || !strings.Contains(string(res.body), `"name":"Renamed"`) {
 		t.Fatalf("rename: %d %s", res.status, res.body)
 	}
