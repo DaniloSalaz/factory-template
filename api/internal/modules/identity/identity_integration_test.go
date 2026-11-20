@@ -118,11 +118,14 @@ type env struct {
 	super  *pgx.Conn
 	logs   *syncBuffer
 	module *identity.Module
+	sender *captureSender
 }
 
 type options struct {
 	rateLimit  int
 	maxTenants int
+	// acceptLimit is POST /invitations/accept per user in 15 minutes; 0 means 1000.
+	acceptLimit int
 	// catalog defaults to testCatalog.
 	catalog *authz.Catalog
 }
@@ -177,17 +180,25 @@ func newEnv(t *testing.T, opts options) *env {
 	if opts.maxTenants == 0 {
 		opts.maxTenants = 5
 	}
+	if opts.acceptLimit == 0 {
+		opts.acceptLimit = 1000
+	}
+	sender := &captureSender{}
 
 	m, err := identity.New(identity.Deps{
 		DB: db.New(pool), Logger: logger,
-		Web:            config.Web{FrontendOrigin: frontOrigin, AllowedOrigins: []string{frontOrigin}},
-		Auth:           config.Auth{SessionIdleTTL: idleTTL, SessionAbsoluteTTL: absoluteTTL},
-		WorkOS:         config.WorkOS{ClientID: "client_test", APIKey: pii.Secret(apiKey)},
-		RateLimiter:    ratelimit.NewMemory(opts.rateLimit, time.Minute, nil),
-		MFARateLimiter: ratelimit.NewMemory(5, 15*time.Minute, clk.Now),
-		Catalog:        opts.catalog,
-		Tenancy:        config.Tenancy{MaxTenantsPerUser: opts.maxTenants},
-		Provider:       idp, Now: clk.Now,
+		Web:                   config.Web{FrontendOrigin: frontOrigin, FrontBaseURL: frontOrigin, AllowedOrigins: []string{frontOrigin}},
+		Auth:                  config.Auth{SessionIdleTTL: idleTTL, SessionAbsoluteTTL: absoluteTTL},
+		WorkOS:                config.WorkOS{ClientID: "client_test", APIKey: pii.Secret(apiKey)},
+		RateLimiter:           ratelimit.NewMemory(opts.rateLimit, time.Minute, nil),
+		MFARateLimiter:        ratelimit.NewMemory(5, 15*time.Minute, clk.Now),
+		Catalog:               opts.catalog,
+		Tenancy:               config.Tenancy{MaxTenantsPerUser: opts.maxTenants},
+		TenantRateLimiter:     ratelimit.NewMemory(1000, time.Hour, nil),
+		InvitationRateLimiter: ratelimit.NewMemory(1000, time.Hour, nil),
+		AcceptRateLimiter:     ratelimit.NewMemory(opts.acceptLimit, 15*time.Minute, nil),
+		InvitationSender:      sender,
+		Provider:              idp, Now: clk.Now,
 	})
 	if err != nil {
 		t.Fatalf("identity.New: %v", err)
@@ -249,7 +260,7 @@ func newEnv(t *testing.T, opts options) *env {
 	)
 	srv := httptest.NewTLSServer(h)
 	t.Cleanup(srv.Close)
-	return &env{t: t, srv: srv, idp: idp, clock: clk, super: super, logs: logs, module: m}
+	return &env{t: t, srv: srv, idp: idp, clock: clk, super: super, logs: logs, module: m, sender: sender}
 }
 
 // browser is one cookie jar: one user agent.
@@ -1027,6 +1038,10 @@ func TestNew_StartsWithAnyCatalog(t *testing.T) {
 				WorkOS:      config.WorkOS{APIKey: pii.Secret(apiKey)},
 				RateLimiter: ratelimit.NewMemory(1, time.Minute, nil), MFARateLimiter: ratelimit.NewMemory(1, time.Minute, nil),
 				Catalog: testCatalog(t, ownerMFA), Provider: fakeidp.New(), Tenancy: config.Tenancy{MaxTenantsPerUser: 1},
+				TenantRateLimiter:     ratelimit.NewMemory(1, time.Minute, nil),
+				InvitationRateLimiter: ratelimit.NewMemory(1, time.Minute, nil),
+				AcceptRateLimiter:     ratelimit.NewMemory(1, time.Minute, nil),
+				InvitationSender:      &captureSender{},
 			})
 			if err != nil {
 				t.Fatalf("New = %v", err)
@@ -1450,7 +1465,10 @@ func TestMFA_RemoveFactor(t *testing.T) {
 	if e.idp.Factors() == 0 {
 		t.Fatal("the refused removal reached the provider")
 	}
-	ob.ageMFA(domain.FactorChangeMFAMaxAge + time.Second)
+	// A minute past the limit, not a second: mfa_auth_time comes from the database clock
+	// and the use case compares it with the test clock, which stands still; under load
+	// the two drift apart by more than a second.
+	ob.ageMFA(domain.FactorChangeMFAMaxAge + time.Minute)
 	e.exec(`UPDATE memberships SET role = 'member' WHERE tenant_id = $1`, tenant)
 	if res := ob.remove(factor); res.status != http.StatusForbidden || res.problemCode(t) != "auth.mfa_required" {
 		t.Fatalf("removing with an MFA older than 10 minutes: %d %s, want auth.mfa_required", res.status, res.body)

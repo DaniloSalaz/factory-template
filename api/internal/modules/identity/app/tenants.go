@@ -5,11 +5,13 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/netip"
+	"slices"
 
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/authz"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/clientip"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/ratelimit"
 )
 
 // Authorizer is the permission check of the use cases (authz.Authorizer).
@@ -22,11 +24,13 @@ type Tenants struct {
 	store      TenantStore
 	authz      Authorizer
 	maxPerUser int
+	limiter    ratelimit.Limiter
 }
 
-// NewTenants builds Tenants. maxPerUser is how many tenants a user may create.
-func NewTenants(store TenantStore, authorizer Authorizer, maxPerUser int) *Tenants {
-	return &Tenants{store: store, authz: authorizer, maxPerUser: maxPerUser}
+// NewTenants builds Tenants. maxPerUser is how many tenants a user may create in all;
+// limiter caps how often they may try (design, section 6).
+func NewTenants(store TenantStore, authorizer Authorizer, maxPerUser int, limiter ratelimit.Limiter) *Tenants {
+	return &Tenants{store: store, authz: authorizer, maxPerUser: maxPerUser, limiter: limiter}
 }
 
 // CreatedTenant is a tenant just created, with its creator as owner.
@@ -38,6 +42,9 @@ type CreatedTenant struct {
 // Create creates a tenant with user as its owner. It needs no permission and no MFA:
 // if the owner role requires MFA, acting in the tenant does, from the next request.
 func (t *Tenants) Create(ctx context.Context, user authctx.User, name, slug string) (CreatedTenant, error) {
+	if err := allow(ctx, t.limiter, "tenant:"+user.ID()); err != nil {
+		return CreatedTenant{}, err
+	}
 	name, err := domain.NormalizeTenantName(name)
 	if err != nil {
 		return CreatedTenant{}, err
@@ -110,6 +117,17 @@ const (
 	MaxMembersPage     = 100
 )
 
+// pageSize returns limit within 1..MaxMembersPage; 0 or less means DefaultMembersPage.
+func pageSize(limit int) int {
+	switch {
+	case limit <= 0:
+		return DefaultMembersPage
+	case limit > MaxMembersPage:
+		return MaxMembersPage
+	}
+	return limit
+}
+
 // MemberPage is a page of members; Next is the cursor of the next page, "" on the last.
 type MemberPage struct {
 	Members []Member
@@ -130,12 +148,7 @@ func (m *Members) List(ctx context.Context, cursor string, limit int) (MemberPag
 	if err != nil {
 		return MemberPage{}, err
 	}
-	switch {
-	case limit <= 0:
-		limit = DefaultMembersPage
-	case limit > MaxMembersPage:
-		limit = MaxMembersPage
-	}
+	limit = pageSize(limit)
 	var page MemberPage
 	err = m.store.InTenant(ctx, p, func(ctx context.Context, r TenantRepo) error {
 		// One more than the page tells whether another page follows.
@@ -167,7 +180,9 @@ func (m *Members) ChangeRole(ctx context.Context, userID, role string) (Member, 
 		if err := domain.CheckRoleChange(m.member(actor), m.member(target), m.role(role)); err != nil {
 			return err
 		}
-		if err := r.ChangeMemberRole(ctx, target.UserID, role, actor.Role, target.Role, ipPrefix(ctx)); err != nil {
+		// The member keeps the pending invitations their new role could still issue; the
+		// database revokes the rest in the same transaction (design, 5.6.4).
+		if err := r.ChangeMemberRole(ctx, target.UserID, role, actor.Role, target.Role, m.offerable(role), ipPrefix(ctx)); err != nil {
 			return err
 		}
 		out = target
@@ -237,6 +252,18 @@ func (m *Members) manage(ctx context.Context, userID string, fn func(context.Con
 	})
 }
 
+// offerable returns the roles of the catalog that a member with role may offer.
+func (m *Members) offerable(role string) []string {
+	r := m.role(role)
+	out := []string{}
+	for _, name := range m.catalog.Names() {
+		if domain.CanOffer(r, m.role(name)) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 func (m *Members) member(mem Member) domain.Member {
 	return domain.Member{UserID: mem.UserID, Role: m.role(mem.Role)}
 }
@@ -244,7 +271,10 @@ func (m *Members) member(mem Member) domain.Member {
 func (m *Members) role(name string) domain.Role {
 	_, known := m.catalog.Role(name)
 	perms := m.catalog.Permissions(name)
-	out := domain.Role{Name: name, Known: known, Owner: known && name == authz.RoleOwner, Permissions: make([]string, len(perms))}
+	out := domain.Role{
+		Name: name, Known: known, Owner: known && name == authz.RoleOwner,
+		CanInvite: slices.Contains(perms, authz.PermMembersInvite), Permissions: make([]string, len(perms)),
+	}
 	for i, p := range perms {
 		out.Permissions[i] = string(p)
 	}

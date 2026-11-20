@@ -170,6 +170,11 @@ func (c *Catalog) Role(name string) (Role, bool) {
 	return out, true
 }
 
+// Names returns the names of every role of the catalog, sorted.
+func (c *Catalog) Names() []string {
+	return slices.Sorted(maps.Keys(c.roles))
+}
+
 // Permissions returns the permissions of the named role. An unknown role has none.
 func (c *Catalog) Permissions(name string) []authctx.Permission {
 	r, ok := c.roles[name]

@@ -36,6 +36,18 @@ const (
 	mfaRateWindow = 15 * time.Minute
 )
 
+// Requests per user (design, section 6): creating a tenant, five an hour; inviting and
+// resending together, twenty an hour; accepting, ten in 15 minutes, which also bounds
+// guessing tokens.
+const (
+	tenantRateLimit  = 5
+	tenantRateWindow = time.Hour
+	inviteRateLimit  = 20
+	inviteRateWindow = time.Hour
+	acceptRateLimit  = 10
+	acceptRateWindow = 15 * time.Minute
+)
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 
@@ -72,12 +84,23 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 	defer pool.Close()
 
+	// Only a development sender exists: outside development the API does not start
+	// until real email arrives with the deployment (design, 5.6.6).
+	sender, err := identity.NewDevInvitationSender(cfg.Env, logger)
+	if err != nil {
+		return fmt.Errorf("invitation sender: %w", err)
+	}
+
 	idm, err := identity.New(identity.Deps{
 		DB: db.New(pool), Logger: logger, Web: cfg.Web, Auth: cfg.Auth, WorkOS: cfg.WorkOS,
-		RateLimiter:    ratelimit.NewMemory(authRateLimit, authRateWindow, nil),
-		MFARateLimiter: ratelimit.NewMemory(mfaRateLimit, mfaRateWindow, nil),
-		Catalog:        catalog,
-		Tenancy:        cfg.Tenancy,
+		RateLimiter:           ratelimit.NewMemory(authRateLimit, authRateWindow, nil),
+		MFARateLimiter:        ratelimit.NewMemory(mfaRateLimit, mfaRateWindow, nil),
+		Catalog:               catalog,
+		Tenancy:               cfg.Tenancy,
+		TenantRateLimiter:     ratelimit.NewMemory(tenantRateLimit, tenantRateWindow, nil),
+		InvitationRateLimiter: ratelimit.NewMemory(inviteRateLimit, inviteRateWindow, nil),
+		AcceptRateLimiter:     ratelimit.NewMemory(acceptRateLimit, acceptRateWindow, nil),
+		InvitationSender:      sender,
 	})
 	if err != nil {
 		return fmt.Errorf("wire identity module: %w", err)

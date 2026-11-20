@@ -227,7 +227,7 @@ func TestFunc_ChangeMemberRole(t *testing.T) {
 
 			f := newFixtures(t)
 			c := tc.setup(f)
-			err := execAs(t, tenantVars(c.tenant, c.actor, "tenant"), `SELECT change_member_role($1, $2, $3, $4, $5)`,
+			err := execAs(t, tenantVars(c.tenant, c.actor, "tenant"), `SELECT change_member_role($1, $2, $3, $4, NULL, $5)`,
 				c.member, c.role, c.actorRole, c.memberRole, c.ipPrefix)
 			var want []string
 			if tc.wantState != "" {
@@ -349,7 +349,7 @@ func TestFunc_MemberFunctionsStayInTheTenant(t *testing.T) {
 	a, ua := f.members("owner")
 	b, ub := f.members("owner", "member")
 	for name, sql := range map[string]string{
-		"change role": `SELECT change_member_role($1, 'member', 'owner', 'owner')`,
+		"change role": `SELECT change_member_role($1, 'member', 'owner', 'owner', NULL)`,
 		"remove":      `SELECT remove_member($1, 'owner', 'owner')`,
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -374,14 +374,14 @@ func TestFunc_MemberFunctionsLockTheTenant(t *testing.T) {
 	first, second := connect(t, testDB.RuntimeURL), connect(t, testDB.RuntimeURL)
 	tx1 := beginWith(ctx, t, first, tenantVars(tenant, u[0].id, "tenant"))
 	defer func() { _ = tx1.Rollback(context.WithoutCancel(ctx)) }()
-	if _, err := tx1.Exec(ctx, `SELECT change_member_role($1, 'admin', 'owner', 'owner')`, u[1].id); err != nil {
+	if _, err := tx1.Exec(ctx, `SELECT change_member_role($1, 'admin', 'owner', 'owner', NULL)`, u[1].id); err != nil {
 		t.Fatalf("first demotion: %v", err)
 	}
 
 	done := make(chan error, 1)
 	go func() {
 		tx2 := beginWith(ctx, t, second, tenantVars(tenant, u[1].id, "tenant"))
-		_, err := tx2.Exec(ctx, `SELECT change_member_role($1, 'admin', 'owner', 'owner')`, u[0].id)
+		_, err := tx2.Exec(ctx, `SELECT change_member_role($1, 'admin', 'owner', 'owner', NULL)`, u[0].id)
 		_ = tx2.Rollback(context.WithoutCancel(ctx))
 		done <- err
 	}()

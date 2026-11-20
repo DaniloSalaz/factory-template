@@ -174,17 +174,26 @@ Todas las respuestas llevan `Cache-Control: no-store`.
 ### 5.6 Invitaciones
 
 1. **Crear**: exige `members:invite`, que el rol ofrecido **exista en el catálogo** de la app y que esté incluido en el del actor. El rol `owner` solo lo puede ofrecer un owner (sección 8).
-2. **Duplicados**: ya es miembro → `409 invitation.already_member`. Pendiente sin caducar → `409 invitation.pending`, con opción de reenviar (rota el token y renueva la caducidad). Pendiente caducada → se revoca y se crea la nueva.
+2. **Duplicados**: ya es miembro → `409 invitation.already_member`. Pendiente sin caducar → `409 invitation.pending`, con opción de reenviar (rota el token y renueva la caducidad). Pendiente caducada → se revoca (`invitation.revoked`, motivo `expired_replaced`) y se crea la nueva. El índice único parcial `(tenant_id, email)` de las pendientes resuelve dos invitaciones simultáneas al mismo email: la segunda da `409 invitation.pending`.
+   - **Reenviar y revocar** (`POST /invitations/{id}/resend`, `DELETE /invitations/{id}`) exigen lo mismo que crear: `members:invite` y que el actor pueda ofrecer el rol de esa invitación (una de owner solo la reenvía o revoca un owner). Reenviar no cambia `invited_by`: la invitación sigue respaldada por quien la emitió. Revocar fija `revoked_at` (no borra la fila) y registra `invitation.revoked` con motivo `revoked`.
+   - **Listar** (`GET /invitations`): las no aceptadas ni revocadas, caducadas incluidas (`expired: true`, se pueden reenviar), por cursor como los miembros.
+   - **Orden de bloqueo**: crear, reenviar y revocar bloquean primero la fila del tenant (`FOR KEY SHARE`) y releen el rol del actor; si cambió desde que empezó la petición, `409 membership.changed`. Así una degradación en curso o termina antes, o espera a que la invitación exista y la revoca (punto 4). En toda la BD el orden es tenant → invitaciones → membresías; `accept_invitation` lo sigue también, y sin él una aceptación y la degradación de quien invitó se interbloqueaban (`40P01`).
 3. **Token**: un solo uso (se guarda su hash), 7 días, en el fragmento del enlace (`/invite#token=…`), con `Referrer-Policy: no-referrer` en la página. Antes del login, el front lo guarda en `sessionStorage`, borra el fragmento y lo recupera al volver. Nunca va en `return_to`.
-4. **Revocación automática**: cuando quien invitó es degradado a un rol que ya no incluye el ofrecido o pierde `members:invite`, es expulsado, abandona el tenant o es deshabilitado, **sus invitaciones pendientes se revocan en la misma transacción**. Así una invitación pendiente siempre está respaldada por alguien que aún podría emitirla, sin revalidarlo al aceptar. Se registra `invitation.revoked` con el motivo.
+4. **Revocación automática**: cuando quien invitó es degradado a un rol que ya no incluye el ofrecido o pierde `members:invite`, es expulsado, abandona el tenant o es deshabilitado, **sus invitaciones pendientes se revocan en la misma transacción**. Así una invitación pendiente siempre está respaldada por alguien que aún podría emitirla, sin revalidarlo al aceptar. Se registra `invitation.revoked` con el motivo (`inviter_role_changed`, `inviter_removed`, `inviter_left`), el rol ofrecido y quien invitó, nunca el email.
+   - Lo hacen `change_member_role`, `remove_member` y `leave_tenant` (migración 00006). Qué roles puede seguir ofreciendo el nuevo rol es una pregunta de permisos: Go la responde (`p_offerable_roles`, con la regla del punto 1) y la BD revoca las pendientes cuyo rol no está en la lista. Las caducadas sin revocar cuentan como pendientes: reenviarlas las resucitaría.
+   - Deshabilitar a quien invitó llega con el comando de administración (paso 7).
 5. **Aceptar**: el front llama a `POST /invitations/accept` con el token en el cuerpo (sesión, sin tenant). Con `WithUserTx`, una sola función, `accept_invitation(token_hash, ip_prefix)`, que revalida todo por sí misma:
    - rechaza a un usuario actual inexistente o deshabilitado;
-   - bloquea la invitación con `FOR UPDATE`;
+   - bloquea el tenant (`FOR KEY SHARE`, por el orden de bloqueo del punto 2) y después la invitación con `FOR UPDATE`;
    - comprueba que no está usada, revocada ni caducada y que el tenant está activo;
    - compara su email con el email del usuario actual, leído de `users` a partir de `app.user_id`, y lo rechaza si ese email no está verificado;
    - comprueba que el usuario no es ya miembro;
    - crea la membresía y marca la invitación como aceptada.
 6. La misma función registra `invitation.accepted` y `membership.created`: sin `app.tenant_id`, `record_audit` no admite eventos del tenant (`TN031`).
+7. **Entrega del enlace** (puerto `InvitationSender` del módulo `identity`, `Send(ctx, email, enlace, tenant, rol)`). El enlace es `FRONT_BASE_URL/invite#token=…`; `FRONT_BASE_URL` es por defecto `FRONTEND_ORIGIN` y se valida al arrancar.
+   - Se llama **después de confirmar la transacción**: crear y reenviar. Si falla, se registra en el log como `Error`, sin el enlace, y la invitación queda creada: el remedio es reenviarla. No hay reintentos (no hay cola todavía).
+   - **Hoy solo existe el adaptador de desarrollo**, que escribe el enlace completo en el log (`invitation link (development only)`, con el email enmascarado). La API no arranca con él fuera de desarrollo. **El email real llega con el despliegue**, como otro adaptador del mismo puerto.
+   - Salvo en esa línea del adaptador de desarrollo, el token y su hash no aparecen en ningún log, respuesta ni evento de auditoría.
 
 Caso límite aceptado: si un despliegue cambia los permisos de un rol, las invitaciones ya emitidas por ese rol no se revisan. Caducan en 7 días como máximo.
 
@@ -200,7 +209,7 @@ Caso límite aceptado: si un despliegue cambia los permisos de un rol, las invit
    - Destinatario fuera de la jerarquía: `403 membership.target_forbidden`.
 3. **Aplicar**: el caso de uso juzga con el rol del actor de la petición y el rol actual del destinatario, leído en su transacción, y llama a `change_member_role` o `remove_member` con los dos roles esperados. La función bloquea la fila del tenant (`FOR UPDATE`), relee los dos roles, rechaza si alguno cambió (`409 membership.changed`) o si el tenant quedaría sin owner (`409 membership.last_owner`), aplica el cambio y lo audita. `leave_tenant` hace lo mismo con la propia membresía, sin roles esperados: abandonar no depende del rol (ADR 0003).
 4. **Efecto inmediato**: el middleware de tenant lee la membresía en cada petición (5.4.2), así que la siguiente petición del afectado ya usa el rol nuevo o da `403 auth.tenant_forbidden`.
-5. *(Paso 5b)* Si el cambio quita permisos de invitación al afectado, revoca sus invitaciones pendientes (5.6.4). Hoy no hay forma de crear invitaciones, así que no hay nada que revocar.
+5. Si el cambio quita permisos de invitación al afectado, revoca sus invitaciones pendientes en la misma transacción (5.6.4); expulsar y abandonar revocan todas.
 6. *(Pendiente, con River)* Al quitar a un miembro, se publica el evento de dominio `identity.member_removed` en la misma transacción (outbox). Cada app que tenga tablas de acceso **debe** manejarlo y borrar las filas de acceso de ese usuario en ese tenant, para que no las recupere si vuelve a ser invitado. La plantilla traerá un test de ejemplo que cada app replica para sus tablas de acceso.
 
 ### 5.8 Borrado de un usuario (RGPD)
@@ -221,7 +230,7 @@ Comando de administración, con `app_admin`:
 - **Límite de peticiones**, `429 rate_limit.exceeded`:
   - por IP en `/auth/login` y `/auth/callback` (sin sesión todavía): la dirección en IPv4 (/32) y su /64 en IPv6, para que rotar direcciones dentro de un bloque no renueve la cuota. La IP sale de `TRUSTED_CLIENT_IP_HEADER` o de `RemoteAddr`, nunca de `X-Forwarded-For`;
   - por usuario y por sesión en la verificación de MFA, y por usuario en el alta y los challenges: 5 en 15 minutos (5.2);
-  - por usuario en las rutas autenticadas que lo necesitan: `POST /invitations`, `POST /invitations/{id}/resend`, `POST /invitations/accept` y `POST /tenants` (paso 5);
+  - por usuario en las rutas autenticadas que lo necesitan, en el caso de uso: `POST /invitations` y `POST /invitations/{id}/resend` comparten 20 por hora; `POST /invitations/accept`, 10 en 15 minutos (también frena probar tokens); `POST /tenants`, 5 por hora;
   - detrás del puerto `ratelimit.Limiter`, con implementación en memoria: **cada réplica cuenta por separado**, así que el límite efectivo se multiplica por el número de réplicas. Un almacén compartido implementaría el mismo puerto.
 - **Datos personales**: emails con `pii.Email`; IPs solo truncadas: `/24` en IPv4 y `/48` en IPv6, guardadas como `cidr` (`sessions.ip_prefix`, `audit_log.ip_prefix`). Go trunca antes de escribir; un `CHECK` en cada columna rechaza una IP completa (`/32`, `/128`) o cualquier otra máscara, y el tipo `cidr` rechaza bits de host tras la máscara.
 
@@ -345,10 +354,10 @@ Todas: propiedad de `app_security`, `SET search_path = pg_catalog, extensions, p
 | `auth_membership(tenant_id)` | — | Rol del usuario actual en el tenant, estado del tenant y del usuario |
 | `auth_memberships_for_user()` | — | Tenants y roles del usuario actual (`/me`) |
 | `create_tenant(name, slug, max_tenants, ip_prefix)` | Usuario actual existe y no está deshabilitado; ha creado menos de `max_tenants` (*advisory lock* por usuario, `TN021`) | Tenant (con `created_by`) y membresía `owner` del usuario actual; registra `tenant.created` y `membership.created` |
-| `change_member_role(member, role, expected_actor_role, expected_member_role, ip_prefix)` | Bloquea el tenant de `app.tenant_id` (`FOR UPDATE`, activo o `TN014`); el miembro lo es de ese tenant (`TN060`); no deja el tenant sin owner (`TN061`); los dos roles siguen siendo los esperados (`TN062`) | Cambia el rol; registra `membership.role_changed` con los dos roles |
-| `remove_member(member, expected_actor_role, expected_member_role, ip_prefix)` | Lo mismo | Borra la membresía; registra `membership.removed` |
-| `leave_tenant(ip_prefix)` | Bloquea el tenant; el usuario actual es miembro (`TN060`); no es el último owner (`TN061`) | Borra la propia membresía; registra `membership.left` |
-| `accept_invitation(token_hash, ip_prefix)` | Todo lo de la sección 5.6.5, con `FOR UPDATE` | Membresía creada e invitación aceptada; registra `invitation.accepted` y `membership.created` |
+| `change_member_role(member, role, expected_actor_role, expected_member_role, offerable_roles, ip_prefix)` | Bloquea el tenant de `app.tenant_id` (`FOR UPDATE`, activo o `TN014`); el miembro lo es de ese tenant (`TN060`); no deja el tenant sin owner (`TN061`); los dos roles siguen siendo los esperados (`TN062`) | Cambia el rol; registra `membership.role_changed` con los dos roles; revoca las invitaciones pendientes del miembro cuyo rol no está en `offerable_roles` (5.6.4) |
+| `remove_member(member, expected_actor_role, expected_member_role, ip_prefix)` | Lo mismo | Borra la membresía; registra `membership.removed`; revoca todas las invitaciones pendientes del miembro |
+| `leave_tenant(ip_prefix)` | Bloquea el tenant; el usuario actual es miembro (`TN060`); no es el último owner (`TN061`) | Borra la propia membresía; registra `membership.left`; revoca todas sus invitaciones pendientes |
+| `accept_invitation(token_hash, ip_prefix)` | Todo lo de la sección 5.6.5: tenant `FOR KEY SHARE` y después invitación `FOR UPDATE` | Membresía creada e invitación aceptada; registra `invitation.accepted` y `membership.created` |
 | `tenant_status(tenant_id)` | — | Estado del tenant (trabajos de sistema) |
 | `roles_in_use()` | — | Roles distintos en `memberships`, sin datos de tenants |
 | `mfa_factors_for_user()` | — | Factores del usuario actual: id, proveedor, id en el proveedor, verificado y alta |
@@ -372,7 +381,7 @@ Ya no existe ninguna función que devuelva datos de **otro** miembro.
 | `tenants` | `SELECT`, `INSERT` | Estado del tenant; `create_tenant` |
 | `tenants` (además) | `UPDATE (updated_at)` | Solo para `SELECT … FOR UPDATE`, que exige `UPDATE` en alguna columna; ninguna función actualiza un tenant |
 | `memberships` | `SELECT`, `INSERT`, `DELETE`, `UPDATE (role, updated_at)` | `auth_membership*`, `roles_in_use`; crear, cambiar y borrar membresías |
-| `invitations` | `SELECT`, `UPDATE (accepted_at)` | `SELECT … FOR UPDATE` y marcarla aceptada |
+| `invitations` | `SELECT`, `UPDATE (accepted_at, revoked_at, updated_at)` | `SELECT … FOR UPDATE`, marcarla aceptada y la revocación automática |
 | `audit_log` | `INSERT` | `record_audit`, `create_tenant`, `accept_invitation`, las funciones de miembros y `audit_mfa_factor_removed` (sin `SELECT`: el id lo genera la función o la columna) |
 | `sessions` | `SELECT`, `INSERT`, `UPDATE (revoked_at, updated_at)` | Revalidar la sesión; `mark_session_mfa` crea la nueva y revoca la anterior |
 | `mfa_factors` | `SELECT`, `INSERT`, `DELETE`, `UPDATE (verified_at, last_code_hash, last_code_at, updated_at)` | Las funciones de MFA |
@@ -544,7 +553,7 @@ Vincular identidades desde la sesión, borrado de un tenant (será un comando de
 2. **Transacciones y contexto**: `platform/authctx`, `WithTenantTx`, `WithUserTx`, `WithAnonTx`, y tests de aislamiento, pool y alcance `own` con tablas de ejemplo (incluida una tabla de acceso).
 3. **Login y sesiones**: adaptador de WorkOS, intentos, `/auth/*`, CSRF, CORS, IP de confianza y límite de peticiones.
 4. **Principal y permisos**: middlewares de sesión y tenant, MFA por rol verificada por la app (5.2), `authz`, catálogo de roles con su validación al arrancar, y `/me`.
-5. **Tenants, invitaciones, miembros y auditoría**, con la revocación automática y el evento `identity.member_removed`. Se hace en tres partes: 5a, tenants y miembros (hecho, ADR 0003); 5b, invitaciones; 5c, consulta de la auditoría.
+5. **Tenants, invitaciones, miembros y auditoría**, con la revocación automática y el evento `identity.member_removed`. Se hace en tres partes: 5a, tenants y miembros (hecho, ADR 0003); 5b, invitaciones (hecho: 5.6 y 5.7.5; queda la revocación al deshabilitar, paso 7, y el email real, con el despliegue); 5c, consulta de la auditoría.
 6. **Trabajos**: workers de usuario y de sistema.
 7. **Administración**: deshabilitar y borrar usuario.
 8. **Front**: login (también al caducar la MFA de un rol), selector de tenant, `X-Tenant-ID`, invitaciones (con `sessionStorage`) y miembros.

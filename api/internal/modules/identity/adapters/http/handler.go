@@ -20,30 +20,32 @@ var _ identityapi.StrictServerInterface = (*Handler)(nil)
 
 // Handler implements the generated strict server interface.
 type Handler struct {
-	login    *app.Login
-	sessions *app.Sessions
-	accounts *app.Accounts
-	mfa      *app.MFA
-	tenants  *app.Tenants
-	members  *app.Members
-	logger   *slog.Logger
+	login       *app.Login
+	sessions    *app.Sessions
+	accounts    *app.Accounts
+	mfa         *app.MFA
+	tenants     *app.Tenants
+	members     *app.Members
+	invitations *app.Invitations
+	logger      *slog.Logger
 }
 
 // UseCases are the use cases the handler exposes.
 type UseCases struct {
-	Login    *app.Login
-	Sessions *app.Sessions
-	Accounts *app.Accounts
-	MFA      *app.MFA
-	Tenants  *app.Tenants
-	Members  *app.Members
+	Login       *app.Login
+	Sessions    *app.Sessions
+	Accounts    *app.Accounts
+	MFA         *app.MFA
+	Tenants     *app.Tenants
+	Members     *app.Members
+	Invitations *app.Invitations
 }
 
 // NewHandler builds a Handler.
 func NewHandler(uc UseCases, logger *slog.Logger) *Handler {
 	return &Handler{
 		login: uc.Login, sessions: uc.Sessions, accounts: uc.Accounts, mfa: uc.MFA,
-		tenants: uc.Tenants, members: uc.Members, logger: logger,
+		tenants: uc.Tenants, members: uc.Members, invitations: uc.Invitations, logger: logger,
 	}
 }
 

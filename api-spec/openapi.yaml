@@ -562,6 +562,192 @@ paths:
           $ref: "#/components/responses/Conflict"
         "500":
           $ref: "#/components/responses/InternalError"
+  /invitations:
+    get:
+      operationId: listInvitations
+      summary: The pending invitations of the current tenant
+      description: >-
+        Needs members:invite. Not accepted and not revoked, expired ones included (expired:
+        true; resending renews them), oldest first, by cursor like the members.
+      tags: [identity]
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        "200":
+          description: A page of invitations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvitationPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      operationId: createInvitation
+      summary: Invite someone to the current tenant
+      description: >-
+        Needs members:invite, and the role must be one the caller may offer: included in
+        theirs, owner only by an owner (403 invitation.role_not_offerable). The link
+        (/invite#token=…) goes to the email once the invitation is stored; the response
+        never carries it. Errors: 422 invitation.email_invalid or invitation.unknown_role,
+        409 invitation.already_member, 409 invitation.pending (resend that one), 409
+        membership.changed, 429 rate_limit.exceeded (20 invitations and resends per user
+        and hour).
+      tags: [identity]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvitationCreate"
+      responses:
+        "201":
+          description: The invitation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invitation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /invitations/accept:
+    post:
+      operationId: acceptInvitation
+      summary: Accept an invitation with its token
+      description: >-
+        Needs a session but no tenant. The invitation's email must be the user's, and
+        verified (403 invitation.email_mismatch); the invitation not used (409
+        invitation.already_accepted), revoked (409 invitation.revoked) or expired (409
+        invitation.expired); the tenant active (403 tenant.not_active); the user not a
+        member yet (409 invitation.already_member). An unknown token is 404
+        invitation.not_found. 429 rate_limit.exceeded after 10 attempts per user in 15
+        minutes.
+      tags: [identity]
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvitationAccept"
+      responses:
+        "200":
+          description: The membership the invitation created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcceptedInvitation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /invitations/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      operationId: revokeInvitation
+      summary: Revoke a pending invitation
+      description: >-
+        Needs members:invite and that the caller may offer its role. 404
+        invitation.not_found outside this tenant; 409 invitation.already_accepted or
+        invitation.revoked.
+      tags: [identity]
+      responses:
+        "204":
+          description: The invitation is revoked; its link no longer works.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /invitations/{id}/resend:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: resendInvitation
+      summary: Send a pending invitation again, with a new token
+      description: >-
+        Needs members:invite and that the caller may offer its role. Rotates the token (the
+        previous link stops working) and renews the expiry, expired invitations included;
+        the inviter does not change. Shares the quota of POST /invitations.
+      tags: [identity]
+      responses:
+        "200":
+          description: The invitation with its new expiry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invitation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   securitySchemes:
     session:
@@ -825,6 +1011,71 @@ components:
       properties:
         role:
           description: A role of the app's catalog.
+          type: string
+    Invitation:
+      type: object
+      additionalProperties: false
+      required: [id, email, role, invited_by, expires_at, expired, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        role:
+          type: string
+        invited_by:
+          description: The user who invited; null if that user has been deleted.
+          type: [string, "null"]
+          format: uuid
+        expires_at:
+          type: string
+          format: date-time
+        expired:
+          description: It can no longer be accepted; resending renews it.
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    InvitationPage:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Invitation"
+        next_cursor:
+          type: [string, "null"]
+    InvitationCreate:
+      type: object
+      additionalProperties: false
+      required: [email, role]
+      properties:
+        email:
+          type: string
+        role:
+          description: A role of the app's catalog that the caller may offer.
+          type: string
+    InvitationAccept:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token:
+          description: The token of the link's fragment (/invite#token=…).
+          type: string
+    AcceptedInvitation:
+      type: object
+      additionalProperties: false
+      required: [tenant_id, role]
+      properties:
+        tenant_id:
+          description: The value to send as X-Tenant-ID.
+          type: string
+          format: uuid
+        role:
           type: string
     Logout:
       type: object

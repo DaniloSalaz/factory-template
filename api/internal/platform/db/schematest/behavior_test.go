@@ -610,8 +610,8 @@ func TestFunc_AcceptInvitation(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := []string{
-				"invitation.accepted/" + u.id + "/invitation/" + invitationID + "/" + testIPPrefix,
-				"membership.created/" + u.id + "/membership/" + membershipID + "/member/" + testIPPrefix,
+				"invitation.accepted/" + u.id + "/invitation/" + invitationID + "/member/" + testIPPrefix,
+				"membership.created/" + u.id + "/user/" + u.id + "/member/" + testIPPrefix,
 			}
 			if got := f.auditEvents(tenant); !slices.Equal(got, want) {
 				t.Fatalf("audit events = %v, want %v", got, want)

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	identityapi "github.com/DaniloSalaz/factory-template/api/gen/openapi/identity"
+	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/adapters/devsender"
 	identityhttp "github.com/DaniloSalaz/factory-template/api/internal/modules/identity/adapters/http"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/adapters/postgres"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/adapters/workos"
@@ -54,6 +55,15 @@ type Deps struct {
 	Catalog *authz.Catalog
 	// Tenancy limits how many tenants a user may create.
 	Tenancy config.Tenancy
+	// TenantRateLimiter limits POST /tenants per user (design, section 6).
+	TenantRateLimiter ratelimit.Limiter
+	// InvitationRateLimiter limits POST /invitations and their resends per user;
+	// AcceptRateLimiter, POST /invitations/accept (design, section 6).
+	InvitationRateLimiter ratelimit.Limiter
+	AcceptRateLimiter     ratelimit.Limiter
+	// InvitationSender delivers invitation links: NewDevInvitationSender until real
+	// email arrives with the deployment.
+	InvitationSender InvitationSender
 	// Provider replaces WorkOS; only tests set it.
 	Provider Provider
 	// Now is the clock; nil means time.Now.
@@ -64,6 +74,19 @@ type Deps struct {
 type Provider interface {
 	app.IdentityProvider
 	app.MFAProvider
+}
+
+// InvitationSender delivers an invitation's link (app.InvitationSender).
+type InvitationSender = app.InvitationSender
+
+// NewDevInvitationSender returns the development sender, which writes each link to the
+// log. It fails outside development, so the API does not start with it there.
+func NewDevInvitationSender(env config.Environment, logger *slog.Logger) (InvitationSender, error) {
+	s, err := devsender.New(env, logger)
+	if err != nil {
+		return nil, fmt.Errorf("identity: %w", err)
+	}
+	return s, nil
 }
 
 // Module wires the identity module.
@@ -82,6 +105,12 @@ type Module struct {
 func New(deps Deps) (*Module, error) {
 	if deps.Catalog == nil || deps.DB == nil || deps.Logger == nil || deps.RateLimiter == nil || deps.MFARateLimiter == nil {
 		return nil, errors.New("identity: Catalog, DB, Logger, RateLimiter and MFARateLimiter are required")
+	}
+	if deps.TenantRateLimiter == nil || deps.InvitationRateLimiter == nil || deps.AcceptRateLimiter == nil {
+		return nil, errors.New("identity: TenantRateLimiter, InvitationRateLimiter and AcceptRateLimiter are required")
+	}
+	if deps.InvitationSender == nil {
+		return nil, errors.New("identity: InvitationSender is required")
 	}
 	if deps.Tenancy.MaxTenantsPerUser < 1 {
 		return nil, errors.New("identity: Tenancy.MaxTenantsPerUser must be at least 1")
@@ -109,12 +138,16 @@ func New(deps Deps) (*Module, error) {
 	sessions := app.NewSessions(idp, store, policy, deps.Now)
 	authorizer := authz.NewAuthorizer(app.NewDenialAuditor(store), deps.Logger)
 	tenantStore := postgres.NewTenantStore(deps.DB)
+	members := app.NewMembers(tenantStore, authorizer, deps.Catalog)
 	return &Module{
 		handler: identityhttp.NewHandler(identityhttp.UseCases{
 			Login: login, Sessions: sessions, Accounts: app.NewAccounts(store, deps.Catalog),
 			MFA:     app.NewMFA(idp, idp.Name(), store, deps.Catalog, deps.MFARateLimiter, deps.Now),
-			Tenants: app.NewTenants(tenantStore, authorizer, deps.Tenancy.MaxTenantsPerUser),
-			Members: app.NewMembers(tenantStore, authorizer, deps.Catalog),
+			Tenants: app.NewTenants(tenantStore, authorizer, deps.Tenancy.MaxTenantsPerUser, deps.TenantRateLimiter),
+			Members: members,
+			Invitations: app.NewInvitations(tenantStore, authorizer, members, deps.InvitationSender, app.InvitationsConfig{
+				FrontBaseURL: deps.Web.FrontBaseURL, InviteLimiter: deps.InvitationRateLimiter, AcceptLimiter: deps.AcceptRateLimiter,
+			}, deps.Logger, deps.Now),
 		}, deps.Logger),
 		sessions: sessions,
 		tenancy:  app.NewTenancy(store, deps.Catalog, deps.Now),

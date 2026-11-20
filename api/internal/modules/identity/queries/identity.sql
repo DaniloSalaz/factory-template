@@ -174,7 +174,8 @@ WHERE m.tenant_id = sqlc.arg(tenant_id) AND m.user_id = sqlc.arg(user_id);
 
 -- name: ChangeMemberRole :exec
 SELECT change_member_role(sqlc.arg(member)::uuid, sqlc.arg(role)::text, sqlc.arg(expected_actor_role)::text,
-                          sqlc.arg(expected_member_role)::text, sqlc.narg(ip_prefix)::cidr);
+                          sqlc.arg(expected_member_role)::text, sqlc.arg(offerable_roles)::text[],
+                          sqlc.narg(ip_prefix)::cidr);
 
 -- name: RemoveMember :exec
 SELECT remove_member(sqlc.arg(member)::uuid, sqlc.arg(expected_actor_role)::text,
@@ -182,3 +183,58 @@ SELECT remove_member(sqlc.arg(member)::uuid, sqlc.arg(expected_actor_role)::text
 
 -- name: LeaveTenant :exec
 SELECT leave_tenant(sqlc.narg(ip_prefix)::cidr);
+
+-- Invitations (design 5.6, migration 00006), under RLS in the tenant's transaction; the
+-- WHERE on tenant_id is defence in depth. Accepting is accept_invitation.
+
+-- Before writing an invitation: a concurrent role change (FOR UPDATE) waits for this
+-- transaction, or this one for it.
+-- name: ShareLockTenant :exec
+SELECT 1 FROM tenants t WHERE t.id = $1 FOR KEY SHARE;
+
+-- name: EmailIsMember :one
+SELECT EXISTS (
+  SELECT 1 FROM memberships m JOIN users u ON u.id = m.user_id
+  WHERE m.tenant_id = sqlc.arg(tenant_id) AND u.email = sqlc.arg(email)::text::extensions.citext
+)::boolean AS member;
+
+-- name: PendingInvitationByEmail :one
+SELECT i.id, i.tenant_id, i.email::text AS email, i.role, i.invited_by, i.expires_at, i.created_at,
+       i.accepted_at, i.revoked_at
+FROM invitations i
+WHERE i.tenant_id = sqlc.arg(tenant_id) AND i.email = sqlc.arg(email)::text::extensions.citext
+  AND i.accepted_at IS NULL AND i.revoked_at IS NULL;
+
+-- name: CreateInvitation :one
+INSERT INTO invitations (tenant_id, email, role, token_hash, invited_by, expires_at)
+VALUES (sqlc.arg(tenant_id), sqlc.arg(email)::text::extensions.citext, sqlc.arg(role), sqlc.arg(token_hash),
+        sqlc.arg(invited_by), sqlc.arg(expires_at))
+RETURNING id, tenant_id, email::text AS email, role, invited_by, expires_at, created_at, accepted_at, revoked_at;
+
+-- name: InvitationByID :one
+SELECT i.id, i.tenant_id, i.email::text AS email, i.role, i.invited_by, i.expires_at, i.created_at,
+       i.accepted_at, i.revoked_at
+FROM invitations i
+WHERE i.tenant_id = sqlc.arg(tenant_id) AND i.id = sqlc.arg(id)
+FOR UPDATE;
+
+-- name: RotateInvitation :exec
+UPDATE invitations SET token_hash = sqlc.arg(token_hash), expires_at = sqlc.arg(expires_at)
+WHERE id = sqlc.arg(id);
+
+-- name: RevokeInvitation :exec
+UPDATE invitations SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL;
+
+-- Pending invitations, expired ones included, in creation order (UUIDv7).
+-- name: ListInvitations :many
+SELECT i.id, i.tenant_id, i.email::text AS email, i.role, i.invited_by, i.expires_at, i.created_at,
+       i.accepted_at, i.revoked_at
+FROM invitations i
+WHERE i.tenant_id = sqlc.arg(tenant_id) AND i.accepted_at IS NULL AND i.revoked_at IS NULL
+  AND (sqlc.narg(after)::uuid IS NULL OR i.id > sqlc.narg(after)::uuid)
+ORDER BY i.id
+LIMIT sqlc.arg(page_size);
+
+-- name: AcceptInvitation :one
+SELECT r.membership_id::uuid AS membership_id, r.tenant_id::uuid AS tenant_id, r.role::text AS role
+FROM accept_invitation(sqlc.arg(token_hash)::bytea, sqlc.narg(ip_prefix)::cidr) AS r(membership_id, tenant_id, role);

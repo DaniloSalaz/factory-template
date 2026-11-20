@@ -9,12 +9,14 @@ import "github.com/DaniloSalaz/factory-template/api/internal/platform/httpx"
 // Security returns the security of every operation of the contract.
 func Security() map[string]httpx.Security {
 	return map[string]httpx.Security{
+		"DELETE /invitations/{id}":        {Session: true, Tenant: true},
 		"DELETE /me/mfa/totp/{factorId}":  {Session: true, Tenant: false},
 		"DELETE /tenant/members/me":       {Session: true, Tenant: true},
 		"DELETE /tenant/members/{userId}": {Session: true, Tenant: true},
 		"GET /auth/callback":              {Session: false, Tenant: false},
 		"GET /auth/login":                 {Session: false, Tenant: false},
 		"GET /healthz":                    {Session: false, Tenant: false},
+		"GET /invitations":                {Session: true, Tenant: true},
 		"GET /me":                         {Session: true, Tenant: false},
 		"GET /readyz":                     {Session: false, Tenant: false},
 		"GET /tenant":                     {Session: true, Tenant: true},
@@ -23,6 +25,9 @@ func Security() map[string]httpx.Security {
 		"PATCH /tenant/members/{userId}":  {Session: true, Tenant: true},
 		"POST /auth/logout":               {Session: true, Tenant: false},
 		"POST /auth/logout-all":           {Session: true, Tenant: false},
+		"POST /invitations":               {Session: true, Tenant: true},
+		"POST /invitations/accept":        {Session: true, Tenant: false},
+		"POST /invitations/{id}/resend":   {Session: true, Tenant: true},
 		"POST /me/mfa/challenges":         {Session: true, Tenant: false},
 		"POST /me/mfa/totp":               {Session: true, Tenant: false},
 		"POST /me/mfa/totp/verify":        {Session: true, Tenant: false},
@@ -36,6 +41,8 @@ func BodyFields() map[string][]string {
 	return map[string][]string{
 		"PATCH /tenant":                  {"name"},
 		"PATCH /tenant/members/{userId}": {"role"},
+		"POST /invitations":              {"email", "role"},
+		"POST /invitations/accept":       {"token"},
 		"POST /me/mfa/challenges":        {"factor_id"},
 		"POST /me/mfa/totp/verify":       {"challenge_id", "code"},
 		"POST /tenants":                  {"name", "slug"},

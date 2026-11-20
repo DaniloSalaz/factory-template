@@ -163,6 +163,44 @@ export interface MemberRoleChange {
   role: string;
 }
 
+export interface Invitation {
+  id: string;
+  email: string;
+  role: string;
+  /**
+     * The user who invited; null if that user has been deleted.
+     * @nullable
+     */
+  invited_by: string | null;
+  expires_at: string;
+  /** It can no longer be accepted; resending renews it. */
+  expired: boolean;
+  created_at: string;
+}
+
+export interface InvitationPage {
+  items: Invitation[];
+  /** @nullable */
+  next_cursor: string | null;
+}
+
+export interface InvitationCreate {
+  email: string;
+  /** A role of the app's catalog that the caller may offer. */
+  role: string;
+}
+
+export interface InvitationAccept {
+  /** The token of the link's fragment (/invite#token=…). */
+  token: string;
+}
+
+export interface AcceptedInvitation {
+  /** The value to send as X-Tenant-ID. */
+  tenant_id: string;
+  role: string;
+}
+
 export interface Logout {
   /**
      * Where to send the browser to end the AuthKit session too; null if there is none.
@@ -290,6 +328,15 @@ export type AuthCallbackParams = {
 
 export type ListMembersParams = {
   /** The next_cursor of the previous page; omit it for the first page. */
+  cursor?: string;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};
+
+export type ListInvitationsParams = {
   cursor?: string;
   /**
    * @minimum 1
@@ -1448,6 +1495,363 @@ export const removeMember = async (userId: string, options?: Parameters<typeof a
   {
     ...options,
     method: 'DELETE'
+
+
+  }
+);}
+
+
+
+export type listInvitationsResponse200 = {
+  data: InvitationPage
+  status: 200
+}
+
+export type listInvitationsResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type listInvitationsResponse401 = {
+  data: UnauthorizedResponse
+  status: 401
+}
+
+export type listInvitationsResponse403 = {
+  data: ForbiddenResponse
+  status: 403
+}
+
+export type listInvitationsResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type listInvitationsResponseSuccess = (listInvitationsResponse200) & {
+  headers: Headers;
+};
+export type listInvitationsResponseError = (listInvitationsResponse400 | listInvitationsResponse401 | listInvitationsResponse403 | listInvitationsResponse500) & {
+  headers: Headers;
+};
+
+export type listInvitationsResponse = (listInvitationsResponseSuccess | listInvitationsResponseError)
+
+export const getListInvitationsUrl = (params?: ListInvitationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/invitations?${stringifiedParams}` : `/invitations`
+}
+
+/**
+ * Needs members:invite. Not accepted and not revoked, expired ones included (expired: true; resending renews them), oldest first, by cursor like the members.
+ * @summary The pending invitations of the current tenant
+ */
+export const listInvitations = async (params?: ListInvitationsParams, options?: Parameters<typeof apiFetch>[1]): Promise<listInvitationsResponse> => {
+
+  return apiFetch<listInvitationsResponse>(getListInvitationsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export type createInvitationResponse201 = {
+  data: Invitation
+  status: 201
+}
+
+export type createInvitationResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type createInvitationResponse401 = {
+  data: UnauthorizedResponse
+  status: 401
+}
+
+export type createInvitationResponse403 = {
+  data: ForbiddenResponse
+  status: 403
+}
+
+export type createInvitationResponse409 = {
+  data: ConflictResponse
+  status: 409
+}
+
+export type createInvitationResponse422 = {
+  data: UnprocessableEntityResponse
+  status: 422
+}
+
+export type createInvitationResponse429 = {
+  data: TooManyRequestsResponse
+  status: 429
+}
+
+export type createInvitationResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type createInvitationResponseSuccess = (createInvitationResponse201) & {
+  headers: Headers;
+};
+export type createInvitationResponseError = (createInvitationResponse400 | createInvitationResponse401 | createInvitationResponse403 | createInvitationResponse409 | createInvitationResponse422 | createInvitationResponse429 | createInvitationResponse500) & {
+  headers: Headers;
+};
+
+export type createInvitationResponse = (createInvitationResponseSuccess | createInvitationResponseError)
+
+export const getCreateInvitationUrl = () => {
+
+
+
+
+  return `/invitations`
+}
+
+/**
+ * Needs members:invite, and the role must be one the caller may offer: included in theirs, owner only by an owner (403 invitation.role_not_offerable). The link (/invite#token=…) goes to the email once the invitation is stored; the response never carries it. Errors: 422 invitation.email_invalid or invitation.unknown_role, 409 invitation.already_member, 409 invitation.pending (resend that one), 409 membership.changed, 429 rate_limit.exceeded (20 invitations and resends per user and hour).
+ * @summary Invite someone to the current tenant
+ */
+export const createInvitation = async (invitationCreate: InvitationCreate, options?: Parameters<typeof apiFetch>[1]): Promise<createInvitationResponse> => {
+
+  return apiFetch<createInvitationResponse>(getCreateInvitationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(invitationCreate)
+  }
+);}
+
+
+
+export type acceptInvitationResponse200 = {
+  data: AcceptedInvitation
+  status: 200
+}
+
+export type acceptInvitationResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type acceptInvitationResponse401 = {
+  data: UnauthorizedResponse
+  status: 401
+}
+
+export type acceptInvitationResponse403 = {
+  data: ForbiddenResponse
+  status: 403
+}
+
+export type acceptInvitationResponse404 = {
+  data: NotFoundResponse
+  status: 404
+}
+
+export type acceptInvitationResponse409 = {
+  data: ConflictResponse
+  status: 409
+}
+
+export type acceptInvitationResponse429 = {
+  data: TooManyRequestsResponse
+  status: 429
+}
+
+export type acceptInvitationResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type acceptInvitationResponseSuccess = (acceptInvitationResponse200) & {
+  headers: Headers;
+};
+export type acceptInvitationResponseError = (acceptInvitationResponse400 | acceptInvitationResponse401 | acceptInvitationResponse403 | acceptInvitationResponse404 | acceptInvitationResponse409 | acceptInvitationResponse429 | acceptInvitationResponse500) & {
+  headers: Headers;
+};
+
+export type acceptInvitationResponse = (acceptInvitationResponseSuccess | acceptInvitationResponseError)
+
+export const getAcceptInvitationUrl = () => {
+
+
+
+
+  return `/invitations/accept`
+}
+
+/**
+ * Needs a session but no tenant. The invitation's email must be the user's, and verified (403 invitation.email_mismatch); the invitation not used (409 invitation.already_accepted), revoked (409 invitation.revoked) or expired (409 invitation.expired); the tenant active (403 tenant.not_active); the user not a member yet (409 invitation.already_member). An unknown token is 404 invitation.not_found. 429 rate_limit.exceeded after 10 attempts per user in 15 minutes.
+ * @summary Accept an invitation with its token
+ */
+export const acceptInvitation = async (invitationAccept: InvitationAccept, options?: Parameters<typeof apiFetch>[1]): Promise<acceptInvitationResponse> => {
+
+  return apiFetch<acceptInvitationResponse>(getAcceptInvitationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(invitationAccept)
+  }
+);}
+
+
+
+export type revokeInvitationResponse204 = {
+  data: void
+  status: 204
+}
+
+export type revokeInvitationResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type revokeInvitationResponse401 = {
+  data: UnauthorizedResponse
+  status: 401
+}
+
+export type revokeInvitationResponse403 = {
+  data: ForbiddenResponse
+  status: 403
+}
+
+export type revokeInvitationResponse404 = {
+  data: NotFoundResponse
+  status: 404
+}
+
+export type revokeInvitationResponse409 = {
+  data: ConflictResponse
+  status: 409
+}
+
+export type revokeInvitationResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type revokeInvitationResponseSuccess = (revokeInvitationResponse204) & {
+  headers: Headers;
+};
+export type revokeInvitationResponseError = (revokeInvitationResponse400 | revokeInvitationResponse401 | revokeInvitationResponse403 | revokeInvitationResponse404 | revokeInvitationResponse409 | revokeInvitationResponse500) & {
+  headers: Headers;
+};
+
+export type revokeInvitationResponse = (revokeInvitationResponseSuccess | revokeInvitationResponseError)
+
+export const getRevokeInvitationUrl = (id: string,) => {
+
+
+
+
+  return `/invitations/${id}`
+}
+
+/**
+ * Needs members:invite and that the caller may offer its role. 404 invitation.not_found outside this tenant; 409 invitation.already_accepted or invitation.revoked.
+ * @summary Revoke a pending invitation
+ */
+export const revokeInvitation = async (id: string, options?: Parameters<typeof apiFetch>[1]): Promise<revokeInvitationResponse> => {
+
+  return apiFetch<revokeInvitationResponse>(getRevokeInvitationUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+export type resendInvitationResponse200 = {
+  data: Invitation
+  status: 200
+}
+
+export type resendInvitationResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type resendInvitationResponse401 = {
+  data: UnauthorizedResponse
+  status: 401
+}
+
+export type resendInvitationResponse403 = {
+  data: ForbiddenResponse
+  status: 403
+}
+
+export type resendInvitationResponse404 = {
+  data: NotFoundResponse
+  status: 404
+}
+
+export type resendInvitationResponse409 = {
+  data: ConflictResponse
+  status: 409
+}
+
+export type resendInvitationResponse429 = {
+  data: TooManyRequestsResponse
+  status: 429
+}
+
+export type resendInvitationResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type resendInvitationResponseSuccess = (resendInvitationResponse200) & {
+  headers: Headers;
+};
+export type resendInvitationResponseError = (resendInvitationResponse400 | resendInvitationResponse401 | resendInvitationResponse403 | resendInvitationResponse404 | resendInvitationResponse409 | resendInvitationResponse429 | resendInvitationResponse500) & {
+  headers: Headers;
+};
+
+export type resendInvitationResponse = (resendInvitationResponseSuccess | resendInvitationResponseError)
+
+export const getResendInvitationUrl = (id: string,) => {
+
+
+
+
+  return `/invitations/${id}/resend`
+}
+
+/**
+ * Needs members:invite and that the caller may offer its role. Rotates the token (the previous link stops working) and renews the expiry, expired invitations included; the inviter does not change. Shares the quota of POST /invitations.
+ * @summary Send a pending invitation again, with a new token
+ */
+export const resendInvitation = async (id: string, options?: Parameters<typeof apiFetch>[1]): Promise<resendInvitationResponse> => {
+
+  return apiFetch<resendInvitationResponse>(getResendInvitationUrl(id),
+  {
+    ...options,
+    method: 'POST'
 
 
   }
