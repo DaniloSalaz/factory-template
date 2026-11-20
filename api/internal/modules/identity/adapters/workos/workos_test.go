@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
 )
@@ -96,7 +97,7 @@ func TestExchangeCode(t *testing.T) {
 			t.Fatal(err)
 		}
 		if a.Subject != "user_1" || a.Email.Reveal() != "ana@example.test" || !a.EmailVerified || a.DisplayName != "Ana Ruiz" ||
-			a.SessionID != "session_1" || a.Method != "SSO" || !a.MFA.AuthTime.Equal(authTime) || !a.MFA.ExemptFromPolicy || a.MFA.HasAMR {
+			a.SessionID != "session_1" || a.Method != "SSO" || !a.MFA.AuthTime.Equal(authTime) || a.MFA.CoveredByPolicy || a.MFA.HasAMR {
 			t.Fatalf("authentication = %+v", a)
 		}
 		var body map[string]string
@@ -109,6 +110,17 @@ func TestExchangeCode(t *testing.T) {
 		}
 		if !strings.Contains(logs.String(), `"claims":["auth_time","sid","sub"]`) || strings.Contains(logs.String(), "session_1") {
 			t.Fatalf("debug log must list claim names only: %s", logs.String())
+		}
+	})
+
+	t.Run("reports impersonation", func(t *testing.T) {
+		t.Parallel()
+		body := strings.Replace(resp("user_1", map[string]any{"sub": "user_1", "sid": "s", "auth_time": authTime.Unix()}),
+			`"refresh_token":"rt"`, `"refresh_token":"rt","impersonator":{"email":"admin@workos.test","reason":"support"}`, 1)
+		p, _, _ := fakeWorkOS(t, http.StatusOK, body)
+		a, err := p.ExchangeCode(t.Context(), "c", "v")
+		if err != nil || !a.Impersonated {
+			t.Fatalf("authentication = %+v, %v; want Impersonated", a, err)
 		}
 	})
 
@@ -137,6 +149,43 @@ func TestExchangeCode(t *testing.T) {
 	}
 }
 
+// Only allowlisted methods count as MFA, and with MFA Required at the provider they give
+// mfa_auth_time; any other method, unknown ones included, gives none (design, 5.2).
+func TestExchangeCode_MFAAllowlist(t *testing.T) {
+	t.Parallel()
+	authTime := time.Unix(1_800_000_000, 0).UTC()
+	tests := map[string]bool{
+		"Password":       true,
+		"MagicAuth":      false,
+		"GoogleOAuth":    false,
+		"MicrosoftOAuth": false,
+		"Passkey":        false,
+		"SSO":            false,
+		"InventedAuth":   false,
+		"":               false,
+	}
+	for method, wantMFA := range tests {
+		t.Run("method "+method, func(t *testing.T) {
+			t.Parallel()
+			methodJSON := ""
+			if method != "" {
+				methodJSON = fmt.Sprintf(`,"authentication_method":%q`, method)
+			}
+			token := jwt(t, map[string]any{"sub": "user_1", "sid": "s", "auth_time": authTime.Unix()})
+			p, _, _ := fakeWorkOS(t, http.StatusOK, fmt.Sprintf(
+				`{"user":{"id":"user_1","email":"ana@example.test","email_verified":true},"access_token":%q%s}`, token, methodJSON))
+			a, err := p.ExchangeCode(t.Context(), "c", "v")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, gotMFA, err := domain.MFAAuthTime(a.MFA, true)
+			if err != nil || gotMFA != wantMFA {
+				t.Fatalf("with WORKOS_MFA_REQUIRED=true, MFA = %v (%v), want %v", gotMFA, err, wantMFA)
+			}
+		})
+	}
+}
+
 func TestExchangeCode_ErrorsNeverCarryTheAPIKey(t *testing.T) {
 	t.Parallel()
 	// A response that echoes the request, key included: the error must not keep it.
@@ -155,6 +204,28 @@ func TestExchangeCode_ErrorsNeverCarryTheAPIKey(t *testing.T) {
 			}
 			if strings.Contains(err.Error(), testKey) || strings.Contains(fmt.Sprintf("%+v", err), testKey) {
 				t.Fatalf("the error leaks the API key: %v", err)
+			}
+		})
+	}
+}
+
+func TestExchangeCode_PendingStepsHaveTheirOwnCodes(t *testing.T) {
+	t.Parallel()
+	tests := map[string]string{
+		`{"code":"email_verification_required","message":"Email ana@example.test must be verified ` + testKey + `","email":"ana@example.test"}`: "auth.email_verification_required",
+		`{"code":"mfa_enrollment","message":"User must enroll in MFA ` + testKey + `","user":{"id":"user_1"}}`:                                  "auth.mfa_enrollment_required",
+	}
+	for body, code := range tests {
+		t.Run(code, func(t *testing.T) {
+			t.Parallel()
+			p, _, _ := fakeWorkOS(t, http.StatusForbidden, body)
+			_, err := p.ExchangeCode(t.Context(), "c", "v")
+			e, ok := apperr.As(err)
+			if !ok || e.Code != code || e.Kind != apperr.KindForbidden || e.Message == "" {
+				t.Fatalf("err = %v, want %s (403) with a message", err, code)
+			}
+			if strings.Contains(err.Error(), testKey) || strings.Contains(err.Error(), "ana@example.test") {
+				t.Fatalf("the error leaks the response body: %v", err)
 			}
 		})
 	}

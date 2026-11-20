@@ -11,11 +11,13 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	identitydb "github.com/DaniloSalaz/factory-template/api/gen/sqlc/identity"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/db"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
@@ -87,7 +89,7 @@ func (r repo) CreateUser(ctx context.Context, email pii.Email, emailVerified boo
 		Email: email.Reveal(), EmailVerified: emailVerified, DisplayName: displayName,
 	})
 	if err != nil {
-		return "", fmt.Errorf("create user: %w", err)
+		return "", fmt.Errorf("create user: %w", alreadyExists(err))
 	}
 	return id.String(), nil
 }
@@ -100,7 +102,7 @@ func (r repo) CreateIdentity(ctx context.Context, userID, provider, subject stri
 	if err := r.q.CreateIdentity(ctx, identitydb.CreateIdentityParams{
 		UserID: uid, Provider: provider, Subject: subject, Email: email.Reveal(),
 	}); err != nil {
-		return fmt.Errorf("create identity: %w", err)
+		return fmt.Errorf("create identity: %w", alreadyExists(err))
 	}
 	return nil
 }
@@ -221,6 +223,19 @@ func (r repo) RecordAudit(ctx context.Context, e app.AuditEvent) error {
 		return fmt.Errorf("record audit %s: %w", e.Action, err)
 	}
 	return nil
+}
+
+// uniqueViolation is SQLSTATE unique_violation.
+const uniqueViolation = "23505"
+
+// alreadyExists turns a unique violation into app.ErrAlreadyExists, keeping the cause.
+func alreadyExists(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
+		e, _ := apperr.As(app.ErrAlreadyExists())
+		return apperr.Wrap(err, e.Kind, e.Code, e.Message)
+	}
+	return err
 }
 
 func parseUUID(s string) (pgtype.UUID, error) {

@@ -44,7 +44,7 @@ RLS protege contra **omisiones** del código. No protege contra una aplicación 
 - Las previsualizaciones van en **otro dominio registrable** (`x-preview.com`), con su propia API y base de datos.
 - `ALLOWED_ORIGINS` de producción: lista cerrada, sin comodines.
 - Elimina los registros DNS de `x.com` que apunten a servicios que ya no uses.
-- La API solo es accesible por Cloudflare Tunnel; la IP del cliente se toma de `CF-Connecting-IP` (`TRUSTED_CLIENT_IP_HEADER`), nunca de `X-Forwarded-For`.
+- La API solo es accesible por Cloudflare Tunnel, en staging y en producción; la IP del cliente se toma de `CF-Connecting-IP` (`TRUSTED_CLIENT_IP_HEADER`, que lo tiene por defecto en esos dos entornos), nunca de `X-Forwarded-For`.
 - Las extensiones de Postgres (`citext`, `pgcrypto`, `pg_trgm`) se instalan en un esquema propio, `extensions`.
 
 ## 4. Modelo de datos
@@ -86,15 +86,20 @@ Todas las claves foráneas hacia `tenants` son `ON DELETE RESTRICT`: el borrado 
 ### 5.1 Login
 
 1. `GET /auth/login?return_to=<ruta>`. `return_to` se resuelve con un parser de URL contra `FRONTEND_ORIGIN` y el origen resultante debe ser exactamente ese.
-2. Se crea un **intento** en una cookie `__Host-oauth_<state>` (`HttpOnly`, `Secure`, `SameSite=Lax`, 5 minutos, como mucho 3 vivas). El intento guarda: el verificador PKCE, `return_to`, el **propósito** (`login`) y la hora de inicio. Redirige a AuthKit.
-3. `GET /auth/callback?code&state`: localiza y borra la cookie de ese intento. **El propósito lo dice el intento, nunca un parámetro de la URL.** Canjea el código y obtiene `subject`, `email`, `email_verified`, la hora real de autenticación (`auth_time` del access token) y el método. Si hubo MFA se decide como dice la 5.2.
-4. Rechaza si el email no está verificado.
+2. Se crea un **intento** en una cookie `__Host-oauth_<state>` (`HttpOnly`, `Secure`, `SameSite=Lax`, 5 minutos, como mucho 3 vivas). El intento guarda: el verificador PKCE, `return_to`, el **propósito** (`login`) y la hora de inicio. Va sellado con HMAC-SHA256 sobre el `state` y el contenido, así que el navegador lo guarda pero no lo puede alterar ni mover a otro `state`. Redirige a AuthKit.
+   - **Clave del sello**: se deriva de `WORKOS_API_KEY` con HMAC y una etiqueta fija (`factory-template/identity/oauth-intent/v1`). Así todas las réplicas comparten la misma clave sin un secreto más. Rotar la API key invalida los logins en curso (5 minutos como mucho), y quien tenga la API key podría forjar intentos, pero con ella ya controla el proveedor.
+3. `GET /auth/callback?code&state`: localiza y borra la cookie de ese intento. **El propósito lo dice el intento, nunca un parámetro de la URL.** Canjea el código y obtiene `subject`, `email`, `email_verified`, la hora real de autenticación (`auth_time` del access token), el método y si es una suplantación. Si hubo MFA se decide como dice la 5.2.
+4. Rechaza, registrando `auth.login_failed` con el motivo, y en este orden:
+   - **suplantación** (`impersonation`): WorkOS indica que alguien (un administrador del panel) entró como el usuario. La suplantación para soporte está fuera de esta versión (sección 12): `403 auth.impersonation_refused`;
+   - **autenticación antigua** (`stale_auth`): `auth_time` anterior al inicio del intento, con 60 s de margen de reloj. Cada login fuerza una autenticación nueva (5.2.1); si el proveedor no lo hizo, `auth_time` y la MFA deducida describirían otro login: `401 auth.stale_authentication`;
+   - **email sin verificar** (`email_unverified`): `403 auth.email_unverified`;
+   - métodos informados sin MFA cuando se exige (`mfa_missing`, 5.2.3).
 5. Resuelve el usuario **sin escribir nada**:
    - Existe `user_identities(workos, subject)`: ese usuario.
    - No existe y el email no lo usa nadie: usuario nuevo.
-   - No existe pero el email ya lo usa otro usuario: `409 auth.email_in_use`.
+   - No existe pero el email ya lo usa otro usuario: `409 auth.email_in_use`. Antes de rechazar se vuelve a leer la identidad: con `READ COMMITTED`, un primer login simultáneo de la misma identidad puede haberla confirmado entre las dos lecturas.
 6. Rechaza si el usuario está deshabilitado. Hasta aquí no se ha escrito nada salvo, en caso de rechazo, `auth.login_failed`.
-7. Crea el usuario y la identidad si son nuevos. Si el email verificado cambió en el proveedor y no lo usa otro usuario, actualiza `users.email`.
+7. Crea el usuario y la identidad si son nuevos. Si dos primeros logins de la misma identidad compiten, el que choca con la unicidad repite la resolución una vez, en una transacción nueva, y encuentra la del ganador. Si el email verificado cambió en el proveedor y no lo usa otro usuario, actualiza `users.email` con su `email_verified`. Si lo usa otro usuario, conserva el email anterior **con `email_verified = false`**: el proveedor ya no lo respalda, y no debe abrir invitaciones dirigidas a esa dirección.
 8. Revoca la sesión anterior del navegador, si había (evita la fijación de sesión).
 9. Crea la sesión (32 bytes aleatorios; en la BD solo el hash SHA-256) con `auth_time` y, si hubo MFA, `mfa_auth_time`, ambos **con la hora que da el proveedor**, no con la del servidor, y la sesión de AuthKit (`sid`) para cerrarla en el logout.
 10. Pone la cookie, redirige a `return_to` y registra `auth.login`.
@@ -109,7 +114,7 @@ El step-up de versiones anteriores (reautenticar con MFA y rotar el token en la 
 2. **MFA obligatoria en el proveedor** para todos los usuarios de las apps con roles que la exigen: en el panel de WorkOS, *Multi-factor auth* en *Required*, declarado a la app con `WORKOS_MFA_REQUIRED=true`.
 3. **`mfa_auth_time`**:
    - si el access token trae los métodos de autenticación (`amr`, RFC 8176), se usan ellos: con `mfa`, `mfa_auth_time = auth_time`; sin `mfa` y con `WORKOS_MFA_REQUIRED=true`, el login se rechaza (`403 auth.mfa_required`, `auth.login_failed` con motivo `mfa_missing`). Hoy WorkOS no envía `amr`;
-   - si no los trae, `mfa_auth_time = auth_time` solo con `WORKOS_MFA_REQUIRED=true` y un método al que se aplica la MFA de WorkOS (no a `SSO`); si no, `NULL`. La MFA se **deduce de la configuración**, no la informa el proveedor; `docs/runbooks/auth.md` describe la comprobación manual de que `WORKOS_MFA_REQUIRED` coincide con el panel en cada entorno.
+   - si no los trae, `mfa_auth_time = auth_time` solo con `WORKOS_MFA_REQUIRED=true` y un método de la **lista blanca**: los métodos que una prueba en staging ha demostrado que hacen que AuthKit pida el segundo factor. Lista actual: `Password`. Cualquier otro método, incluidos los desconocidos y los que WorkOS añada, deja `NULL`: WorkOS documenta que su MFA no se aplica a `SSO` y no dice nada de Magic Auth, passkeys ni OAuth. La MFA se **deduce de la configuración**, no la informa el proveedor; `docs/runbooks/auth.md` describe la comprobación manual de que `WORKOS_MFA_REQUIRED` coincide con el panel en cada entorno y cómo añadir un método a la lista.
 4. **Arranque**: si algún rol del catálogo requiere MFA y `WORKOS_MFA_REQUIRED=false`, la API no arranca y explica por qué.
 5. **Cuando la MFA de un rol caduca** (5.4.3), el front recibe `403 auth.mfa_required` y lleva al usuario a un **login completo** (`GET /auth/login?return_to=…`): sesión nueva y la anterior revocada (5.1.8). No hay `GET /auth/stepup` ni rotación del token en la misma fila, y `app_runtime` no tiene `UPDATE` sobre `mfa_auth_time` ni `token_hash` (7.1). Un proveedor futuro que permita el step-up lo concedería en una migración nueva.
 
@@ -122,6 +127,12 @@ El step-up de versiones anteriores (reautenticar con MFA y rotar el token en la 
 | `WithAnonTx(ctx, fn)` | Nada | Login, callback y eventos de auditoría sin usuario |
 
 Las tres viven en `platform/db`. Las dos últimas solo pueden llamar a funciones `SECURITY DEFINER` o tocar tablas de identidad, nunca tablas de negocio: sin `app.tenant_id`, RLS hace fallar cualquier intento.
+
+**El callback usa dos transacciones, y no son atómicas.**
+- `WithAnonTx` para resolver el usuario (5.1.5 a 5.1.7): todavía no hay usuario; si hay rechazo, aquí solo se registra su evento.
+- `WithUserTx`, con el usuario ya resuelto, para revocar la sesión anterior, crear la nueva, actualizar `last_login_at` y registrar `auth.login`. Va aparte para que `record_audit` tome el actor de `app.user_id`: en una transacción anónima, `auth.login` quedaría sin actor.
+
+Se acepta que no sean atómicas porque la primera solo deja estados que un login posterior trata igual que si viniera de él: un usuario y una identidad nuevos, o un email sincronizado. Si la segunda falla, el login responde con error, no hay sesión ni cookie, y el siguiente intento encuentra la identidad (5.1.5) y sigue. Un usuario deshabilitado entre las dos transacciones obtiene una sesión que el middleware rechaza en la primera petición (5.4.1).
 
 ### 5.4 Cada petición autenticada
 
@@ -189,7 +200,7 @@ Comando de administración, con `app_admin`:
 - **CSRF**: `SameSite=Lax` y `Origin` en `ALLOWED_ORIGINS` en los métodos que modifican datos.
 - **CORS**: `ALLOWED_ORIGINS` explícita, con `credentials`, sin comodines.
 - **Límite de peticiones**, `429 rate_limit.exceeded`:
-  - por IP en `/auth/login` y `/auth/callback` (sin sesión todavía); la IP sale de `TRUSTED_CLIENT_IP_HEADER` o de `RemoteAddr`, nunca de `X-Forwarded-For`;
+  - por IP en `/auth/login` y `/auth/callback` (sin sesión todavía): la dirección en IPv4 (/32) y su /64 en IPv6, para que rotar direcciones dentro de un bloque no renueve la cuota. La IP sale de `TRUSTED_CLIENT_IP_HEADER` o de `RemoteAddr`, nunca de `X-Forwarded-For`;
   - por usuario en las rutas autenticadas que lo necesitan: `POST /invitations`, `POST /invitations/{id}/resend`, `POST /invitations/accept` y `POST /tenants` (paso 5);
   - detrás del puerto `ratelimit.Limiter`, con implementación en memoria: **cada réplica cuenta por separado**, así que el límite efectivo se multiplica por el número de réplicas. Un almacén compartido implementaría el mismo puerto.
 - **Datos personales**: emails con `pii.Email`; IPs solo truncadas: `/24` en IPv4 y `/48` en IPv6, guardadas como `cidr` (`sessions.ip_prefix`, `audit_log.ip_prefix`). Go trunca antes de escribir; un `CHECK` en cada columna rechaza una IP completa (`/32`, `/128`) o cualquier otra máscara, y el tipo `cidr` rechaza bits de host tras la máscara.
@@ -458,7 +469,7 @@ Los `{id}` son de la membresía o de la invitación, nunca del usuario. El rol `
 
 ## 12. Fuera de esta versión
 
-Vincular identidades desde la sesión, borrado de un tenant (será un comando de administración con `app_admin`; hasta entonces las claves hacia `tenants` son `RESTRICT` y `app_runtime` no tiene `DELETE`), locales, roles personalizados por tenant, SSO empresarial, API keys, suplantación para soporte, subdominios y OpenFGA.
+Vincular identidades desde la sesión, borrado de un tenant (será un comando de administración con `app_admin`; hasta entonces las claves hacia `tenants` son `RESTRICT` y `app_runtime` no tiene `DELETE`), locales, roles personalizados por tenant, SSO empresarial, API keys, suplantación para soporte (un login de suplantación del panel de WorkOS se rechaza, 5.1.4), subdominios y OpenFGA.
 
 ## 13. Verificado en la documentación de WorkOS (noviembre de 2026)
 

@@ -74,6 +74,26 @@ func TestPrefix(t *testing.T) {
 	}
 }
 
+func TestLimitKey(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]string{
+		"203.0.113.77":                "203.0.113.77/32",
+		"::ffff:203.0.113.77":         "203.0.113.77/32",
+		"2001:db8:abcd:12:1:2:3:4":    "2001:db8:abcd:12::/64",
+		"2001:db8:abcd:12:ffff::ffff": "2001:db8:abcd:12::/64",
+	}
+	for in, want := range tests {
+		t.Run(in, func(t *testing.T) {
+			t.Parallel()
+			got, ok := clientip.LimitKey(netip.MustParseAddr(in))
+			if !ok || got.String() != want {
+				t.Fatalf("LimitKey(%s) = %v, want %s", in, got, want)
+			}
+		})
+	}
+}
+
 func TestContext(t *testing.T) {
 	t.Parallel()
 

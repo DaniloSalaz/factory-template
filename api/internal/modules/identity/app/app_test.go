@@ -23,6 +23,11 @@ import (
 type memStore struct {
 	mu sync.Mutex
 	st state
+	// raceWinner, when set, makes the next CreateUser lose a race: the winner's user and
+	// identity are committed as if by a concurrent login, and CreateUser fails with
+	// app.ErrAlreadyExists, aborting its transaction.
+	raceWinner *app.Authentication
+	committed  *app.Authentication
 }
 
 type state struct {
@@ -72,8 +77,14 @@ func (m *memStore) AsUser(ctx context.Context, userID string, fn func(context.Co
 func (m *memStore) tx(ctx context.Context, actor string, fn func(context.Context, app.Repo) error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	r := &memRepo{st: m.st.clone(), actor: actor}
+	r := &memRepo{st: m.st.clone(), actor: actor, store: m}
 	if err := fn(ctx, r); err != nil {
+		if w := m.committed; w != nil {
+			m.committed = nil
+			id := fmt.Sprintf("user-winner-%s", w.Subject)
+			m.st.users[id] = memUser{email: w.Email, verified: true}
+			m.st.identities["fake|"+w.Subject] = id
+		}
 		return err
 	}
 	m.st = r.st
@@ -89,6 +100,7 @@ func (m *memStore) snapshot() state {
 type memRepo struct {
 	st    state
 	actor string
+	store *memStore
 }
 
 func (r *memRepo) id(prefix string) string {
@@ -115,6 +127,10 @@ func (r *memRepo) UserByEmail(_ context.Context, email pii.Email) (app.User, boo
 }
 
 func (r *memRepo) CreateUser(_ context.Context, email pii.Email, verified bool, _ string) (string, error) {
+	if w := r.store.raceWinner; w != nil {
+		r.store.raceWinner, r.store.committed = nil, w
+		return "", fmt.Errorf("create user: %w", app.ErrAlreadyExists())
+	}
 	id := r.id("user")
 	r.st.users[id] = memUser{email: email, verified: verified}
 	return id, nil
@@ -231,7 +247,7 @@ func person(n int) app.Authentication {
 	return app.Authentication{
 		Subject: fmt.Sprintf("sub-%d", n), Email: pii.Email(fmt.Sprintf("p%d@example.test", n)), EmailVerified: true,
 		SessionID: fmt.Sprintf("sid-%d", n), Method: "Password",
-		MFA: domain.ProviderMFA{AuthTime: time.Unix(1_799_999_990, 0)},
+		MFA: domain.ProviderMFA{AuthTime: time.Unix(1_799_999_990, 0), CoveredByPolicy: true},
 	}
 }
 
@@ -293,6 +309,19 @@ func TestComplete_RejectionsWriteOnlyTheAudit(t *testing.T) {
 		action string
 	}{
 		{
+			name:   "impersonation",
+			authn:  func() app.Authentication { a := person(1); a.Impersonated = true; return a },
+			mfa:    true,
+			code:   "auth.impersonation_refused",
+			action: app.AuditLoginFailed,
+		},
+		{
+			name:   "authentication older than the attempt",
+			authn:  func() app.Authentication { a := person(1); a.MFA.AuthTime = time.Unix(1_800_000_000-61, 0); return a },
+			code:   "auth.stale_authentication",
+			action: app.AuditLoginFailed,
+		},
+		{
 			name:   "unverified email",
 			authn:  func() app.Authentication { a := person(1); a.EmailVerified = false; return a },
 			code:   "auth.email_unverified",
@@ -337,6 +366,28 @@ func TestComplete_RejectionsWriteOnlyTheAudit(t *testing.T) {
 				t.Fatalf("audit = %+v, want one %s", after.audit[len(before.audit):], tc.action)
 			}
 		})
+	}
+}
+
+// A concurrent first login of the same identity wins the race to create it: this one
+// fails on the unique constraint, runs again and logs in as the winner's user.
+func TestComplete_LosesTheRaceToCreateTheUser(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, false)
+	who := person(1)
+	f.store.raceWinner = &who
+
+	if _, err := f.complete(t, who, ""); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	st := f.store.snapshot()
+	if len(st.users) != 1 || len(st.sessions) != 1 {
+		t.Fatalf("users = %d, sessions = %d; want the winner's user and one session", len(st.users), len(st.sessions))
+	}
+	for _, s := range st.sessions {
+		if s.UserID != "user-winner-"+who.Subject {
+			t.Fatalf("session of %s, want the winner's user", s.UserID)
+		}
 	}
 }
 
@@ -390,7 +441,7 @@ func TestComplete_EmailChange(t *testing.T) {
 		}
 	})
 
-	t.Run("keeps the old one if another user has it", func(t *testing.T) {
+	t.Run("keeps the old one, unverified, if another user has it", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t, false)
 		for _, n := range []int{1, 2} {
@@ -405,8 +456,18 @@ func TestComplete_EmailChange(t *testing.T) {
 		}
 		n := 0
 		for _, u := range f.store.snapshot().users {
-			if u.email == person(2).Email {
+			switch u.email {
+			case person(2).Email:
 				n++
+				if !u.verified {
+					t.Fatal("the other user's email lost its verification")
+				}
+			case person(1).Email:
+				if u.verified {
+					t.Fatal("the old email kept its verification although the provider moved away from it")
+				}
+			default:
+				t.Fatalf("unexpected email %s", u.email.Reveal())
 			}
 		}
 		if n != 1 {
@@ -426,7 +487,7 @@ func TestComplete_MFA(t *testing.T) {
 	}{
 		{"provider enforces MFA", true, func(*app.Authentication) {}, true},
 		{"provider does not", false, func(*app.Authentication) {}, false},
-		{"SSO is outside the policy", true, func(a *app.Authentication) { a.MFA.ExemptFromPolicy = true }, false},
+		{"method off the allowlist", true, func(a *app.Authentication) { a.MFA.CoveredByPolicy = false }, false},
 		{"reported mfa", false, func(a *app.Authentication) { a.MFA.HasAMR, a.MFA.AMR = true, []string{"mfa"} }, true},
 	}
 	for _, tc := range tests {
@@ -447,6 +508,26 @@ func TestComplete_MFA(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestComplete_TruncatesTheUserAgent(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, false)
+	started, err := f.login.Start("/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.idp.Authenticate(started.State, "c", person(1))
+	if _, err := f.login.Complete(t.Context(), app.Callback{
+		State: started.State, IntentValue: started.Value, Code: "c", UserAgent: strings.Repeat("x", 10_000),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range f.store.snapshot().sessions {
+		if len(s.UserAgent) != domain.MaxUserAgentLength {
+			t.Fatalf("stored user agent has %d characters, want %d", len(s.UserAgent), domain.MaxUserAgentLength)
+		}
 	}
 }
 

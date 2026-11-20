@@ -1,10 +1,29 @@
 package domain
 
-import "time"
+import (
+	"strings"
+	"time"
+	"unicode/utf8"
+)
 
 // TouchInterval is how stale last_seen_at may get before a request refreshes it
 // (design, 5.4.1): at most one write per session every five minutes.
 const TouchInterval = 5 * time.Minute
+
+// MaxUserAgentLength is how many characters of the User-Agent a session keeps: enough to
+// recognise a browser in a list of sessions, and a bound on what a client can make us
+// store (the header itself may be up to HTTP_MAX_HEADER_BYTES).
+const MaxUserAgentLength = 512
+
+// TruncateUserAgent returns at most MaxUserAgentLength characters of ua, as valid UTF-8
+// (Postgres text refuses invalid sequences).
+func TruncateUserAgent(ua string) string {
+	ua = strings.ToValidUTF8(ua, "\uFFFD")
+	if utf8.RuneCountInString(ua) <= MaxUserAgentLength {
+		return ua
+	}
+	return string([]rune(ua)[:MaxUserAgentLength])
+}
 
 // SessionPolicy holds the session lifetimes (design, section 6).
 type SessionPolicy struct {

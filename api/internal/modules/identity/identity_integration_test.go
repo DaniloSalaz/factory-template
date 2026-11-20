@@ -331,7 +331,7 @@ func (e *env) person() app.Authentication {
 		Subject:       fmt.Sprintf("user_%s_%d", strings.ReplaceAll(e.t.Name(), "/", "_"), n),
 		Email:         pii.Email(fmt.Sprintf("u%d.%d@example.test", n, time.Now().UnixNano())),
 		EmailVerified: true, DisplayName: "Test User", SessionID: fmt.Sprintf("session_%d", n), Method: "Password",
-		MFA: domain.ProviderMFA{AuthTime: e.clock.Now().Add(-time.Second)},
+		MFA: domain.ProviderMFA{AuthTime: e.clock.Now().Add(-time.Second), CoveredByPolicy: true},
 	}
 }
 
@@ -533,6 +533,120 @@ func TestLogin_DisabledUserLeavesOnlyLoginFailed(t *testing.T) {
 	}
 }
 
+// The first login of a new identity from several tabs or devices at once: every
+// callback must end in a session of the same, single user, never in a 500.
+func TestLogin_ConcurrentFirstLogin(t *testing.T) {
+	e := newEnv(t, options{})
+	who := e.person()
+	const n = 8
+
+	type attempt struct {
+		b     *browser
+		state string
+	}
+	attempts := make([]attempt, n)
+	for i := range attempts {
+		b := e.browser()
+		state := b.startLogin("/")
+		e.idp.Authenticate(state, fmt.Sprintf("c%d", i), who)
+		attempts[i] = attempt{b: b, state: state}
+	}
+
+	statuses := make([]int, n)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i, a := range attempts {
+		wg.Go(func() {
+			<-start
+			u := e.srv.URL + "/auth/callback?state=" + url.QueryEscape(a.state) + "&code=" + fmt.Sprintf("c%d", i)
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, u, nil)
+			if err != nil {
+				return
+			}
+			res, err := a.b.client.Do(req)
+			if err != nil {
+				return
+			}
+			_ = res.Body.Close()
+			statuses[i] = res.StatusCode
+		})
+	}
+	close(start)
+	wg.Wait()
+
+	for i, s := range statuses {
+		if s != http.StatusFound {
+			t.Errorf("callback %d: status %d, want 302", i, s)
+		}
+	}
+	if got := e.count(`SELECT count(*) FROM users WHERE email = $1::text::extensions.citext`, who.Email.Reveal()); got != 1 {
+		t.Fatalf("%d users for one identity", got)
+	}
+	if got := e.count(`SELECT count(DISTINCT user_id) FROM sessions WHERE user_id IN
+		(SELECT user_id FROM user_identities WHERE subject = $1)`, who.Subject); got != 1 {
+		t.Fatalf("sessions belong to %d users", got)
+	}
+	if got := e.count(`SELECT count(*) FROM sessions WHERE user_id IN
+		(SELECT user_id FROM user_identities WHERE subject = $1)`, who.Subject); got != n {
+		t.Fatalf("%d sessions, want %d", got, n)
+	}
+}
+
+func TestLogin_ImpersonationIsRefused(t *testing.T) {
+	e := newEnv(t, options{mfaRequired: true})
+	victim := e.person()
+	e.browser().login(victim)
+	userID := e.scalar(`SELECT user_id::text FROM user_identities WHERE subject = $1`, victim.Subject)
+	sessions := e.count(`SELECT count(*) FROM sessions WHERE user_id = $1`, userID)
+
+	impersonated := victim
+	impersonated.Impersonated = true
+	b := e.browser()
+	state := b.startLogin("/")
+	e.idp.Authenticate(state, "c", impersonated)
+	if res := b.callback(state, "c"); res.status != http.StatusForbidden || res.problemCode(t) != "auth.impersonation_refused" {
+		t.Fatalf("callback: %d %s", res.status, res.body)
+	}
+	if b.sessionToken() != "" || e.count(`SELECT count(*) FROM sessions WHERE user_id = $1`, userID) != sessions {
+		t.Fatal("an impersonated login created a session")
+	}
+	if got := e.scalar(`SELECT action || ' ' || (metadata->>'reason') FROM audit_log ORDER BY created_at DESC, id DESC LIMIT 1`); got != "auth.login_failed impersonation" {
+		t.Fatalf("last event = %s", got)
+	}
+}
+
+func TestLogin_StaleAuthenticationIsRejected(t *testing.T) {
+	e := newEnv(t, options{mfaRequired: true})
+
+	t.Run("older than the attempt, beyond the clock margin", func(t *testing.T) {
+		who := e.person()
+		b := e.browser()
+		state := b.startLogin("/")
+		who.MFA.AuthTime = e.clock.Now().Add(-domain.AuthClockSkew - time.Second)
+		e.idp.Authenticate(state, "c", who)
+		if res := b.callback(state, "c"); res.status != http.StatusUnauthorized || res.problemCode(t) != "auth.stale_authentication" {
+			t.Fatalf("callback: %d %s", res.status, res.body)
+		}
+		if n := e.count(`SELECT count(*) FROM user_identities WHERE subject = $1`, who.Subject); n != 0 {
+			t.Fatal("a stale authentication created the user")
+		}
+		if got := e.scalar(`SELECT action || ' ' || (metadata->>'reason') FROM audit_log ORDER BY created_at DESC, id DESC LIMIT 1`); got != "auth.login_failed stale_auth" {
+			t.Fatalf("last event = %s", got)
+		}
+	})
+
+	t.Run("within the clock margin", func(t *testing.T) {
+		who := e.person()
+		b := e.browser()
+		state := b.startLogin("/")
+		who.MFA.AuthTime = e.clock.Now().Add(-domain.AuthClockSkew + time.Second)
+		e.idp.Authenticate(state, "c2", who)
+		if res := b.callback(state, "c2"); res.status != http.StatusFound {
+			t.Fatalf("callback: %d %s", res.status, res.body)
+		}
+	})
+}
+
 func TestLogin_UnverifiedEmailIsRejected(t *testing.T) {
 	e := newEnv(t, options{})
 	who := e.person()
@@ -581,6 +695,24 @@ func TestLogin_EmailChangeTakesTheProvidersVerification(t *testing.T) {
 	e.browser().login(who)
 	if got := e.scalar(`SELECT email::text || ' ' || email_verified::text FROM users WHERE id = $1`, userID); got != who.Email.Reveal()+" true" {
 		t.Fatalf("user = %s, want the new email, verified", got)
+	}
+}
+
+func TestLogin_EmailChangeToATakenEmailUnverifiesTheOldOne(t *testing.T) {
+	e := newEnv(t, options{})
+	who, other := e.person(), e.person()
+	e.browser().login(who)
+	e.browser().login(other)
+	userID := e.scalar(`SELECT user_id::text FROM user_identities WHERE subject = $1`, who.Subject)
+
+	moved := who
+	moved.Email = other.Email
+	e.browser().login(moved)
+	if got := e.scalar(`SELECT email::text || ' ' || email_verified::text FROM users WHERE id = $1`, userID); got != who.Email.Reveal()+" false" {
+		t.Fatalf("user = %s, want the old email, unverified", got)
+	}
+	if got := e.scalar(`SELECT email_verified::text FROM users WHERE email = $1::text::extensions.citext`, other.Email.Reveal()); got != "true" {
+		t.Fatalf("the other user's verification changed: %s", got)
 	}
 }
 
@@ -745,11 +877,11 @@ func TestLogin_MFA(t *testing.T) {
 		t.Fatalf("with MFA required at the provider, mfa_auth_time = auth_time; got %s", got)
 	}
 
-	sso := e.person()
-	sso.MFA.ExemptFromPolicy = true
-	e.browser().login(sso)
-	if got := mfaOf(sso); got != "<null>" {
-		t.Fatalf("SSO is outside the provider's MFA policy; got %s", got)
+	offList := e.person()
+	offList.MFA.CoveredByPolicy = false
+	e.browser().login(offList)
+	if got := mfaOf(offList); got != "<null>" {
+		t.Fatalf("a method off the allowlist is never MFA; got %s", got)
 	}
 
 	noMFA := e.person()

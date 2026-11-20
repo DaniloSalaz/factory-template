@@ -115,6 +115,13 @@ func (l *Login) Complete(ctx context.Context, cb Callback) (Completed, error) {
 		return Completed{}, fmt.Errorf("exchange code: %w", err)
 	}
 
+	// Before anything else: an impersonated login never reaches the user's account.
+	if authn.Impersonated {
+		return Completed{}, l.reject(ctx, cb, "impersonation", domain.ErrImpersonationRefused())
+	}
+	if !domain.FreshAuthentication(authn.MFA.AuthTime, intent.StartedAt) {
+		return Completed{}, l.reject(ctx, cb, "stale_auth", domain.ErrStaleAuthentication())
+	}
 	if !authn.EmailVerified {
 		return Completed{}, l.reject(ctx, cb, "email_unverified", domain.ErrEmailUnverified())
 	}
@@ -146,7 +153,7 @@ func (l *Login) Complete(ctx context.Context, cb Callback) (Completed, error) {
 			TokenHash: domain.HashToken(token), UserID: userID,
 			AuthTime: authn.MFA.AuthTime, MFAAuthTime: mfaTime,
 			Now: now, IdleExpiresAt: idle, AbsoluteExpiresAt: absolute,
-			IPPrefix: cb.IPPrefix, UserAgent: cb.UserAgent, ProviderSessionID: authn.SessionID,
+			IPPrefix: cb.IPPrefix, UserAgent: domain.TruncateUserAgent(cb.UserAgent), ProviderSessionID: authn.SessionID,
 		})
 		if err != nil {
 			return fmt.Errorf("create session: %w", err)
@@ -167,7 +174,19 @@ func (l *Login) Complete(ctx context.Context, cb Callback) (Completed, error) {
 
 // resolveUser finds or creates the user of authn (design, 5.1.5 to 5.1.7): reads first,
 // and writes only once the identity is known to be usable.
+//
+// Two first logins of the same identity can race to create it. The loser's insert
+// fails on the unique constraint and aborts its transaction, so it runs once more and
+// then finds the identity the winner committed.
 func (l *Login) resolveUser(ctx context.Context, cb Callback, authn Authentication) (string, error) {
+	userID, err := l.resolveUserOnce(ctx, cb, authn)
+	if errors.Is(err, ErrAlreadyExists()) {
+		return l.resolveUserOnce(ctx, cb, authn)
+	}
+	return userID, err
+}
+
+func (l *Login) resolveUserOnce(ctx context.Context, cb Callback, authn Authentication) (string, error) {
 	provider := l.idp.Name()
 	var userID string
 	var rejected error
@@ -183,9 +202,19 @@ func (l *Login) resolveUser(ctx context.Context, cb Callback, authn Authenticati
 				return fmt.Errorf("find user by email: %w", err)
 			}
 			if taken {
-				rejected = domain.ErrEmailInUse()
-				return r.RecordAudit(ctx, AuditEvent{Action: AuditEmailInUse, IPPrefix: cb.IPPrefix,
-					Metadata: map[string]string{"provider": provider}})
+				// Each statement sees what was committed before it: a concurrent first login
+				// of this same identity may have committed the user and its identity between
+				// the two reads. Only if the identity is still missing is the email someone
+				// else's.
+				user, found, err = r.UserByIdentity(ctx, provider, authn.Subject)
+				if err != nil {
+					return fmt.Errorf("find identity again: %w", err)
+				}
+				if !found {
+					rejected = domain.ErrEmailInUse()
+					return r.RecordAudit(ctx, AuditEvent{Action: AuditEmailInUse, IPPrefix: cb.IPPrefix,
+						Metadata: map[string]string{"provider": provider}})
+				}
 			}
 		}
 		if found && user.Disabled {
@@ -215,7 +244,9 @@ func (l *Login) resolveUser(ctx context.Context, cb Callback, authn Authenticati
 }
 
 // syncEmail stores the provider's email if it changed and no other user has it, with
-// the provider's verification of that email (issue #4).
+// the provider's verification of that email (issue #4). If another user has it, the old
+// email stays but loses its verification: the provider no longer vouches for it, so it
+// must not open invitations sent to it.
 func (l *Login) syncEmail(ctx context.Context, r Repo, user User, authn Authentication) error {
 	if equalFoldEmail(user.Email.Reveal(), authn.Email.Reveal()) {
 		return nil
@@ -225,6 +256,9 @@ func (l *Login) syncEmail(ctx context.Context, r Repo, user User, authn Authenti
 		return fmt.Errorf("find user by new email: %w", err)
 	}
 	if taken && other.ID != user.ID {
+		if err := r.UpdateUserEmail(ctx, user.ID, user.Email, false); err != nil {
+			return fmt.Errorf("unverify old email: %w", err)
+		}
 		return nil
 	}
 	if err := r.UpdateUserEmail(ctx, user.ID, authn.Email, authn.EmailVerified); err != nil {

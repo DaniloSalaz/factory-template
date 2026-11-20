@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
 )
 
@@ -34,7 +35,9 @@ type Authentication struct {
 	SessionID string
 	// Method names how the user authenticated, for the audit trail.
 	Method string
-	MFA    domain.ProviderMFA
+	// Impersonated is true when someone else (a provider admin) signed in as the user.
+	Impersonated bool
+	MFA          domain.ProviderMFA
 }
 
 // Store runs the module's transactions.
@@ -62,6 +65,12 @@ type Repo interface {
 	RevokeUserSessions(ctx context.Context, userID string) (int64, error)
 
 	RecordAudit(ctx context.Context, e AuditEvent) error
+}
+
+// ErrAlreadyExists is what a Repo returns when a create hits a unique constraint: a
+// concurrent login created the same user or identity first.
+func ErrAlreadyExists() error {
+	return apperr.Conflict("identity.already_exists", "The user or identity already exists.")
 }
 
 // User is a stored user, as the login sees it.

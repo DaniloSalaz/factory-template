@@ -82,14 +82,18 @@ func CSRF(allowedOrigins []string, logger *slog.Logger) Middleware {
 	}
 }
 
-// RateLimit answers 429 once the client address exceeds the limiter's quota. Requests
-// without a known address share one quota, so they cannot evade it.
+// RateLimit answers 429 once the client exceeds the limiter's quota. It counts by
+// clientip.LimitKey (the IPv4 address, the IPv6 /64), so rotating addresses inside one
+// IPv6 block does not reset the quota. Requests without a known address share one
+// quota, so they cannot evade it.
 func RateLimit(limiter ratelimit.Limiter, logger *slog.Logger) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			key := "unknown"
 			if addr, ok := clientip.AddrFrom(r.Context()); ok {
-				key = addr.String()
+				if block, ok := clientip.LimitKey(addr); ok {
+					key = block.String()
+				}
 			}
 			ok, err := limiter.Allow(r.Context(), key)
 			if err != nil {

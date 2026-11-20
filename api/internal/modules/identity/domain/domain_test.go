@@ -222,9 +222,9 @@ func TestMFAAuthTime(t *testing.T) {
 		wantOK   bool
 		wantErr  bool
 	}{
-		{"inferred when the provider enforces MFA", ProviderMFA{AuthTime: at}, true, true, false},
-		{"nothing when it does not", ProviderMFA{AuthTime: at}, false, false, false},
-		{"methods outside the policy (SSO) are not MFA", ProviderMFA{AuthTime: at, ExemptFromPolicy: true}, true, false, false},
+		{"inferred for an allowlisted method when the provider enforces MFA", ProviderMFA{AuthTime: at, CoveredByPolicy: true}, true, true, false},
+		{"nothing when the provider does not enforce it", ProviderMFA{AuthTime: at, CoveredByPolicy: true}, false, false, false},
+		{"methods off the allowlist are not MFA", ProviderMFA{AuthTime: at}, true, false, false},
 		{"reported amr with mfa wins", ProviderMFA{AuthTime: at, HasAMR: true, AMR: []string{"pwd", "mfa"}}, false, true, false},
 		{"reported amr without mfa is refused when required", ProviderMFA{AuthTime: at, HasAMR: true, AMR: []string{"pwd"}}, true, false, true},
 		{"reported amr without mfa, not required", ProviderMFA{AuthTime: at, HasAMR: true, AMR: []string{"pwd"}}, false, false, false},
@@ -243,6 +243,38 @@ func TestMFAAuthTime(t *testing.T) {
 				t.Fatalf("err = %v, want auth.mfa_required", err)
 			}
 		})
+	}
+}
+
+func TestFreshAuthentication(t *testing.T) {
+	t.Parallel()
+	start := time.Unix(1_800_000_000, 0)
+	tests := map[time.Duration]bool{
+		time.Minute:       true,
+		0:                 true,
+		-59 * time.Second: true,
+		-60 * time.Second: true,
+		-61 * time.Second: false,
+		-time.Hour:        false,
+	}
+	for offset, want := range tests {
+		if got := FreshAuthentication(start.Add(offset), start); got != want {
+			t.Errorf("auth_time at start%+v: fresh = %v, want %v", offset, got, want)
+		}
+	}
+}
+
+func TestTruncateUserAgent(t *testing.T) {
+	t.Parallel()
+	if got := TruncateUserAgent("Mozilla/5.0"); got != "Mozilla/5.0" {
+		t.Fatalf("short user agent changed: %q", got)
+	}
+	long := strings.Repeat("ñ", MaxUserAgentLength+100)
+	if got := TruncateUserAgent(long); got != strings.Repeat("ñ", MaxUserAgentLength) {
+		t.Fatalf("truncated to %d characters, want %d", len([]rune(got)), MaxUserAgentLength)
+	}
+	if got := TruncateUserAgent("a\xffb"); got != "a\uFFFDb" {
+		t.Fatalf("invalid UTF-8 kept: %q", got)
 	}
 }
 
