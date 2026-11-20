@@ -76,3 +76,8 @@ SELECT r.role::text AS role FROM roles_in_use() AS r(role);
 SELECT m.role::text AS role, m.tenant_status::text AS tenant_status,
        m.user_disabled::boolean AS user_disabled
 FROM auth_membership(sqlc.arg(tenant_id)::uuid) AS m(role, tenant_status, user_disabled);
+
+-- Events of the transaction's tenant; record_audit refuses any other (TN030).
+-- name: RecordTenantAudit :exec
+SELECT record_audit(sqlc.arg(tenant_id)::uuid, sqlc.arg(action), sqlc.narg(target_type), sqlc.narg(target_id),
+                    sqlc.arg(metadata), sqlc.narg(ip_prefix));

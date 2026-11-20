@@ -160,3 +160,25 @@ func TestTenancy_SystemRoleIsRefused(t *testing.T) {
 		t.Fatalf("a membership with the system role must be refused, got %v", err)
 	}
 }
+
+func TestDenialAuditor_RecordsInThePrincipalsTenant(t *testing.T) {
+	t.Parallel()
+
+	store := newMemStore()
+	p, err := authctx.NewPrincipal(memberID, tenantA, "member", authctx.PermScopeTenant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.NewDenialAuditor(store).RecordDenied(t.Context(), p, authz.PermAuditRead); err != nil {
+		t.Fatal(err)
+	}
+	audit := store.snapshot().audit
+	if len(audit) != 1 {
+		t.Fatalf("audit = %v", audit)
+	}
+	a := audit[0]
+	if a.Action != authz.AuditDenied || a.tenant != tenantA || a.actor != memberID ||
+		a.TargetID != string(authz.PermAuditRead) || a.Metadata["role"] != "member" {
+		t.Fatalf("event = %+v", a)
+	}
+}

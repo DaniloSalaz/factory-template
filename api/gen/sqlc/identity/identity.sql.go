@@ -139,6 +139,33 @@ func (q *Queries) RecordAudit(ctx context.Context, arg RecordAuditParams) error 
 	return err
 }
 
+const recordTenantAudit = `-- name: RecordTenantAudit :exec
+SELECT record_audit($1::uuid, $2, $3, $4,
+                    $5, $6)
+`
+
+type RecordTenantAuditParams struct {
+	TenantID   pgtype.UUID
+	Action     string
+	TargetType pgtype.Text
+	TargetID   pgtype.Text
+	Metadata   []byte
+	IpPrefix   *netip.Prefix
+}
+
+// Events of the transaction's tenant; record_audit refuses any other (TN030).
+func (q *Queries) RecordTenantAudit(ctx context.Context, arg RecordTenantAuditParams) error {
+	_, err := q.db.Exec(ctx, recordTenantAudit,
+		arg.TenantID,
+		arg.Action,
+		arg.TargetType,
+		arg.TargetID,
+		arg.Metadata,
+		arg.IpPrefix,
+	)
+	return err
+}
+
 const revokeSession = `-- name: RevokeSession :exec
 UPDATE sessions SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL
 `

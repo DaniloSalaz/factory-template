@@ -67,6 +67,14 @@ linters:
             - $gostd
             # Its own external test package (authctx_test) imports it.
             - github.com/DaniloSalaz/factory-template/api/internal/platform/authctx
+        "[authz-in-use-cases] adapters/http must not import platform/authz: check permissions in the use case (app/) with Require, never in the handler":
+          files: ["**/internal/modules/*/adapters/http/**"]
+          deny:
+            - pkg: github.com/DaniloSalaz/factory-template/api/internal/platform/authz
+              desc: >-
+                [authz-in-use-cases] permissions are checked in the use case (app/) with
+                Authorizer.Require, so every transport gets the same check; the handler
+                only calls the use case
         "[domain-pure] domain packages may import only the standard library and platform/apperr: move infrastructure to adapters/ behind a port (interface) declared in app/":
           files: ["**/internal/modules/*/domain/**"]
           list-mode: strict

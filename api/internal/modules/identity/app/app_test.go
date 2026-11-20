@@ -15,6 +15,7 @@ import (
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/authz"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
 )
@@ -55,7 +56,8 @@ type memSession struct {
 }
 
 type memAudit struct {
-	actor string
+	actor  string
+	tenant string
 	app.AuditEvent
 }
 
@@ -77,6 +79,14 @@ func (m *memStore) Anon(ctx context.Context, fn func(context.Context, app.Repo) 
 
 func (m *memStore) AsUser(ctx context.Context, userID string, fn func(context.Context, app.Repo) error) error {
 	return m.tx(ctx, userID, fn)
+}
+
+func (m *memStore) InTenant(ctx context.Context, p authctx.Principal, fn func(context.Context, app.Repo) error) error {
+	return m.tx(ctx, p.UserID(), func(ctx context.Context, r app.Repo) error {
+		mr, _ := r.(*memRepo)
+		mr.tenant = p.TenantID()
+		return fn(ctx, mr)
+	})
 }
 
 func (m *memStore) tx(ctx context.Context, actor string, fn func(context.Context, app.Repo) error) error {
@@ -103,9 +113,10 @@ func (m *memStore) snapshot() state {
 }
 
 type memRepo struct {
-	st    state
-	actor string
-	store *memStore
+	st     state
+	actor  string
+	tenant string // set by InTenant
+	store  *memStore
 }
 
 func (r *memRepo) id(prefix string) string {
@@ -225,6 +236,14 @@ func (r *memRepo) RecordAudit(_ context.Context, e app.AuditEvent) error {
 // ------------------------------------------------------------------------------------
 
 const front = "https://front.test"
+
+func (r *memRepo) RecordTenantAudit(_ context.Context, tenantID string, e app.AuditEvent) error {
+	if r.tenant == "" || tenantID != r.tenant {
+		return errors.New("record_audit: TN030/TN031")
+	}
+	r.st.audit = append(r.st.audit, memAudit{actor: r.actor, tenant: tenantID, AuditEvent: e})
+	return nil
+}
 
 func (r *memRepo) RolesInUse(context.Context) ([]string, error) {
 	return slices.Clone(r.st.rolesInUse), nil

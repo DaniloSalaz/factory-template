@@ -9,6 +9,7 @@ import (
 
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
 )
 
@@ -46,6 +47,8 @@ type Store interface {
 	Anon(ctx context.Context, fn func(ctx context.Context, r Repo) error) error
 	// AsUser runs fn as userID (db.WithUserTx), so audit events name it as the actor.
 	AsUser(ctx context.Context, userID string, fn func(ctx context.Context, r Repo) error) error
+	// InTenant runs fn as p in its tenant (db.WithTenantTx).
+	InTenant(ctx context.Context, p authctx.Principal, fn func(ctx context.Context, r Repo) error) error
 }
 
 // Repo is what the use cases read and write inside a transaction.
@@ -65,6 +68,8 @@ type Repo interface {
 	RevokeUserSessions(ctx context.Context, userID string) (int64, error)
 
 	RecordAudit(ctx context.Context, e AuditEvent) error
+	// RecordTenantAudit records an event of the transaction's tenant; only InTenant can.
+	RecordTenantAudit(ctx context.Context, tenantID string, e AuditEvent) error
 
 	// RolesInUse returns the distinct roles stored in any membership.
 	RolesInUse(ctx context.Context) ([]string, error)
@@ -116,7 +121,7 @@ type Session struct {
 	State             domain.SessionState
 }
 
-// AuditEvent is an event without a tenant; the actor is the transaction's user, if any.
+// AuditEvent is an audit event; the actor is the transaction's user, if any.
 // Metadata never holds personal data (design, section 9).
 type AuditEvent struct {
 	Action     string

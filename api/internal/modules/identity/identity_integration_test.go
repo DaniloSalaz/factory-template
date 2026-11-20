@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -1274,5 +1275,35 @@ func TestMiddlewares_FailClosedWithoutRouteSecurity(t *testing.T) {
 	}
 	if rec := call(true); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "auth.tenant_forbidden") {
 		t.Fatalf("no tenant: %d %s, want 403 auth.tenant_forbidden", rec.Code, rec.Body)
+	}
+}
+
+func TestAuthorizer_DeniedIsAuditedInTheTenant(t *testing.T) {
+	e := newEnv(t, options{})
+	who := e.person()
+	e.browser().login(who)
+	uid := e.userID(who)
+	tenant := e.tenant()
+	e.member(who, tenant, "member")
+
+	p, err := authctx.NewPrincipal(uid, tenant, "member", testCatalog(t, 0).Permissions("member")...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := authctx.WithPrincipal(t.Context(), p)
+	a := e.module.Authorizer()
+	if err := a.Require(ctx, authz.PermMembersRead); err != nil {
+		t.Fatalf("a held permission: %v", err)
+	}
+	if err := a.Require(ctx, authz.PermMembersManage); !errors.Is(err, authz.ErrDenied()) {
+		t.Fatalf("Require = %v, want authz.denied", err)
+	}
+	got := e.scalar(`SELECT tenant_id::text || '|' || actor_user_id::text || '|' || target_id || '|' || (metadata->>'role')
+		FROM audit_log WHERE action = 'authz.denied' AND tenant_id = $1`, tenant)
+	if want := tenant + "|" + uid + "|members:manage|member"; got != want {
+		t.Fatalf("authz.denied = %s, want %s", got, want)
+	}
+	if n := e.count(`SELECT count(*) FROM audit_log WHERE action = 'authz.denied' AND tenant_id = $1`, tenant); n != 1 {
+		t.Fatalf("one denial, %d events", n)
 	}
 }

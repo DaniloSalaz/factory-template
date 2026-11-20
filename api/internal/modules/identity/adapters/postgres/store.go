@@ -58,6 +58,17 @@ func (s *Store) AsUser(ctx context.Context, userID string, fn func(context.Conte
 	return db.MapError(err)
 }
 
+// InTenant implements app.Store with db.WithTenantTx.
+func (s *Store) InTenant(ctx context.Context, p authctx.Principal, fn func(context.Context, app.Repo) error) error {
+	if cur, ok := authctx.PrincipalFrom(ctx); !ok || cur.UserID() != p.UserID() || cur.TenantID() != p.TenantID() {
+		ctx = authctx.WithPrincipal(ctx, p)
+	}
+	err := s.db.WithTenantTx(ctx, func(ctx context.Context, q db.Querier) error {
+		return fn(ctx, repo{q: identitydb.New(q)})
+	})
+	return db.MapError(err)
+}
+
 type repo struct {
 	q *identitydb.Queries
 }
@@ -208,13 +219,9 @@ func (r repo) RevokeUserSessions(ctx context.Context, userID string) (int64, err
 }
 
 func (r repo) RecordAudit(ctx context.Context, e app.AuditEvent) error {
-	meta := e.Metadata
-	if meta == nil {
-		meta = map[string]string{}
-	}
-	b, err := json.Marshal(meta)
+	b, err := auditMetadata(e)
 	if err != nil {
-		return fmt.Errorf("encode audit metadata: %w", err)
+		return err
 	}
 	if err := r.q.RecordAudit(ctx, identitydb.RecordAuditParams{
 		Action: e.Action, TargetType: text(e.TargetType), TargetID: text(e.TargetID),
@@ -231,6 +238,24 @@ func (r repo) RolesInUse(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("roles in use: %w", err)
 	}
 	return roles, nil
+}
+
+func (r repo) RecordTenantAudit(ctx context.Context, tenantID string, e app.AuditEvent) error {
+	tid, err := parseUUID(tenantID)
+	if err != nil {
+		return err
+	}
+	meta, err := auditMetadata(e)
+	if err != nil {
+		return err
+	}
+	if err := r.q.RecordTenantAudit(ctx, identitydb.RecordTenantAuditParams{
+		TenantID: tid, Action: e.Action, TargetType: text(e.TargetType), TargetID: text(e.TargetID),
+		Metadata: meta, IpPrefix: prefix(e.IPPrefix),
+	}); err != nil {
+		return fmt.Errorf("record tenant audit %s: %w", e.Action, err)
+	}
+	return nil
 }
 
 // tenantActive is the tenants.status of a tenant that may be used.
@@ -251,6 +276,18 @@ func (r repo) Membership(ctx context.Context, tenantID string) (app.Membership, 
 	return app.Membership{
 		Role: row.Role, TenantActive: row.TenantStatus == tenantActive, UserDisabled: row.UserDisabled,
 	}, true, nil
+}
+
+func auditMetadata(e app.AuditEvent) ([]byte, error) {
+	meta := e.Metadata
+	if meta == nil {
+		meta = map[string]string{}
+	}
+	b, err := json.Marshal(meta)
+	if err != nil {
+		return nil, fmt.Errorf("encode audit metadata: %w", err)
+	}
+	return b, nil
 }
 
 // uniqueViolation is SQLSTATE unique_violation.

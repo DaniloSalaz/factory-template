@@ -19,6 +19,8 @@ type Querier interface {
 	CreateUser(ctx context.Context, arg CreateUserParams) (pgtype.UUID, error)
 	// Events without a tenant: login and logout never have one (record_audit, TN031).
 	RecordAudit(ctx context.Context, arg RecordAuditParams) error
+	// Events of the transaction's tenant; record_audit refuses any other (TN030).
+	RecordTenantAudit(ctx context.Context, arg RecordTenantAuditParams) error
 	RevokeSession(ctx context.Context, id pgtype.UUID) error
 	RevokeSessionByHash(ctx context.Context, tokenHash []byte) error
 	RevokeUserSessions(ctx context.Context, userID pgtype.UUID) (int64, error)
