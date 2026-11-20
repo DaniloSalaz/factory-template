@@ -14,7 +14,7 @@ import (
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/config"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/db"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/httpx"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/observability"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/logx"
 )
 
 func main() {
@@ -33,7 +33,8 @@ func run() error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	logger := observability.NewLogger(os.Stdout, cfg.Log.Level).With(slog.String("env", string(cfg.Env)))
+	logger := logx.New(os.Stdout, cfg.Log).With(slog.String("env", string(cfg.Env)))
+	logger.InfoContext(ctx, "config loaded", slog.Any("config", cfg))
 
 	pool, err := db.NewPool(ctx, cfg.DB.URL.Reveal())
 	if err != nil {
