@@ -460,46 +460,94 @@ func TestSchema_RuntimeCannotWriteAuditLog(t *testing.T) {
 	}
 }
 
-// Tenants and memberships are created only through create_tenant_with_owner and
-// accept_invitation, and a tenant is only renamed. Every statement runs with the RLS
-// variables of a tenant the user owns and targets rows that would otherwise accept it
-// (a tenant with no children, a user that is not yet a member), so only the missing
-// privilege can stop it.
-func TestSchema_RuntimeTenantAndMembershipPrivileges(t *testing.T) {
+// app_runtime writes only what the design needs (section 7.1): tenants and memberships
+// are created only through create_tenant_with_owner and accept_invitation, users and
+// identities are deleted only by app_admin, and UPDATE is granted per column. Every
+// statement runs with the RLS variables of a tenant the user owns and targets rows
+// that would otherwise accept it (a tenant with no children, a user that is not yet a
+// member, rows of that tenant), so only the privilege decides. Writing a column onto
+// itself is enough: the privilege is checked on the SET list, not on the new value.
+func TestSchema_RuntimeWritePrivileges(t *testing.T) {
 	t.Parallel()
 
 	f := newFixtures(t)
 	owned, empty := f.tenant("active"), f.tenant("active")
 	owner, outsider := f.user(true, false), f.user(true, false)
-	f.member(owned, owner, "owner")
+	membership := f.member(owned, owner, "owner")
+	invitation := f.invitation(owned, "invitee@example.com", "")
+	f.exec(`INSERT INTO user_identities (user_id, provider, subject, email_at_link)
+		VALUES ($1, 'workos', $2, $3)`, outsider.id, "subject-"+outsider.id, outsider.email)
+	session := f.scalar(`INSERT INTO sessions (token_hash, user_id, auth_time, idle_expires_at, absolute_expires_at)
+		VALUES (sha256(uuidv7()::text::bytea), $1, now(), now() + interval '7 days', now() + interval '30 days')
+		RETURNING id::text`, outsider.id)
 
+	const denied = "42501"
 	tests := []struct {
 		name      string
 		sql       string
 		args      []any
 		wantState string // "" means it must succeed and affect one row
 	}{
-		{"insert tenant", `INSERT INTO tenants (slug, name) VALUES ('forged-' || replace(uuidv7()::text, '-', ''), 'Forged')`, nil, "42501"},
-		{"insert membership", `INSERT INTO memberships (tenant_id, user_id, role) VALUES ($1, $2, 'member')`, []any{owned, outsider.id}, "42501"},
-		{"delete tenant", `DELETE FROM tenants WHERE id = $1`, []any{empty}, "42501"},
-		{"update tenant status", `UPDATE tenants SET status = 'suspended' WHERE id = $1`, []any{owned}, "42501"},
-		{"update tenant name", `UPDATE tenants SET name = 'Renamed' WHERE id = $1`, []any{owned}, ""},
+		{"insert tenant", `INSERT INTO tenants (slug, name) VALUES ('forged-' || replace(uuidv7()::text, '-', ''), 'Forged')`, nil, denied},
+		{"delete tenant", `DELETE FROM tenants WHERE id = $1`, []any{empty}, denied},
+		{"update tenant status", `UPDATE tenants SET status = 'suspended' WHERE id = $1`, []any{owned}, denied},
+		{"update tenant name", `UPDATE tenants SET name = 'Renamed', updated_at = now() WHERE id = $1`, []any{owned}, ""},
+
+		{"insert membership", `INSERT INTO memberships (tenant_id, user_id, role) VALUES ($1, $2, 'member')`, []any{owned, outsider.id}, denied},
+		{"update membership user", `UPDATE memberships SET user_id = $2 WHERE id = $1`, []any{membership, outsider.id}, denied},
+		{"update membership tenant", `UPDATE memberships SET tenant_id = tenant_id WHERE id = $1`, []any{membership}, denied},
+		{"update membership role", `UPDATE memberships SET role = 'admin', updated_at = now() WHERE id = $1`, []any{membership}, ""},
+
+		{"update invitation accepted_at", `UPDATE invitations SET accepted_at = now() WHERE token_hash = $1`, []any{invitation}, denied},
+		{"update invitation role", `UPDATE invitations SET role = 'owner' WHERE token_hash = $1`, []any{invitation}, denied},
+		{"update invitation email", `UPDATE invitations SET email = 'other@example.com' WHERE token_hash = $1`, []any{invitation}, denied},
+		{"update invitation inviter", `UPDATE invitations SET invited_by = $2 WHERE token_hash = $1`, []any{invitation, outsider.id}, denied},
+		{"update invitation tenant", `UPDATE invitations SET tenant_id = tenant_id WHERE token_hash = $1`, []any{invitation}, denied},
+		{"resend and revoke invitation", `UPDATE invitations SET token_hash = sha256(uuidv7()::text::bytea),
+			expires_at = now() + interval '7 days', revoked_at = now(), updated_at = now() WHERE token_hash = $1`, []any{invitation}, ""},
+
+		{"delete user", `DELETE FROM users WHERE id = $1`, []any{outsider.id}, denied},
+		{"update user disabled_at", `UPDATE users SET disabled_at = NULL WHERE id = $1`, []any{outsider.id}, denied},
+		{"update user email_verified", `UPDATE users SET email_verified = true WHERE id = $1`, []any{outsider.id}, denied},
+		{"update user display_name", `UPDATE users SET display_name = 'x' WHERE id = $1`, []any{outsider.id}, denied},
+		{"update user email and last login", `UPDATE users SET email = email, last_login_at = now(), updated_at = now() WHERE id = $1`, []any{outsider.id}, ""},
+
+		{"delete user identity", `DELETE FROM user_identities WHERE user_id = $1`, []any{outsider.id}, denied},
+		{"update user identity user", `UPDATE user_identities SET user_id = user_id WHERE user_id = $1`, []any{outsider.id}, denied},
+		{"update user identity email", `UPDATE user_identities SET email_at_link = email_at_link WHERE user_id = $1`, []any{outsider.id}, denied},
+
+		{"update session user", `UPDATE sessions SET user_id = user_id WHERE id = $1`, []any{session}, denied},
+		{"update session auth_time", `UPDATE sessions SET auth_time = now() WHERE id = $1`, []any{session}, denied},
+		{"update session absolute expiry", `UPDATE sessions SET absolute_expires_at = now() WHERE id = $1`, []any{session}, denied},
+		{"touch, step up and revoke session", `UPDATE sessions SET last_seen_at = now(), idle_expires_at = now(),
+			mfa_auth_time = now(), token_hash = sha256(uuidv7()::text::bytea), revoked_at = now(), updated_at = now()
+			WHERE id = $1`, []any{session}, ""},
+		{"delete session", `DELETE FROM sessions WHERE id = $1`, []any{session}, ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			conn := connect(t, testDB.RuntimeURL)
-			err := inTx(t, conn, tenantVars(owned, owner.id, "tenant"), func(tx pgx.Tx) error {
-				tag, err := tx.Exec(t.Context(), tc.sql, tc.args...)
-				if err == nil && tag.RowsAffected() != 1 {
-					t.Errorf("affected %d rows, want 1", tag.RowsAffected())
+			// Rolled back, so the cases do not see each other's writes.
+			ctx := t.Context()
+			tx, err := connect(t, testDB.RuntimeURL).Begin(ctx)
+			if err != nil {
+				t.Fatalf("begin: %v", err)
+			}
+			defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+			for _, v := range tenantVars(owned, owner.id, "tenant") {
+				if _, err := tx.Exec(ctx, `SELECT set_config($1, $2, true)`, v.name, v.value); err != nil {
+					t.Fatalf("set %s: %v", v.name, err)
 				}
-				return err
-			})
+			}
+
+			tag, err := tx.Exec(ctx, tc.sql, tc.args...)
 			if tc.wantState == "" {
 				if err != nil {
 					t.Fatalf("%s as app_runtime: %v", tc.name, err)
+				}
+				if tag.RowsAffected() != 1 {
+					t.Fatalf("%s affected %d rows, want 1", tc.name, tag.RowsAffected())
 				}
 				return
 			}

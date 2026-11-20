@@ -214,17 +214,39 @@ CREATE POLICY own_scope ON audit_log AS RESTRICTIVE FOR ALL
 -- (docs/runbooks/database.md). No sequences exist (UUIDv7 keys).
 ------------------------------------------------------------------------------------
 
--- app_runtime: identity tables without RLS.
-GRANT SELECT, INSERT, UPDATE, DELETE ON users, user_identities, sessions TO app_runtime;
+-- app_runtime never gets a table-wide UPDATE: each table lists the columns the
+-- application changes (design, section 7.1), so a bug cannot rewrite the rest.
+--
+-- app_runtime: identity tables without RLS. Users and identities are deleted only by
+-- app_admin (section 5.8), never by the application.
+-- users: login updates the email when it changes at the provider, and last_login_at.
+-- email_verified never changes after sign-up (login rejects unverified emails) and
+-- disabled_at belongs to app_admin.
+GRANT SELECT, INSERT ON users TO app_runtime;
+GRANT UPDATE (email, last_login_at, updated_at) ON users TO app_runtime;
+-- user_identities: immutable once linked.
+GRANT SELECT, INSERT ON user_identities TO app_runtime;
+-- sessions: the per-request touch, revocation and the MFA step-up (new mfa_auth_time and
+-- rotated token). auth_time, absolute_expires_at and the session's user never change.
+GRANT SELECT, INSERT, DELETE ON sessions TO app_runtime;
+GRANT UPDATE (last_seen_at, idle_expires_at, revoked_at, mfa_auth_time, token_hash, updated_at)
+  ON sessions TO app_runtime;
 -- Tenants are created only by create_tenant_with_owner, so none exists without an
 -- owner. No DELETE (tenant deletion is a future admin command) and no UPDATE of status
 -- (suspension is app_admin's): renaming is all the application does.
 GRANT SELECT, UPDATE (name, updated_at) ON tenants TO app_runtime;
 -- app_runtime: tenant tables, filtered by RLS.
-GRANT SELECT, INSERT, UPDATE, DELETE ON invitations TO app_runtime;
+-- invitations: resending rotates the token and renews the expiry; revoking sets
+-- revoked_at. Only accept_invitation sets accepted_at, and email, role and inviter are
+-- fixed at creation.
+GRANT SELECT, INSERT, DELETE ON invitations TO app_runtime;
+GRANT UPDATE (token_hash, expires_at, revoked_at, updated_at) ON invitations TO app_runtime;
 -- Memberships are created only by create_tenant_with_owner and accept_invitation, which
--- revalidate what RLS cannot (an owner for every tenant, a valid invitation).
-GRANT SELECT, UPDATE, DELETE ON memberships TO app_runtime;
+-- revalidate what RLS cannot (an owner for every tenant, a valid invitation). Only the
+-- role changes: moving a membership to another user would admit them without an
+-- invitation.
+GRANT SELECT, DELETE ON memberships TO app_runtime;
+GRANT UPDATE (role, updated_at) ON memberships TO app_runtime;
 -- The audit log is immutable for the application: it reads through RLS and writes only
 -- through record_audit().
 GRANT SELECT ON audit_log TO app_runtime;

@@ -274,12 +274,14 @@ func TestRLS_CrossTenantAccessIsBlocked(t *testing.T) {
 		{"read B memberships", `SELECT count(*) FROM memberships WHERE tenant_id = $1`, []any{s.b}, "", 0},
 		{"read B invitations", `SELECT count(*) FROM invitations WHERE tenant_id = $1`, []any{s.b}, "", 0},
 		{"read B audit", `SELECT count(*) FROM audit_log WHERE tenant_id = $1`, []any{s.b}, "", 0},
-		// Without INSERT on memberships this fails on the privilege before RLS; the WITH
-		// CHECK side of tenant_isolation is covered by moving a membership to B below.
+		// Without INSERT on memberships this fails on the privilege before RLS. The WITH
+		// CHECK side of tenant_isolation is what stops the invitation insert: app_runtime
+		// may insert invitations, and no tenant_id column is updatable.
 		{"insert membership into B", `INSERT INTO memberships (tenant_id, user_id, role) VALUES ($1, $2, 'member')`, []any{s.b, other.id}, "42501", 0},
 		{"insert invitation into B", `INSERT INTO invitations (tenant_id, email, role, token_hash, expires_at)
 			VALUES ($1, 'x@example.com', 'member', sha256('x'::bytea), now())`, []any{s.b}, "42501", 0},
 		{"update B memberships", `UPDATE memberships SET role = 'owner' WHERE tenant_id = $1`, []any{s.b}, "", 0},
+		// Stopped by the column privilege, before WITH CHECK would.
 		{"move an A membership to B", `UPDATE memberships SET tenant_id = $1 WHERE user_id = $2`, []any{s.b, s.ownerA.id}, "42501", 0},
 		{"delete B memberships", `DELETE FROM memberships WHERE tenant_id = $1`, []any{s.b}, "", 0},
 		{"delete B invitations", `DELETE FROM invitations WHERE tenant_id = $1`, []any{s.b}, "", 0},
