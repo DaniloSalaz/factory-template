@@ -16,8 +16,12 @@ Plantilla base para SaaS: monolito modular en Go + frontend React. Desarrollador
 | `migrate` | Aplica migraciones de `migrations/` con goose |
 | `generate` | sqlc + oapi-codegen + orval |
 | `dev` | Arranca la API en `:8080` |
-| `test` | Tests Go (incluye integración con Testcontainers; requiere Docker) + typecheck web |
-| `lint` / `fmt` | golangci-lint + Biome + tsc / formateo |
+| `test` | Tests Go con `-race` (incluye integración con Testcontainers; requiere Docker) |
+| `arch` | Tests de arquitectura (límites entre módulos y fixtures de las reglas de lint) |
+| `lint` / `fmt` | golangci-lint + actionlint + Biome + tsc / formateo |
+| `generate:check` | Regenera y falla si el código generado no coincide con lo commiteado |
+| `security` | govulncheck + gitleaks + trivy |
+| `ci` | Todo lo que ejecuta el CI, en el mismo orden (ver `docs/runbooks/ci.md`) |
 
 Las variables de entorno de desarrollo vienen de `[env]` en `mise.toml`; `.env` las sobrescribe.
 
@@ -43,11 +47,11 @@ Ejemplo vivo: `api/internal/modules/health`.
 - Tipado estricto en Go y TS. Nada de `any` en TS ni `interface{}` sin motivo en Go.
 - Errores siempre envueltos con contexto: `fmt.Errorf("hacer x: %w", err)`.
 - Sin variables globales ni `init()`; dependencias por constructor (`NewX(deps)`).
-- Un módulo no importa el interior de otro módulo; solo su `module.go`.
-- `platform` no importa `internal/modules`. El dominio solo importa la stdlib y `platform/apperr` (depguard lo impide).
+- Un módulo no importa el interior de otro módulo (ni su código en `gen/`); solo su `module.go`. Lo comprueba `mise run arch`.
+- `platform` no importa `internal/modules`; `platform/apperr` solo importa la stdlib; el dominio solo importa la stdlib y `platform/apperr` (depguard).
 - El código generado (`api/gen/`, `web/src/gen/`) no se edita: cambia el contrato o la query y ejecuta `mise run generate`.
 - Errores de negocio con `apperr` (`NotFound`, `Validation`, `Wrap`…). Los handlers nunca escriben errores a mano: usan `httpx.WriteProblem` (RFC 9457).
-- `os.Getenv` (y cualquier lectura del entorno) solo en `platform/config`; el resto recibe `config.Config`.
+- `os.Getenv` (y cualquier lectura del entorno) solo en `platform/config`; el resto recibe `config.Config` (forbidigo).
 - Datos personales o secretos en logs, siempre con los tipos de `pii` (`Email`, `Phone`, `Secret`); el request ID se lee y escribe solo con `logx`.
 - Los tipos de `pii` se serializan enmascarados: no van en argumentos de trabajos de cola, columnas `jsonb` ni respuestas de la API. En esas fronteras usa `Reveal()`.
 - Un `*apperr.Error` no se modifica después de crearlo.
@@ -55,7 +59,11 @@ Ejemplo vivo: `api/internal/modules/health`.
 - Nunca uses un nombre sensible (email, token, password…) como nombre de grupo de slog: slog no enmascara los grupos por su nombre.
 - Cada cambio va con su test (unitario con fakes de puertos; integración con Testcontainers).
 - Comentarios solo para explicar el porqué, no el qué.
-- Antes de dar algo por terminado: `mise run generate && mise run lint && mise run test` sin errores ni diff en generado.
+
+## Antes de dar una tarea por terminada
+- `mise run ci` en verde (necesita Docker). Es lo mismo que exige el CI para fusionar en `main`.
+- Si una regla de lint o de arquitectura se interpone, se corrige el código, no la regla. Sus mensajes dicen qué regla es (`[domain-pure]`, `[module-boundaries]`…) y cómo arreglarlo.
+- Una exclusión (`//nolint:<linter>`) solo con un comentario que explique por qué: `//nolint:wrapcheck // motivo`.
 
 ## Añadir un endpoint
 1. Defínelo en `api-spec/openapi.yaml` con el `tag` del módulo.
