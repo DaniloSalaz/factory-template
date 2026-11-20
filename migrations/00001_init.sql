@@ -210,9 +210,16 @@ CREATE POLICY own_scope ON audit_log AS RESTRICTIVE FOR ALL
 ------------------------------------------------------------------------------------
 
 -- app_runtime: identity tables without RLS.
-GRANT SELECT, INSERT, UPDATE, DELETE ON users, user_identities, tenants, sessions TO app_runtime;
+GRANT SELECT, INSERT, UPDATE, DELETE ON users, user_identities, sessions TO app_runtime;
+-- Tenants are created only by create_tenant_with_owner, so none exists without an
+-- owner. No DELETE (tenant deletion is a future admin command) and no UPDATE of status
+-- (suspension is app_admin's): renaming is all the application does.
+GRANT SELECT, UPDATE (name, updated_at) ON tenants TO app_runtime;
 -- app_runtime: tenant tables, filtered by RLS.
-GRANT SELECT, INSERT, UPDATE, DELETE ON memberships, invitations TO app_runtime;
+GRANT SELECT, INSERT, UPDATE, DELETE ON invitations TO app_runtime;
+-- Memberships are created only by create_tenant_with_owner and accept_invitation, which
+-- revalidate what RLS cannot (an owner for every tenant, a valid invitation).
+GRANT SELECT, UPDATE, DELETE ON memberships TO app_runtime;
 -- The audit log is immutable for the application: it reads through RLS and writes only
 -- through record_audit().
 GRANT SELECT ON audit_log TO app_runtime;

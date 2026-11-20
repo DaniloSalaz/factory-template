@@ -449,6 +449,56 @@ func TestSchema_RuntimeCannotWriteAuditLog(t *testing.T) {
 	}
 }
 
+// Tenants and memberships are created only through create_tenant_with_owner and
+// accept_invitation, and a tenant is only renamed. Every statement runs with the RLS
+// variables of a tenant the user owns and targets rows that would otherwise accept it
+// (a tenant with no children, a user that is not yet a member), so only the missing
+// privilege can stop it.
+func TestSchema_RuntimeTenantAndMembershipPrivileges(t *testing.T) {
+	t.Parallel()
+
+	f := newFixtures(t)
+	owned, empty := f.tenant("active"), f.tenant("active")
+	owner, outsider := f.user(true, false), f.user(true, false)
+	f.member(owned, owner, "owner")
+
+	tests := []struct {
+		name      string
+		sql       string
+		args      []any
+		wantState string // "" means it must succeed and affect one row
+	}{
+		{"insert tenant", `INSERT INTO tenants (slug, name) VALUES ('forged-' || replace(uuidv7()::text, '-', ''), 'Forged')`, nil, "42501"},
+		{"insert membership", `INSERT INTO memberships (tenant_id, user_id, role) VALUES ($1, $2, 'member')`, []any{owned, outsider.id}, "42501"},
+		{"delete tenant", `DELETE FROM tenants WHERE id = $1`, []any{empty}, "42501"},
+		{"update tenant status", `UPDATE tenants SET status = 'suspended' WHERE id = $1`, []any{owned}, "42501"},
+		{"update tenant name", `UPDATE tenants SET name = 'Renamed' WHERE id = $1`, []any{owned}, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			conn := connect(t, testDB.RuntimeURL)
+			err := inTx(t, conn, tenantVars(owned, owner.id, "tenant"), func(tx pgx.Tx) error {
+				tag, err := tx.Exec(t.Context(), tc.sql, tc.args...)
+				if err == nil && tag.RowsAffected() != 1 {
+					t.Errorf("affected %d rows, want 1", tag.RowsAffected())
+				}
+				return err
+			})
+			if tc.wantState == "" {
+				if err != nil {
+					t.Fatalf("%s as app_runtime: %v", tc.name, err)
+				}
+				return
+			}
+			if code := sqlState(err); code != tc.wantState {
+				t.Fatalf("%s as app_runtime: got %v (SQLSTATE %q), want insufficient_privilege %s", tc.name, err, code, tc.wantState)
+			}
+		})
+	}
+}
+
 func TestSchema_RuntimeRoleHasNoPower(t *testing.T) {
 	t.Parallel()
 

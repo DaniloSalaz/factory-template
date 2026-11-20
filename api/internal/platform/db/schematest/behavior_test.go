@@ -274,6 +274,8 @@ func TestRLS_CrossTenantAccessIsBlocked(t *testing.T) {
 		{"read B memberships", `SELECT count(*) FROM memberships WHERE tenant_id = $1`, []any{s.b}, "", 0},
 		{"read B invitations", `SELECT count(*) FROM invitations WHERE tenant_id = $1`, []any{s.b}, "", 0},
 		{"read B audit", `SELECT count(*) FROM audit_log WHERE tenant_id = $1`, []any{s.b}, "", 0},
+		// Without INSERT on memberships this fails on the privilege before RLS; the WITH
+		// CHECK side of tenant_isolation is covered by moving a membership to B below.
 		{"insert membership into B", `INSERT INTO memberships (tenant_id, user_id, role) VALUES ($1, $2, 'member')`, []any{s.b, other.id}, "42501", 0},
 		{"insert invitation into B", `INSERT INTO invitations (tenant_id, email, role, token_hash, expires_at)
 			VALUES ($1, 'x@example.com', 'member', sha256('x'::bytea), now())`, []any{s.b}, "42501", 0},
@@ -349,14 +351,18 @@ func TestRLS_OwnScope(t *testing.T) {
 		}
 	})
 
-	t.Run("client cannot write someone else's membership", func(t *testing.T) {
+	t.Run("client cannot delete someone else's membership", func(t *testing.T) {
 		conn := connect(t, testDB.RuntimeURL)
 		err := inTx(t, conn, tenantVars(s.a, s.clientA.id, "own"), func(tx pgx.Tx) error {
-			_, err := tx.Exec(t.Context(), `INSERT INTO memberships (tenant_id, user_id, role) VALUES ($1, $2, 'member')`,
-				s.a, newFixtures(t).user(true, false).id)
+			tag, err := tx.Exec(t.Context(), `DELETE FROM memberships WHERE user_id <> $1`, s.clientA.id)
+			if err == nil && tag.RowsAffected() != 0 {
+				t.Errorf("deleted %d memberships of others, want 0", tag.RowsAffected())
+			}
 			return err
 		})
-		wantSQLState(t, err, "42501")
+		if err != nil {
+			t.Fatal(err)
+		}
 	})
 
 	t.Run("scope tenant sees the whole tenant", func(t *testing.T) {
