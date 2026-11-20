@@ -111,7 +111,7 @@ El step-up de versiones anteriores (reautenticar con MFA y rotar el token en la 
    - si el access token trae los métodos de autenticación (`amr`, RFC 8176), se usan ellos: con `mfa`, `mfa_auth_time = auth_time`; sin `mfa` y con `WORKOS_MFA_REQUIRED=true`, el login se rechaza (`403 auth.mfa_required`, `auth.login_failed` con motivo `mfa_missing`). Hoy WorkOS no envía `amr`;
    - si no los trae, `mfa_auth_time = auth_time` solo con `WORKOS_MFA_REQUIRED=true` y un método al que se aplica la MFA de WorkOS (no a `SSO`); si no, `NULL`. La MFA se **deduce de la configuración**, no la informa el proveedor; `docs/runbooks/auth.md` describe la comprobación manual de que `WORKOS_MFA_REQUIRED` coincide con el panel en cada entorno.
 4. **Arranque**: si algún rol del catálogo requiere MFA y `WORKOS_MFA_REQUIRED=false`, la API no arranca y explica por qué.
-5. **Cuando la MFA de un rol caduca** (5.4.3), el front recibe `403 auth.mfa_required` y lleva al usuario a un **login completo** (`GET /auth/login?return_to=…`): sesión nueva y la anterior revocada (5.1.8). No hay `GET /auth/stepup` ni rotación del token en la misma fila; `mfa_auth_time` y `token_hash` conservan su `UPDATE` por si un proveedor futuro lo permite.
+5. **Cuando la MFA de un rol caduca** (5.4.3), el front recibe `403 auth.mfa_required` y lleva al usuario a un **login completo** (`GET /auth/login?return_to=…`): sesión nueva y la anterior revocada (5.1.8). No hay `GET /auth/stepup` ni rotación del token en la misma fila, y `app_runtime` no tiene `UPDATE` sobre `mfa_auth_time` ni `token_hash` (7.1). Un proveedor futuro que permita el step-up lo concedería en una migración nueva.
 
 ### 5.3 Transacciones: tres formas, y ninguna más
 
@@ -188,7 +188,10 @@ Comando de administración, con `app_admin`:
 - **MFA por rol**: cada rol declara si la requiere y su antigüedad máxima (por ejemplo, 12 horas para `owner` y `lawyer`). Con WorkOS exige `WORKOS_MFA_REQUIRED=true` (5.2); al caducar, login completo.
 - **CSRF**: `SameSite=Lax` y `Origin` en `ALLOWED_ORIGINS` en los métodos que modifican datos.
 - **CORS**: `ALLOWED_ORIGINS` explícita, con `credentials`, sin comodines.
-- **Límite de peticiones** en `/auth/login`, `/auth/callback`, `POST /invitations`, `POST /invitations/{id}/resend`, `POST /invitations/accept` y `POST /tenants`, por IP y por usuario. `429`.
+- **Límite de peticiones**, `429 rate_limit.exceeded`:
+  - por IP en `/auth/login` y `/auth/callback` (sin sesión todavía); la IP sale de `TRUSTED_CLIENT_IP_HEADER` o de `RemoteAddr`, nunca de `X-Forwarded-For`;
+  - por usuario en las rutas autenticadas que lo necesitan: `POST /invitations`, `POST /invitations/{id}/resend`, `POST /invitations/accept` y `POST /tenants` (paso 5);
+  - detrás del puerto `ratelimit.Limiter`, con implementación en memoria: **cada réplica cuenta por separado**, así que el límite efectivo se multiplica por el número de réplicas. Un almacén compartido implementaría el mismo puerto.
 - **Datos personales**: emails con `pii.Email`; IPs solo truncadas: `/24` en IPv4 y `/48` en IPv6, guardadas como `cidr` (`sessions.ip_prefix`, `audit_log.ip_prefix`). Go trunca antes de escribir; un `CHECK` en cada columna rechaza una IP completa (`/32`, `/128`) o cualquier otra máscara, y el tipo `cidr` rechaza bits de host tras la máscara.
 
 ## 7. RLS
@@ -199,7 +202,7 @@ Comando de administración, con `app_admin`:
 - `app_runtime`: la aplicación; sin `BYPASSRLS` y sin ser dueño de nada. Nunca un `UPDATE` sin columnas: cada tabla lista las que la aplicación cambia. La lista completa está fijada en `runtime_privileges.golden` (sección 11). Permisos de tabla:
   - `users`: `SELECT`, `INSERT` y `UPDATE (email, email_verified, last_login_at, updated_at)`; sin `DELETE` (solo `app_admin`, sección 5.8). `email` cambia en el login si cambió en el proveedor (5.1.7), y **en la misma sentencia** `email_verified` toma el valor del proveedor: nunca se conserva la verificación de otro email, porque `accept_invitation` se fía de ella (issue #4). `disabled_at` es de `app_admin`.
   - `user_identities`: `SELECT`, `INSERT`; ni `UPDATE` (una identidad vinculada es inmutable) ni `DELETE` (solo `app_admin`).
-  - `sessions`: `SELECT`, `INSERT`, `DELETE` y `UPDATE (last_seen_at, idle_expires_at, revoked_at, mfa_auth_time, token_hash, updated_at)`: el toque de cada petición (5.4.1) y la revocación (5.1.8, 5.5). `mfa_auth_time` y `token_hash` quedan reservados para un step-up futuro (5.2). `auth_time`, `absolute_expires_at`, `provider_session_id` (la sesión de AuthKit, para cerrarla en el logout) y el usuario no cambian.
+  - `sessions`: `SELECT`, `INSERT`, `DELETE` y `UPDATE (last_seen_at, idle_expires_at, revoked_at, updated_at)`: el toque de cada petición (5.4.1) y la revocación (5.1.8, 5.5). Sin step-up (5.2), `mfa_auth_time` y `token_hash` se fijan en el login y no cambian, igual que `auth_time`, `absolute_expires_at`, `provider_session_id` (la sesión de AuthKit, para cerrarla en el logout) y el usuario.
   - `tenants`: `SELECT` y `UPDATE (name, updated_at)`, filtrados por RLS; sin `INSERT` (se crean con `create_tenant_with_owner`) ni `DELETE` (sección 12). El estado (`status`) solo lo cambia `app_admin`.
   - `memberships`: `SELECT`, `DELETE` y `UPDATE (role, updated_at)`, filtrados por RLS; sin `INSERT` (solo `create_tenant_with_owner` y `accept_invitation`). Sin `UPDATE` de `user_id`: pasar una membresía a otro usuario lo admitiría sin invitación.
   - `invitations`: `SELECT`, `INSERT`, `DELETE` y `UPDATE (token_hash, expires_at, revoked_at, updated_at)`, filtrados por RLS: reenviar rota el token y la caducidad (5.6.2) y revocar fija `revoked_at` (5.6.4). `accepted_at` solo lo fija `accept_invitation`; `email`, `role` e `invited_by` se fijan al crearla.
@@ -382,6 +385,8 @@ Ya no existe ninguna función que devuelva datos de **otro** miembro.
 El email del invitado no va en `metadata`. Retención configurable.
 
 ## 10. API
+
+**URL base.** El backend no lleva prefijo `/api`: sus rutas son las de la tabla. El cliente generado (orval) antepone una URL base configurable, `VITE_API_BASE_URL`: `/api` en desarrollo, donde el proxy de Vite quita el prefijo y reenvía a la API, y `https://api.chaskicode.com` en producción, con `credentials: "include"` (mismo sitio que el front, CORS de la sección 6). `/auth/*` también se sirve por el proxy **sin prefijo**, porque AuthKit vuelve a `WORKOS_REDIRECT_URI` (`http://localhost:5173/auth/callback` en desarrollo) y la cookie debe quedar en el origen del front.
 
 | Método y ruta | Sesión | Tenant | Permiso | Descripción |
 | --- | --- | --- | --- | --- |

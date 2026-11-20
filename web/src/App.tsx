@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { apiUrl } from "./api/fetcher";
 import { authLogout, getAuthLoginUrl } from "./gen/api";
 
 // Only enough to try the login by hand; the real front end is step 8 of the plan.
@@ -6,7 +7,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   function login() {
-    window.location.assign(getAuthLoginUrl({ return_to: "/" }));
+    window.location.assign(apiUrl(getAuthLoginUrl({ return_to: "/" })));
   }
 
   async function logout() {

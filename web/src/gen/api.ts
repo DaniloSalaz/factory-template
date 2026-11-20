@@ -5,6 +5,7 @@
  * Source of truth for the HTTP contract. Go server and TS client are generated from this file.
  * OpenAPI spec version: 0.1.0
  */
+import { apiFetch } from '../api/fetcher';
 export interface Logout {
   /**
      * Where to send the browser to end the AuthKit session too; null if there is none.
@@ -160,23 +161,16 @@ export const getGetHealthzUrl = () => {
 /**
  * @summary Liveness probe
  */
-export const getHealthz = async ( options?: RequestInit): Promise<getHealthzResponse> => {
+export const getHealthz = async ( options?: Parameters<typeof apiFetch>[1]): Promise<getHealthzResponse> => {
 
-  const res = await fetch(getGetHealthzUrl(),
+  return apiFetch<getHealthzResponse>(getGetHealthzUrl(),
   {
     ...options,
     method: 'GET'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: getHealthzResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getHealthzResponse
-}
+);}
 
 
 
@@ -215,23 +209,16 @@ export const getGetReadyzUrl = () => {
 /**
  * @summary Readiness probe (checks dependencies such as the database)
  */
-export const getReadyz = async ( options?: RequestInit): Promise<getReadyzResponse> => {
+export const getReadyz = async ( options?: Parameters<typeof apiFetch>[1]): Promise<getReadyzResponse> => {
 
-  const res = await fetch(getGetReadyzUrl(),
+  return apiFetch<getReadyzResponse>(getGetReadyzUrl(),
   {
     ...options,
     method: 'GET'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: getReadyzResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getReadyzResponse
-}
+);}
 
 
 
@@ -281,23 +268,16 @@ export const getAuthLoginUrl = (params?: AuthLoginParams,) => {
  * Stores the login intent in a __Host-oauth_<state> cookie (PKCE verifier, return_to, purpose, start time; 5 minutes, at most 3 alive) and redirects to AuthKit, always forcing a fresh authentication. Rate limited per IP.
  * @summary Start a login with AuthKit
  */
-export const authLogin = async (params?: AuthLoginParams, options?: RequestInit): Promise<authLoginResponse> => {
+export const authLogin = async (params?: AuthLoginParams, options?: Parameters<typeof apiFetch>[1]): Promise<authLoginResponse> => {
 
-  const res = await fetch(getAuthLoginUrl(params),
+  return apiFetch<authLoginResponse>(getAuthLoginUrl(params),
   {
     ...options,
     method: 'GET'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: authLoginResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as authLoginResponse
-}
+);}
 
 
 
@@ -362,23 +342,16 @@ export const getAuthCallbackUrl = (params?: AuthCallbackParams,) => {
  * Completes the intent named by state: exchanges the code, resolves the user and sets the __Host-session cookie. What the callback does is decided by the stored intent, never by the URL. Rate limited per IP.
  * @summary AuthKit redirects here after authenticating
  */
-export const authCallback = async (params?: AuthCallbackParams, options?: RequestInit): Promise<authCallbackResponse> => {
+export const authCallback = async (params?: AuthCallbackParams, options?: Parameters<typeof apiFetch>[1]): Promise<authCallbackResponse> => {
 
-  const res = await fetch(getAuthCallbackUrl(params),
+  return apiFetch<authCallbackResponse>(getAuthCallbackUrl(params),
   {
     ...options,
     method: 'GET'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: authCallbackResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as authCallbackResponse
-}
+);}
 
 
 
@@ -423,23 +396,16 @@ export const getAuthLogoutUrl = () => {
  * Revokes the current session and clears its cookie. The front end then sends the browser to logout_url to end the AuthKit session as well.
  * @summary End this session
  */
-export const authLogout = async ( options?: RequestInit): Promise<authLogoutResponse> => {
+export const authLogout = async ( options?: Parameters<typeof apiFetch>[1]): Promise<authLogoutResponse> => {
 
-  const res = await fetch(getAuthLogoutUrl(),
+  return apiFetch<authLogoutResponse>(getAuthLogoutUrl(),
   {
     ...options,
     method: 'POST'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: authLogoutResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as authLogoutResponse
-}
+);}
 
 
 
@@ -483,20 +449,13 @@ export const getAuthLogoutAllUrl = () => {
 /**
  * @summary End every session of the user
  */
-export const authLogoutAll = async ( options?: RequestInit): Promise<authLogoutAllResponse> => {
+export const authLogoutAll = async ( options?: Parameters<typeof apiFetch>[1]): Promise<authLogoutAllResponse> => {
 
-  const res = await fetch(getAuthLogoutAllUrl(),
+  return apiFetch<authLogoutAllResponse>(getAuthLogoutAllUrl(),
   {
     ...options,
     method: 'POST'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: authLogoutAllResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as authLogoutAllResponse
-}
+);}

@@ -152,7 +152,13 @@ type accessClaims struct {
 
 // decodeClaims reads the access token's payload without verifying its signature. That
 // is sound only because the token comes straight from WorkOS in the response to a
-// request authenticated with the API key over TLS; it never comes from the browser.
+// request authenticated with the API key over TLS.
+//
+// It must NEVER be given a token that came from the browser (a cookie, a header, a
+// query parameter or a body): anyone can write a JWT with any sub, sid, auth_time or
+// amr, and without the signature check this function would accept it. The BFF never
+// hands provider tokens to the browser; a flow that needs to accept one must verify it
+// against WorkOS's JWKS (issuer, audience, expiry) instead of calling this.
 func decodeClaims(token string) (accessClaims, []string, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {

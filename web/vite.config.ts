@@ -11,8 +11,10 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      "/auth": { target: api },
+      // The generated client calls /api/* (VITE_API_BASE_URL); the backend has no prefix.
       "/api": { target: api, rewrite: (path) => path.replace(/^\/api/, "") },
+      // AuthKit returns to /auth/callback on this origin, so /auth is proxied as is.
+      "/auth": { target: api },
     },
   },
 });
