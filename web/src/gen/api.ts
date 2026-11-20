@@ -114,6 +114,55 @@ export interface CurrentTenant {
   permissions: string[];
 }
 
+export interface Tenant {
+  id: string;
+  slug: string;
+  name: string;
+}
+
+export interface CreatedTenant {
+  /** The value to send as X-Tenant-ID. */
+  id: string;
+  slug: string;
+  name: string;
+  /** The caller's role in it, always owner. */
+  role: string;
+}
+
+export interface TenantCreate {
+  /** 1 to 100 characters, not only spaces; leading and trailing spaces are trimmed. */
+  name: string;
+  /** 3 to 40 lower-case letters, digits and hyphens, not starting or ending with a hyphen, unique and not reserved (api, www, admin…). It cannot change later. */
+  slug: string;
+}
+
+export interface TenantUpdate {
+  /** 1 to 100 characters, not only spaces; leading and trailing spaces are trimmed. */
+  name: string;
+}
+
+export interface Member {
+  user_id: string;
+  email: string;
+  display_name: string;
+  role: string;
+  joined_at: string;
+}
+
+export interface MemberPage {
+  items: Member[];
+  /**
+     * Pass it as cursor to get the next page; null on the last one.
+     * @nullable
+     */
+  next_cursor: string | null;
+}
+
+export interface MemberRoleChange {
+  /** A role of the app's catalog. */
+  role: string;
+}
+
 export interface Logout {
   /**
      * Where to send the browser to end the AuthKit session too; null if there is none.
@@ -237,6 +286,16 @@ export type AuthCallbackParams = {
   error?: string;
   /** @maxLength 1024 */
   error_description?: string;
+};
+
+export type ListMembersParams = {
+  /** The next_cursor of the previous page; omit it for the first page. */
+  cursor?: string;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
 };
 
 const getHeaders = (...sources: (RequestInit['headers'] | Record<string, string | undefined>)[]) => {
@@ -987,6 +1046,408 @@ export const getCurrentTenant = async ( options?: Parameters<typeof apiFetch>[1]
   {
     ...options,
     method: 'GET'
+
+
+  }
+);}
+
+
+
+export type updateCurrentTenantResponse200 = {
+  data: Tenant
+  status: 200
+}
+
+export type updateCurrentTenantResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type updateCurrentTenantResponse401 = {
+  data: UnauthorizedResponse
+  status: 401
+}
+
+export type updateCurrentTenantResponse403 = {
+  data: ForbiddenResponse
+  status: 403
+}
+
+export type updateCurrentTenantResponse422 = {
+  data: UnprocessableEntityResponse
+  status: 422
+}
+
+export type updateCurrentTenantResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type updateCurrentTenantResponseSuccess = (updateCurrentTenantResponse200) & {
+  headers: Headers;
+};
+export type updateCurrentTenantResponseError = (updateCurrentTenantResponse400 | updateCurrentTenantResponse401 | updateCurrentTenantResponse403 | updateCurrentTenantResponse422 | updateCurrentTenantResponse500) & {
+  headers: Headers;
+};
+
+export type updateCurrentTenantResponse = (updateCurrentTenantResponseSuccess | updateCurrentTenantResponseError)
+
+export const getUpdateCurrentTenantUrl = () => {
+
+
+
+
+  return `/tenant`
+}
+
+/**
+ * Needs tenant:update. Only the name changes; the slug is immutable. Audited as tenant.updated with the old and the new name.
+ * @summary Rename the current tenant
+ */
+export const updateCurrentTenant = async (tenantUpdate: TenantUpdate, options?: Parameters<typeof apiFetch>[1]): Promise<updateCurrentTenantResponse> => {
+
+  return apiFetch<updateCurrentTenantResponse>(getUpdateCurrentTenantUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(tenantUpdate)
+  }
+);}
+
+
+
+export type createTenantResponse201 = {
+  data: CreatedTenant
+  status: 201
+}
+
+export type createTenantResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type createTenantResponse401 = {
+  data: UnauthorizedResponse
+  status: 401
+}
+
+export type createTenantResponse403 = {
+  data: ForbiddenResponse
+  status: 403
+}
+
+export type createTenantResponse409 = {
+  data: ConflictResponse
+  status: 409
+}
+
+export type createTenantResponse422 = {
+  data: UnprocessableEntityResponse
+  status: 422
+}
+
+export type createTenantResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type createTenantResponseSuccess = (createTenantResponse201) & {
+  headers: Headers;
+};
+export type createTenantResponseError = (createTenantResponse400 | createTenantResponse401 | createTenantResponse403 | createTenantResponse409 | createTenantResponse422 | createTenantResponse500) & {
+  headers: Headers;
+};
+
+export type createTenantResponse = (createTenantResponseSuccess | createTenantResponseError)
+
+export const getCreateTenantUrl = () => {
+
+
+
+
+  return `/tenants`
+}
+
+/**
+ * Needs a session but no tenant. The caller becomes the tenant's owner in the same transaction. If the owner role requires MFA, creating the tenant does not: acting in it does, so the first request with its X-Tenant-ID may answer 403 auth.mfa_enrollment_required or auth.mfa_required. Errors: 422 tenant.slug_invalid, 422 tenant.slug_reserved, 422 tenant.name_invalid, 409 tenant.slug_taken, 403 tenant.limit_reached (the caller has created as many tenants as TENANT_MAX_PER_USER allows).
+ * @summary Create a tenant, with the caller as its owner
+ */
+export const createTenant = async (tenantCreate: TenantCreate, options?: Parameters<typeof apiFetch>[1]): Promise<createTenantResponse> => {
+
+  return apiFetch<createTenantResponse>(getCreateTenantUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(tenantCreate)
+  }
+);}
+
+
+
+export type listMembersResponse200 = {
+  data: MemberPage
+  status: 200
+}
+
+export type listMembersResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type listMembersResponse401 = {
+  data: UnauthorizedResponse
+  status: 401
+}
+
+export type listMembersResponse403 = {
+  data: ForbiddenResponse
+  status: 403
+}
+
+export type listMembersResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type listMembersResponseSuccess = (listMembersResponse200) & {
+  headers: Headers;
+};
+export type listMembersResponseError = (listMembersResponse400 | listMembersResponse401 | listMembersResponse403 | listMembersResponse500) & {
+  headers: Headers;
+};
+
+export type listMembersResponse = (listMembersResponseSuccess | listMembersResponseError)
+
+export const getListMembersUrl = (params?: ListMembersParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/tenant/members?${stringifiedParams}` : `/tenant/members`
+}
+
+/**
+ * Needs members:read. Ordered by membership, oldest first, which is stable; pass the previous page's next_cursor to get the next one. Only members of the tenant of X-Tenant-ID.
+ * @summary The members of the current tenant
+ */
+export const listMembers = async (params?: ListMembersParams, options?: Parameters<typeof apiFetch>[1]): Promise<listMembersResponse> => {
+
+  return apiFetch<listMembersResponse>(getListMembersUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export type leaveTenantResponse204 = {
+  data: void
+  status: 204
+}
+
+export type leaveTenantResponse401 = {
+  data: UnauthorizedResponse
+  status: 401
+}
+
+export type leaveTenantResponse403 = {
+  data: ForbiddenResponse
+  status: 403
+}
+
+export type leaveTenantResponse409 = {
+  data: ConflictResponse
+  status: 409
+}
+
+export type leaveTenantResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type leaveTenantResponseSuccess = (leaveTenantResponse204) & {
+  headers: Headers;
+};
+export type leaveTenantResponseError = (leaveTenantResponse401 | leaveTenantResponse403 | leaveTenantResponse409 | leaveTenantResponse500) & {
+  headers: Headers;
+};
+
+export type leaveTenantResponse = (leaveTenantResponseSuccess | leaveTenantResponseError)
+
+export const getLeaveTenantUrl = () => {
+
+
+
+
+  return `/tenant/members/me`
+}
+
+/**
+ * Needs only a session and the tenant, whatever the role. The last owner cannot leave (409 membership.last_owner): make someone else owner first.
+ * @summary Leave the current tenant
+ */
+export const leaveTenant = async ( options?: Parameters<typeof apiFetch>[1]): Promise<leaveTenantResponse> => {
+
+  return apiFetch<leaveTenantResponse>(getLeaveTenantUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+export type changeMemberRoleResponse200 = {
+  data: Member
+  status: 200
+}
+
+export type changeMemberRoleResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type changeMemberRoleResponse401 = {
+  data: UnauthorizedResponse
+  status: 401
+}
+
+export type changeMemberRoleResponse403 = {
+  data: ForbiddenResponse
+  status: 403
+}
+
+export type changeMemberRoleResponse404 = {
+  data: NotFoundResponse
+  status: 404
+}
+
+export type changeMemberRoleResponse409 = {
+  data: ConflictResponse
+  status: 409
+}
+
+export type changeMemberRoleResponse422 = {
+  data: UnprocessableEntityResponse
+  status: 422
+}
+
+export type changeMemberRoleResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type changeMemberRoleResponseSuccess = (changeMemberRoleResponse200) & {
+  headers: Headers;
+};
+export type changeMemberRoleResponseError = (changeMemberRoleResponse400 | changeMemberRoleResponse401 | changeMemberRoleResponse403 | changeMemberRoleResponse404 | changeMemberRoleResponse409 | changeMemberRoleResponse422 | changeMemberRoleResponse500) & {
+  headers: Headers;
+};
+
+export type changeMemberRoleResponse = (changeMemberRoleResponseSuccess | changeMemberRoleResponseError)
+
+export const getChangeMemberRoleUrl = (userId: string,) => {
+
+
+
+
+  return `/tenant/members/${userId}`
+}
+
+/**
+ * Needs members:manage. The caller acts only on members whose role is strictly included in theirs (an owner also on other owners) and assigns only roles included in theirs; nobody changes their own role. Errors: 404 membership.not_found (not a member of this tenant, whether or not the user exists), 403 membership.target_forbidden, membership.role_not_assignable or membership.self_change, 422 membership.unknown_role, 409 membership.last_owner or membership.changed (a role changed meanwhile; read again and retry).
+ * @summary Change a member's role
+ */
+export const changeMemberRole = async (userId: string,
+    memberRoleChange: MemberRoleChange, options?: Parameters<typeof apiFetch>[1]): Promise<changeMemberRoleResponse> => {
+
+  return apiFetch<changeMemberRoleResponse>(getChangeMemberRoleUrl(userId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(memberRoleChange)
+  }
+);}
+
+
+
+export type removeMemberResponse204 = {
+  data: void
+  status: 204
+}
+
+export type removeMemberResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type removeMemberResponse401 = {
+  data: UnauthorizedResponse
+  status: 401
+}
+
+export type removeMemberResponse403 = {
+  data: ForbiddenResponse
+  status: 403
+}
+
+export type removeMemberResponse404 = {
+  data: NotFoundResponse
+  status: 404
+}
+
+export type removeMemberResponse409 = {
+  data: ConflictResponse
+  status: 409
+}
+
+export type removeMemberResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type removeMemberResponseSuccess = (removeMemberResponse204) & {
+  headers: Headers;
+};
+export type removeMemberResponseError = (removeMemberResponse400 | removeMemberResponse401 | removeMemberResponse403 | removeMemberResponse404 | removeMemberResponse409 | removeMemberResponse500) & {
+  headers: Headers;
+};
+
+export type removeMemberResponse = (removeMemberResponseSuccess | removeMemberResponseError)
+
+export const getRemoveMemberUrl = (userId: string,) => {
+
+
+
+
+  return `/tenant/members/${userId}`
+}
+
+/**
+ * Needs members:manage and the same hierarchy as changing the role. To leave the tenant, use DELETE /tenant/members/me (403 membership.self_change here). The last owner cannot be removed (409 membership.last_owner).
+ * @summary Remove a member from the current tenant
+ */
+export const removeMember = async (userId: string, options?: Parameters<typeof apiFetch>[1]): Promise<removeMemberResponse> => {
+
+  return apiFetch<removeMemberResponse>(getRemoveMemberUrl(userId),
+  {
+    ...options,
+    method: 'DELETE'
 
 
   }

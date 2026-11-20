@@ -77,6 +77,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		RateLimiter:    ratelimit.NewMemory(authRateLimit, authRateWindow, nil),
 		MFARateLimiter: ratelimit.NewMemory(mfaRateLimit, mfaRateWindow, nil),
 		Catalog:        catalog,
+		Tenancy:        cfg.Tenancy,
 	})
 	if err != nil {
 		return fmt.Errorf("wire identity module: %w", err)

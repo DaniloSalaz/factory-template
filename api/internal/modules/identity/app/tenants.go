@@ -156,11 +156,11 @@ func (m *Members) List(ctx context.Context, cursor string, limit int) (MemberPag
 	return page, nil
 }
 
-// ChangeRole gives the member userID the role (members:manage). The actor's role is
-// read again inside the transaction, so a role lost since the request started counts;
-// the database refuses if a role changes between that read and the write
-// (membership.changed), and never leaves the tenant without an owner
-// (membership.last_owner).
+// ChangeRole gives the member userID the role (members:manage). The hierarchy is
+// judged on the roles the request started with; the database function locks the tenant,
+// reads both roles again and refuses if either changed meanwhile (membership.changed),
+// so a decision on stale roles is never applied. It never leaves the tenant without an
+// owner (membership.last_owner).
 func (m *Members) ChangeRole(ctx context.Context, userID, role string) (Member, error) {
 	var out Member
 	err := m.manage(ctx, userID, func(ctx context.Context, r TenantRepo, actor, target Member) error {
@@ -211,8 +211,8 @@ func (m *Members) Leave(ctx context.Context) error {
 	return nil
 }
 
-// manage runs fn in the tenant's transaction with the actor and the member userID as
-// they are now, once the actor is known to still hold members:manage.
+// manage runs fn in the tenant's transaction with the actor and the member userID,
+// once the actor holds members:manage.
 func (m *Members) manage(ctx context.Context, userID string, fn func(context.Context, TenantRepo, Member, Member) error) error {
 	p, ok := authctx.PrincipalFrom(ctx)
 	if !ok {
@@ -226,16 +226,6 @@ func (m *Members) manage(ctx context.Context, userID string, fn func(context.Con
 		return domain.ErrMemberNotFound()
 	}
 	return m.store.InTenant(ctx, p, func(ctx context.Context, r TenantRepo) error {
-		actor, found, err := r.MemberByUser(ctx, p.TenantID(), p.UserID())
-		if err != nil {
-			return err
-		}
-		if !found {
-			return authz.ErrDenied()
-		}
-		if err := m.requireCurrent(ctx, p, actor.Role); err != nil {
-			return err
-		}
 		target, found, err := r.MemberByUser(ctx, p.TenantID(), targetID)
 		if err != nil {
 			return err
@@ -243,21 +233,8 @@ func (m *Members) manage(ctx context.Context, userID string, fn func(context.Con
 		if !found {
 			return domain.ErrMemberNotFound()
 		}
-		return fn(ctx, r, actor, target)
+		return fn(ctx, r, Member{UserID: p.UserID(), Role: p.Role()}, target)
 	})
-}
-
-// requireCurrent checks members:manage again with the actor's role as stored now, when
-// it differs from the one the request started with. A denial is audited like any other.
-func (m *Members) requireCurrent(ctx context.Context, p authctx.Principal, role string) error {
-	if role == p.Role() {
-		return nil
-	}
-	current, err := authctx.NewPrincipal(p.UserID(), p.TenantID(), role, m.catalog.Permissions(role)...)
-	if err != nil {
-		return fmt.Errorf("current principal: %w", err)
-	}
-	return m.authz.Require(authctx.WithPrincipal(ctx, current), authz.PermMembersManage)
 }
 
 func (m *Members) member(mem Member) domain.Member {

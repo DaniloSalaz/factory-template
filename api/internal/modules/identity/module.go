@@ -1,5 +1,6 @@
 // Package identity is the module's public API: login with the identity provider,
-// sessions, and the session and tenant middlewares (design, sections 5.1, 5.4 and 5.5).
+// sessions, the session and tenant middlewares, and tenants and their members (design,
+// sections 5.1, 5.4, 5.5 and 5.7).
 package identity
 
 import (
@@ -51,6 +52,8 @@ type Deps struct {
 	// Catalog is the app's validated role catalog. A catalog where no role requires MFA
 	// is valid: MFA is then optional for everyone.
 	Catalog *authz.Catalog
+	// Tenancy limits how many tenants a user may create.
+	Tenancy config.Tenancy
 	// Provider replaces WorkOS; only tests set it.
 	Provider Provider
 	// Now is the clock; nil means time.Now.
@@ -80,6 +83,9 @@ func New(deps Deps) (*Module, error) {
 	if deps.Catalog == nil || deps.DB == nil || deps.Logger == nil || deps.RateLimiter == nil || deps.MFARateLimiter == nil {
 		return nil, errors.New("identity: Catalog, DB, Logger, RateLimiter and MFARateLimiter are required")
 	}
+	if deps.Tenancy.MaxTenantsPerUser < 1 {
+		return nil, errors.New("identity: Tenancy.MaxTenantsPerUser must be at least 1")
+	}
 
 	mac := hmac.New(sha256.New, []byte(deps.WorkOS.APIKey.Reveal()))
 	mac.Write([]byte(intentKeyLabel))
@@ -101,12 +107,18 @@ func New(deps Deps) (*Module, error) {
 		FrontendOrigin: deps.Web.FrontendOrigin, Policy: policy,
 	}, deps.Now)
 	sessions := app.NewSessions(idp, store, policy, deps.Now)
+	authorizer := authz.NewAuthorizer(app.NewDenialAuditor(store), deps.Logger)
+	tenantStore := postgres.NewTenantStore(deps.DB)
 	return &Module{
-		handler: identityhttp.NewHandler(login, sessions, app.NewAccounts(store, deps.Catalog),
-			app.NewMFA(idp, idp.Name(), store, deps.Catalog, deps.MFARateLimiter, deps.Now), deps.Logger),
+		handler: identityhttp.NewHandler(identityhttp.UseCases{
+			Login: login, Sessions: sessions, Accounts: app.NewAccounts(store, deps.Catalog),
+			MFA:     app.NewMFA(idp, idp.Name(), store, deps.Catalog, deps.MFARateLimiter, deps.Now),
+			Tenants: app.NewTenants(tenantStore, authorizer, deps.Tenancy.MaxTenantsPerUser),
+			Members: app.NewMembers(tenantStore, authorizer, deps.Catalog),
+		}, deps.Logger),
 		sessions: sessions,
 		tenancy:  app.NewTenancy(store, deps.Catalog, deps.Now),
-		authz:    authz.NewAuthorizer(app.NewDenialAuditor(store), deps.Logger),
+		authz:    authorizer,
 		store:    store,
 		catalog:  deps.Catalog,
 		limiter:  deps.RateLimiter,

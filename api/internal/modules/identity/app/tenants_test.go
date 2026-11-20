@@ -214,33 +214,19 @@ func TestMembers_ChangeRole(t *testing.T) {
 	}
 }
 
-// The request started as admin, but the stored role is member by now: members:manage
-// is checked again with it, and refused.
-func TestMembers_ActorRoleIsReadAgain(t *testing.T) {
+// The decision is made on the role the request started with, and that role is what
+// the database is told to expect: if it changed meanwhile, the database refuses.
+func TestMembers_ExpectedRolesReachTheDatabase(t *testing.T) {
 	t.Parallel()
 
-	members, store, authorizer, c := membersFixture(t)
-	store.add(tenantA, adminID, "member")
-	ctx := actingAs(t, c, adminID, "admin")
-
-	if _, err := members.ChangeRole(ctx, member2, "admin"); !errors.Is(err, authz.ErrDenied()) {
-		t.Fatalf("ChangeRole = %v, want %v", err, authz.ErrDenied())
+	members, store, _, c := membersFixture(t)
+	store.fail = apperr.Conflict("membership.changed", "changed")
+	_, err := members.ChangeRole(actingAs(t, c, adminID, "admin"), member2, "admin")
+	if e, ok := apperr.As(err); !ok || e.Code != "membership.changed" {
+		t.Fatalf("ChangeRole = %v, want membership.changed", err)
 	}
-	if err := members.Remove(ctx, member2); !errors.Is(err, authz.ErrDenied()) {
-		t.Fatalf("Remove = %v, want %v", err, authz.ErrDenied())
-	}
-	want := []string{"admin members:manage", "member members:manage", "admin members:manage", "member members:manage"}
-	if !slices.Equal(authorizer.asked, want) {
-		t.Fatalf("asked %v, want %v", authorizer.asked, want)
-	}
-	if len(store.calls) != 0 {
-		t.Fatalf("calls = %v, want none", store.calls)
-	}
-
-	// Removed meanwhile: denied as well.
-	delete(store.members[tenantA], adminID)
-	if err := members.Remove(ctx, member2); !errors.Is(err, authz.ErrDenied()) {
-		t.Fatalf("Remove = %v, want %v", err, authz.ErrDenied())
+	if want := []string{"change " + member2 + " admin expecting admin member"}; !slices.Equal(store.calls, want) {
+		t.Fatalf("calls = %v, want %v", store.calls, want)
 	}
 }
 
