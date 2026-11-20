@@ -24,6 +24,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go"
 
+	"github.com/DaniloSalaz/factory-template/api/gen/routes"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/adapters/fakeidp"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
@@ -159,8 +160,14 @@ func newEnv(t *testing.T, opts options) *env {
 
 	mux := http.NewServeMux()
 	m.Register(mux)
-	mux.HandleFunc("GET /whoami", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	noContent := func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }
+	mux.HandleFunc("GET /whoami", noContent)
+	mux.HandleFunc("GET /undeclared", noContent)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	// The contract's table, plus a test route that needs only a session. /undeclared is
+	// left out of it on purpose.
+	security := routes.Security()
+	security["GET /whoami"] = httpx.Security{Session: true}
 	// The same chain as cmd/api.
 	h := httpx.Chain(httpx.WithRouteFallback(mux, logger),
 		httpx.RequestID(),
@@ -170,7 +177,8 @@ func newEnv(t *testing.T, opts options) *env {
 		httpx.ClientIP(clientip.NewResolver("")),
 		httpx.CORS([]string{frontOrigin}),
 		httpx.CSRF([]string{frontOrigin}, logger),
-		m.SessionMiddleware("/healthz"),
+		httpx.RouteSecurity(mux, security),
+		m.SessionMiddleware(),
 	)
 	srv := httptest.NewTLSServer(h)
 	t.Cleanup(srv.Close)
@@ -801,6 +809,24 @@ func TestSession_InvalidSessionsAre401(t *testing.T) {
 			t.Fatalf("disabled user: %d", res.status)
 		}
 	})
+}
+
+// The contract decides which routes need a session; a route it does not declare needs
+// one all the same.
+func TestSession_FollowsTheContract(t *testing.T) {
+	e := newEnv(t, options{})
+	anon := e.browser()
+	if res := anon.do(http.MethodGet, "/healthz", ""); res.status != http.StatusOK {
+		t.Fatalf("security: [] is public: %d %s", res.status, res.body)
+	}
+	if res := anon.do(http.MethodGet, "/auth/login?return_to=/", ""); res.status != http.StatusFound {
+		t.Fatalf("the login is public: %d %s", res.status, res.body)
+	}
+	for _, path := range []string{"/undeclared", "/whoami", "/does-not-exist"} {
+		if res := anon.do(http.MethodGet, path, ""); res.status != http.StatusUnauthorized {
+			t.Fatalf("%s without a session: %d %s, want 401", path, res.status, res.body)
+		}
+	}
 }
 
 func TestSession_TouchesAtMostEveryFiveMinutes(t *testing.T) {

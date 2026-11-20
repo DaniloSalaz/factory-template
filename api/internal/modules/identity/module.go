@@ -25,7 +25,7 @@ import (
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/ratelimit"
 )
 
-// Paths of the module that work without a session.
+// Paths of the module that are rate limited per client IP.
 const (
 	LoginPath    = "/auth/login"
 	CallbackPath = "/auth/callback"
@@ -138,8 +138,8 @@ func (m *Module) Register(mux *http.ServeMux) {
 	})
 }
 
-// SessionMiddleware requires a session on every route except the login, the callback
-// and publicPaths (probes, say).
-func (m *Module) SessionMiddleware(publicPaths ...string) httpx.Middleware {
-	return identityhttp.SessionMiddleware(m.sessions, append([]string{LoginPath, CallbackPath}, publicPaths...), m.logger)
+// SessionMiddleware requires a session on every route whose contract security asks for
+// one, and on every route if httpx.RouteSecurity does not run before it.
+func (m *Module) SessionMiddleware() httpx.Middleware {
+	return identityhttp.SessionMiddleware(m.sessions, m.logger)
 }

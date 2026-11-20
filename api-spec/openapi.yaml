@@ -5,6 +5,13 @@ info:
   description: Source of truth for the HTTP contract. Go server and TS client are generated from this file.
 servers:
   - url: http://localhost:8080
+# Every operation needs a session and a tenant unless it declares less: a route that
+# forgets to declare its security fails closed. Public operations declare
+# `security: []`; those without a tenant, `security: [{session: []}]`. The API reads
+# this from gen/routes (routegen), never from a hand-written list.
+security:
+  - session: []
+    tenant: []
 tags:
   - name: health
     description: Liveness and readiness probes
@@ -19,6 +26,7 @@ paths:
       operationId: getHealthz
       summary: Liveness probe
       tags: [health]
+      security: []
       responses:
         "200":
           description: The process is alive
@@ -33,6 +41,7 @@ paths:
       operationId: getReadyz
       summary: Readiness probe (checks dependencies such as the database)
       tags: [health]
+      security: []
       responses:
         "200":
           description: The service is ready to receive traffic
@@ -53,6 +62,7 @@ paths:
         return_to, purpose, start time; 5 minutes, at most 3 alive) and redirects to
         AuthKit, always forcing a fresh authentication. Rate limited per IP.
       tags: [identity]
+      security: []
       parameters:
         - name: return_to
           in: query
@@ -78,6 +88,7 @@ paths:
         sets the __Host-session cookie. What the callback does is decided by the stored
         intent, never by the URL. Rate limited per IP.
       tags: [identity]
+      security: []
       parameters:
         - name: code
           in: query
@@ -122,6 +133,8 @@ paths:
         Revokes the current session and clears its cookie. The front end then sends the
         browser to logout_url to end the AuthKit session as well.
       tags: [identity]
+      security:
+        - session: []
       responses:
         "200":
           $ref: "#/components/responses/LoggedOut"
@@ -136,6 +149,8 @@ paths:
       operationId: authLogoutAll
       summary: End every session of the user
       tags: [identity]
+      security:
+        - session: []
       responses:
         "200":
           $ref: "#/components/responses/LoggedOut"
@@ -146,6 +161,20 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 components:
+  securitySchemes:
+    session:
+      description: The __Host-session cookie set by /auth/callback.
+      type: apiKey
+      in: cookie
+      name: __Host-session
+    tenant:
+      description: >-
+        The tenant the request acts in. The caller must be a member of it, the tenant
+        active and, if the member's role requires it, its MFA recent enough; otherwise
+        403 (auth.tenant_forbidden or auth.mfa_required).
+      type: apiKey
+      in: header
+      name: X-Tenant-ID
   schemas:
     Logout:
       type: object

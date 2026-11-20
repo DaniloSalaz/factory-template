@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/DaniloSalaz/factory-template/api/gen/routes"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/health"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/clientip"
@@ -79,8 +80,9 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		httpx.ClientIP(clientip.NewResolver(cfg.Web.TrustedClientIPHeader)),
 		httpx.CORS(cfg.Web.AllowedOrigins),
 		httpx.CSRF(cfg.Web.AllowedOrigins, logger),
-		// Every route needs a session unless listed here or public in its module.
-		idm.SessionMiddleware("/healthz", "/readyz"),
+		// What each route requires comes from the security declared in the contract.
+		httpx.RouteSecurity(mux, routes.Security()),
+		idm.SessionMiddleware(),
 	)
 
 	if err := httpx.NewServer(cfg.HTTP, handler, logger).Run(ctx); err != nil {

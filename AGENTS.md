@@ -36,7 +36,7 @@ api/internal/modules/<m>/
   adapters/http/          implementa la interfaz strict generada desde OpenAPI
   adapters/postgres/      implementa los puertos con sqlc
   queries/                SQL para sqlc
-api/gen/                  código generado (openapi/<m>, sqlc/<m>)
+api/gen/                  código generado (openapi/<m>, sqlc/<m>, routes)
 api-spec/openapi.yaml     contrato HTTP
 migrations/               migraciones goose (NNNNN_nombre.sql)
 web/src/gen/              cliente TS generado
@@ -72,6 +72,6 @@ Ejemplo vivo: `api/internal/modules/health`.
 - Una exclusión (`//nolint:<linter>`) solo con un comentario que explique por qué: `//nolint:wrapcheck // motivo`.
 
 ## Añadir un endpoint
-1. Defínelo en `api-spec/openapi.yaml` con el `tag` del módulo.
+1. Defínelo en `api-spec/openapi.yaml` con el `tag` del módulo. Por defecto exige sesión y `X-Tenant-ID`; si no necesita tenant, `security: [{session: []}]`, y si es público, `security: []`. Los middlewares lo leen de `api/gen/routes` (nunca de una lista de rutas a mano).
 2. `mise run generate` e implementa el método en `adapters/http`.
 3. Lógica en `app/`, puertos en `app/`, implementación en `adapters/`.

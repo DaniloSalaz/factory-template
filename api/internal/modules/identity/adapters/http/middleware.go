@@ -3,7 +3,6 @@ package http
 import (
 	"log/slog"
 	"net/http"
-	"slices"
 
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
@@ -12,15 +11,15 @@ import (
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/logx"
 )
 
-// SessionMiddleware requires a valid session on every path except publicPaths (design,
-// 5.4.1): sessions are required by default, so a new route cannot forget it. It puts
-// the authctx.User and the session in the context, and user_id in the logs, the
-// access record included.
-func SessionMiddleware(sessions *app.Sessions, publicPaths []string, logger *slog.Logger) httpx.Middleware {
-	public := slices.Clone(publicPaths)
+// SessionMiddleware requires a valid session (design, 5.4.1) unless the route's security,
+// resolved by httpx.RouteSecurity from the contract, says it is public. Without that
+// security (a wiring bug) it requires one: a new route cannot forget it. It puts the
+// authctx.User and the session in the context, and user_id in the logs, the access
+// record included.
+func SessionMiddleware(sessions *app.Sessions, logger *slog.Logger) httpx.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if slices.Contains(public, r.URL.Path) {
+			if sec, ok := httpx.SecurityFrom(r.Context()); ok && !sec.Session {
 				next.ServeHTTP(w, r)
 				return
 			}

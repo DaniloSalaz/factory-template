@@ -90,8 +90,10 @@ func AccessLog(logger *slog.Logger, quietPaths ...string) Middleware {
 				slog.String("method", r.Method),
 				slog.String("path", r.URL.Path),
 			}
-			// ServeMux sets Pattern on this same *Request while routing it.
-			if req.Pattern != "" {
+			// ServeMux sets Pattern on this same *Request while routing it, unless an inner
+			// middleware passed a copy on; then RouteSecurity adds it to the access attrs.
+			extra := added()
+			if req.Pattern != "" && !slices.ContainsFunc(extra, func(a slog.Attr) bool { return a.Key == "pattern" }) {
 				attrs = append(attrs, slog.String("pattern", req.Pattern))
 			}
 			attrs = append(attrs,
@@ -100,7 +102,7 @@ func AccessLog(logger *slog.Logger, quietPaths ...string) Middleware {
 				slog.Float64("duration_ms", float64(time.Since(start).Microseconds())/1000),
 			)
 			// What inner middlewares learnt about the request: user_id, tenant_id.
-			attrs = append(attrs, added()...)
+			attrs = append(attrs, extra...)
 			logger.LogAttrs(ctx, slog.LevelInfo, "http request", attrs...)
 		})
 	}
