@@ -18,13 +18,13 @@ func NewCheckReadiness(db DBChecker, timeout time.Duration) *CheckReadiness {
 	return &CheckReadiness{db: db, timeout: timeout}
 }
 
-// Execute runs the dependency checks.
-func (uc *CheckReadiness) Execute(ctx context.Context) domain.Readiness {
+// Execute runs the dependency checks and returns an apperr Unavailable error if one fails.
+func (uc *CheckReadiness) Execute(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, uc.timeout)
 	defer cancel()
 
 	if err := uc.db.CheckDB(ctx); err != nil {
-		return domain.NotReady("database unavailable", err)
+		return domain.DatabaseUnavailable(err)
 	}
-	return domain.Ready()
+	return nil
 }

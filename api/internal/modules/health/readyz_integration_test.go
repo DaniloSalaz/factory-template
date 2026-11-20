@@ -79,7 +79,7 @@ func TestReadyz_Integration(t *testing.T) {
 		if err := json.Unmarshal(res.body, &p); err != nil {
 			t.Fatalf("decode problem: %v", err)
 		}
-		if p.Status != http.StatusServiceUnavailable || p.Title == "" || p.Type == "" {
+		if p.Status != http.StatusServiceUnavailable || p.Code != "health.db_unavailable" || p.Title == "" || p.Type == "" {
 			t.Fatalf("unexpected problem: %+v", p)
 		}
 	})

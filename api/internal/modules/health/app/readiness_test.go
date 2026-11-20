@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/health/app"
+	"github.com/DaniloSalaz/factory-template/api/internal/modules/health/domain"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
 )
 
 type fakeDBChecker struct {
@@ -27,13 +29,12 @@ func TestCheckReadiness(t *testing.T) {
 
 	dbErr := errors.New("connection refused")
 	tests := []struct {
-		name       string
-		dbErr      error
-		wantReady  bool
-		wantReason string
+		name    string
+		dbErr   error
+		wantErr bool
 	}{
-		{name: "database up", wantReady: true},
-		{name: "database down", dbErr: dbErr, wantReason: "database unavailable"},
+		{name: "database up"},
+		{name: "database down", dbErr: dbErr, wantErr: true},
 	}
 
 	for _, tc := range tests {
@@ -41,19 +42,25 @@ func TestCheckReadiness(t *testing.T) {
 			t.Parallel()
 
 			fake := &fakeDBChecker{err: tc.dbErr}
-			got := app.NewCheckReadiness(fake, time.Second).Execute(t.Context())
+			err := app.NewCheckReadiness(fake, time.Second).Execute(t.Context())
 
 			if !fake.called {
 				t.Fatal("DBChecker was not called")
 			}
-			if got.IsReady() != tc.wantReady {
-				t.Fatalf("IsReady() = %v, want %v", got.IsReady(), tc.wantReady)
+			if !tc.wantErr {
+				if err != nil {
+					t.Fatalf("Execute() = %v, want nil", err)
+				}
+				return
 			}
-			if got.Reason() != tc.wantReason {
-				t.Fatalf("Reason() = %q, want %q", got.Reason(), tc.wantReason)
+			if !errors.Is(err, apperr.Unavailable(domain.CodeDatabaseUnavailable, "")) {
+				t.Fatalf("Execute() = %v, want code %s", err, domain.CodeDatabaseUnavailable)
 			}
-			if !errors.Is(got.Cause(), tc.dbErr) {
-				t.Fatalf("Cause() = %v, want %v", got.Cause(), tc.dbErr)
+			if apperr.KindOf(err) != apperr.KindUnavailable {
+				t.Fatalf("kind = %v, want unavailable", apperr.KindOf(err))
+			}
+			if !errors.Is(err, tc.dbErr) {
+				t.Fatalf("Execute() = %v, want it to keep the cause", err)
 			}
 		})
 	}

@@ -28,13 +28,28 @@ func (e StatusStatus) Valid() bool {
 	}
 }
 
-// Problem RFC 9457 problem details
+// FieldError defines model for FieldError.
+type FieldError struct {
+	Code    string `json:"code"`
+	Field   string `json:"field"`
+	Message string `json:"message"`
+}
+
+// Problem RFC 9457 problem details with this API's extension members.
 type Problem struct {
-	Detail   *string `json:"detail,omitempty"`
-	Instance *string `json:"instance,omitempty"`
-	Status   int     `json:"status"`
-	Title    string  `json:"title"`
-	Type     string  `json:"type"`
+	// Code Stable, machine-readable error code, e.g. route_not_found.
+	Code   *string `json:"code,omitempty"`
+	Detail *string `json:"detail,omitempty"`
+
+	// Errors Per-field validation errors.
+	Errors   *[]FieldError `json:"errors,omitempty"`
+	Instance *string       `json:"instance,omitempty"`
+
+	// RequestId Request ID, also returned in the X-Request-ID header.
+	RequestId *string `json:"request_id,omitempty"`
+	Status    int     `json:"status"`
+	Title     string  `json:"title"`
+	Type      string  `json:"type"`
 }
 
 // Status defines model for Status.
@@ -44,6 +59,12 @@ type Status struct {
 
 // StatusStatus defines model for Status.Status.
 type StatusStatus string
+
+// InternalError RFC 9457 problem details with this API's extension members.
+type InternalError = Problem
+
+// ServiceUnavailable RFC 9457 problem details with this API's extension members.
+type ServiceUnavailable = Problem
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -218,6 +239,10 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	return m
 }
 
+type InternalErrorApplicationProblemPlusJSONResponse Problem
+
+type ServiceUnavailableApplicationProblemPlusJSONResponse Problem
+
 type GetHealthzRequestObject struct {
 }
 
@@ -235,6 +260,22 @@ func (response GetHealthz200JSONResponse) VisitGetHealthzResponse(w http.Respons
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetHealthz500ApplicationProblemPlusJSONResponse struct {
+	InternalErrorApplicationProblemPlusJSONResponse
+}
+
+func (response GetHealthz500ApplicationProblemPlusJSONResponse) VisitGetHealthzResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -260,7 +301,25 @@ func (response GetReadyz200JSONResponse) VisitGetReadyzResponse(w http.ResponseW
 	return err
 }
 
-type GetReadyz503ApplicationProblemPlusJSONResponse Problem
+type GetReadyz500ApplicationProblemPlusJSONResponse struct {
+	InternalErrorApplicationProblemPlusJSONResponse
+}
+
+func (response GetReadyz500ApplicationProblemPlusJSONResponse) VisitGetReadyzResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetReadyz503ApplicationProblemPlusJSONResponse struct {
+	ServiceUnavailableApplicationProblemPlusJSONResponse
+}
 
 func (response GetReadyz503ApplicationProblemPlusJSONResponse) VisitGetReadyzResponse(w http.ResponseWriter) error {
 

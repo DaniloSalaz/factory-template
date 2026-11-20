@@ -16,8 +16,14 @@ export interface Status {
   status: StatusStatus;
 }
 
+export interface FieldError {
+  field: string;
+  code: string;
+  message: string;
+}
+
 /**
- * RFC 9457 problem details
+ * RFC 9457 problem details with this API's extension members.
  */
 export interface Problem {
   type: string;
@@ -29,19 +35,62 @@ export interface Problem {
   status: number;
   detail?: string;
   instance?: string;
+  /** Stable, machine-readable error code, e.g. route_not_found. */
+  code?: string;
+  /** Per-field validation errors. */
+  errors?: FieldError[];
+  /** Request ID, also returned in the X-Request-ID header. */
+  request_id?: string;
 }
+
+/**
+ * The request is malformed.
+ */
+export type BadRequestResponse = Problem;
+
+/**
+ * The resource does not exist.
+ */
+export type NotFoundResponse = Problem;
+
+/**
+ * The request body exceeds the size limit.
+ */
+export type PayloadTooLargeResponse = Problem;
+
+/**
+ * The request is well-formed but invalid; see errors.
+ */
+export type UnprocessableEntityResponse = Problem;
+
+/**
+ * Unexpected server error. Details are logged, not returned.
+ */
+export type InternalErrorResponse = Problem;
+
+/**
+ * A dependency is unavailable; retry later.
+ */
+export type ServiceUnavailableResponse = Problem;
 
 export type getHealthzResponse200 = {
   data: Status
   status: 200
 }
 
+export type getHealthzResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
 export type getHealthzResponseSuccess = (getHealthzResponse200) & {
   headers: Headers;
 };
-;
+export type getHealthzResponseError = (getHealthzResponse500) & {
+  headers: Headers;
+};
 
-export type getHealthzResponse = (getHealthzResponseSuccess)
+export type getHealthzResponse = (getHealthzResponseSuccess | getHealthzResponseError)
 
 export const getGetHealthzUrl = () => {
 
@@ -79,15 +128,20 @@ export type getReadyzResponse200 = {
   status: 200
 }
 
+export type getReadyzResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
 export type getReadyzResponse503 = {
-  data: Problem
+  data: ServiceUnavailableResponse
   status: 503
 }
 
 export type getReadyzResponseSuccess = (getReadyzResponse200) & {
   headers: Headers;
 };
-export type getReadyzResponseError = (getReadyzResponse503) & {
+export type getReadyzResponseError = (getReadyzResponse500 | getReadyzResponse503) & {
   headers: Headers;
 };
 

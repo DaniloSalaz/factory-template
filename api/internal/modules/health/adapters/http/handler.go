@@ -3,8 +3,7 @@ package http
 
 import (
 	"context"
-	"log/slog"
-	"net/http"
+	"fmt"
 
 	healthapi "github.com/DaniloSalaz/factory-template/api/gen/openapi/health"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/health/app"
@@ -12,15 +11,15 @@ import (
 
 var _ healthapi.StrictServerInterface = (*Handler)(nil)
 
-// Handler implements the generated strict server interface.
+// Handler implements the generated strict server interface. Errors are returned, not
+// written: the strict server hands them to httpx.WriteProblem.
 type Handler struct {
 	readiness *app.CheckReadiness
-	logger    *slog.Logger
 }
 
 // NewHandler builds a Handler.
-func NewHandler(readiness *app.CheckReadiness, logger *slog.Logger) *Handler {
-	return &Handler{readiness: readiness, logger: logger}
+func NewHandler(readiness *app.CheckReadiness) *Handler {
+	return &Handler{readiness: readiness}
 }
 
 // GetHealthz reports that the process is alive; it deliberately checks no dependencies.
@@ -30,19 +29,8 @@ func (h *Handler) GetHealthz(context.Context, healthapi.GetHealthzRequestObject)
 
 // GetReadyz reports whether the service and its dependencies can take traffic.
 func (h *Handler) GetReadyz(ctx context.Context, _ healthapi.GetReadyzRequestObject) (healthapi.GetReadyzResponseObject, error) {
-	readiness := h.readiness.Execute(ctx)
-	if readiness.IsReady() {
-		return healthapi.GetReadyz200JSONResponse{Status: healthapi.Ok}, nil
+	if err := h.readiness.Execute(ctx); err != nil {
+		return nil, fmt.Errorf("check readiness: %w", err)
 	}
-
-	h.logger.WarnContext(ctx, "not ready", slog.String("reason", readiness.Reason()), slog.Any("error", readiness.Cause()))
-	detail := readiness.Reason()
-	instance := "/readyz"
-	return healthapi.GetReadyz503ApplicationProblemPlusJSONResponse{
-		Type:     "about:blank",
-		Title:    http.StatusText(http.StatusServiceUnavailable),
-		Status:   http.StatusServiceUnavailable,
-		Detail:   &detail,
-		Instance: &instance,
-	}, nil
+	return healthapi.GetReadyz200JSONResponse{Status: healthapi.Ok}, nil
 }

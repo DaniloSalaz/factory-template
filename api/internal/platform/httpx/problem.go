@@ -76,8 +76,8 @@ func ResponseErrorHandler(logger *slog.Logger) func(http.ResponseWriter, *http.R
 }
 
 func problemFor(err error) Problem {
-	// Checked first: the generated server wraps body read errors in a BadRequest, which
-	// would otherwise hide the more precise 413.
+	// Transport errors are checked first: the generated server wraps body read errors in a
+	// BadRequest, which would otherwise hide the more precise 413.
 	var tooLarge *http.MaxBytesError
 	if errors.As(err, &tooLarge) {
 		return Problem{
@@ -86,6 +86,17 @@ func problemFor(err error) Problem {
 			Status: http.StatusRequestEntityTooLarge,
 			Detail: fmt.Sprintf("The request body exceeds the limit of %d bytes.", tooLarge.Limit),
 			Code:   "request_too_large",
+		}
+	}
+
+	var notAllowed *methodNotAllowedError
+	if errors.As(err, &notAllowed) {
+		return Problem{
+			Type:   "about:blank",
+			Title:  http.StatusText(http.StatusMethodNotAllowed),
+			Status: http.StatusMethodNotAllowed,
+			Detail: "The method is not allowed for this resource; see the Allow header.",
+			Code:   "method_not_allowed",
 		}
 	}
 

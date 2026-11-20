@@ -21,6 +21,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /readyz:
     get:
       operationId: getReadyz
@@ -33,12 +35,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+        "500":
+          $ref: "#/components/responses/InternalError"
         "503":
-          description: A dependency is unavailable
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
+          $ref: "#/components/responses/ServiceUnavailable"
 components:
   schemas:
     Status:
@@ -50,7 +50,7 @@ components:
           type: string
           enum: [ok]
     Problem:
-      description: RFC 9457 problem details
+      description: RFC 9457 problem details with this API's extension members.
       type: object
       required: [type, title, status]
       properties:
@@ -69,3 +69,61 @@ components:
         instance:
           type: string
           format: uri-reference
+        code:
+          description: Stable, machine-readable error code, e.g. route_not_found.
+          type: string
+        errors:
+          description: Per-field validation errors.
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldError"
+        request_id:
+          description: Request ID, also returned in the X-Request-ID header.
+          type: string
+    FieldError:
+      type: object
+      required: [field, code, message]
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+        message:
+          type: string
+  responses:
+    BadRequest:
+      description: The request is malformed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: The resource does not exist.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    PayloadTooLarge:
+      description: The request body exceeds the size limit.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    UnprocessableEntity:
+      description: The request is well-formed but invalid; see errors.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    InternalError:
+      description: Unexpected server error. Details are logged, not returned.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    ServiceUnavailable:
+      description: A dependency is unavailable; retry later.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
