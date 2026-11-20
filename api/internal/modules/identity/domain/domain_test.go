@@ -264,6 +264,20 @@ func TestFreshAuthentication(t *testing.T) {
 	}
 }
 
+func TestTruncateUserAgent(t *testing.T) {
+	t.Parallel()
+	if got := TruncateUserAgent("Mozilla/5.0"); got != "Mozilla/5.0" {
+		t.Fatalf("short user agent changed: %q", got)
+	}
+	long := strings.Repeat("ñ", MaxUserAgentLength+100)
+	if got := TruncateUserAgent(long); got != strings.Repeat("ñ", MaxUserAgentLength) {
+		t.Fatalf("truncated to %d characters, want %d", len([]rune(got)), MaxUserAgentLength)
+	}
+	if got := TruncateUserAgent("a\xffb"); got != "a\uFFFDb" {
+		t.Fatalf("invalid UTF-8 kept: %q", got)
+	}
+}
+
 func TestTokens(t *testing.T) {
 	t.Parallel()
 

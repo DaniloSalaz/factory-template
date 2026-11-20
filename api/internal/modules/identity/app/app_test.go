@@ -511,6 +511,26 @@ func TestComplete_MFA(t *testing.T) {
 	}
 }
 
+func TestComplete_TruncatesTheUserAgent(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t, false)
+	started, err := f.login.Start("/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.idp.Authenticate(started.State, "c", person(1))
+	if _, err := f.login.Complete(t.Context(), app.Callback{
+		State: started.State, IntentValue: started.Value, Code: "c", UserAgent: strings.Repeat("x", 10_000),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range f.store.snapshot().sessions {
+		if len(s.UserAgent) != domain.MaxUserAgentLength {
+			t.Fatalf("stored user agent has %d characters, want %d", len(s.UserAgent), domain.MaxUserAgentLength)
+		}
+	}
+}
+
 func TestComplete_IntentAndProvider(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, false)

@@ -153,7 +153,7 @@ func (l *Login) Complete(ctx context.Context, cb Callback) (Completed, error) {
 			TokenHash: domain.HashToken(token), UserID: userID,
 			AuthTime: authn.MFA.AuthTime, MFAAuthTime: mfaTime,
 			Now: now, IdleExpiresAt: idle, AbsoluteExpiresAt: absolute,
-			IPPrefix: cb.IPPrefix, UserAgent: cb.UserAgent, ProviderSessionID: authn.SessionID,
+			IPPrefix: cb.IPPrefix, UserAgent: domain.TruncateUserAgent(cb.UserAgent), ProviderSessionID: authn.SessionID,
 		})
 		if err != nil {
 			return fmt.Errorf("create session: %w", err)
