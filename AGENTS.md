@@ -24,7 +24,7 @@ Las variables de entorno de desarrollo vienen de `[env]` en `mise.toml`; `.env` 
 ## Estructura
 ```
 api/cmd/api/              composition root (único sitio que cablea todo)
-api/internal/platform/    config, db, httpx, observability (transversal, sin negocio)
+api/internal/platform/    config, db, httpx, logx, pii, apperr (transversal, sin negocio)
 api/internal/modules/<m>/
   module.go               API pública del módulo: New(Deps) + Register(mux)
   domain/                 entidades y reglas; NO importa infraestructura (depguard lo impide)
@@ -44,9 +44,11 @@ Ejemplo vivo: `api/internal/modules/health`.
 - Errores siempre envueltos con contexto: `fmt.Errorf("hacer x: %w", err)`.
 - Sin variables globales ni `init()`; dependencias por constructor (`NewX(deps)`).
 - Un módulo no importa el interior de otro módulo; solo su `module.go`.
-- El dominio no importa nada de infraestructura (`net/http`, pgx, `gen/`, `platform/`).
+- `platform` no importa `internal/modules`. El dominio solo importa la stdlib y `platform/apperr` (depguard lo impide).
 - El código generado (`api/gen/`, `web/src/gen/`) no se edita: cambia el contrato o la query y ejecuta `mise run generate`.
-- Errores HTTP en formato RFC 9457 (`application/problem+json`, ver `platform/httpx`).
+- Errores de negocio con `apperr` (`NotFound`, `Validation`, `Wrap`…). Los handlers nunca escriben errores a mano: usan `httpx.WriteProblem` (RFC 9457).
+- `os.Getenv` (y cualquier lectura del entorno) solo en `platform/config`; el resto recibe `config.Config`.
+- Datos personales o secretos en logs, siempre con los tipos de `pii` (`Email`, `Phone`, `Secret`); el request ID se lee y escribe solo con `logx`.
 - Cada cambio va con su test (unitario con fakes de puertos; integración con Testcontainers).
 - Comentarios solo para explicar el porqué, no el qué.
 - Antes de dar algo por terminado: `mise run generate && mise run lint && mise run test` sin errores ni diff en generado.
