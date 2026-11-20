@@ -55,6 +55,7 @@ func TestSchema_DetectsMisbuiltTables(t *testing.T) {
 	const ownScope = `CREATE POLICY own_scope ON %[1]s AS RESTRICTIVE FOR ALL
 		USING (current_setting('app.scope') = 'tenant')`
 	const forced = `ALTER TABLE %[1]s ENABLE ROW LEVEL SECURITY; ALTER TABLE %[1]s FORCE ROW LEVEL SECURITY`
+	const shared = `COMMENT ON TABLE %[1]s IS 'scope: tenant-shared'`
 	// Like memberships' own_write: an extra restrictive policy only narrows access.
 	const ownWrite = `CREATE POLICY own_write ON %[1]s AS RESTRICTIVE FOR UPDATE
 		USING (current_setting('app.scope') = 'tenant')`
@@ -77,6 +78,20 @@ func TestSchema_DetectsMisbuiltTables(t *testing.T) {
 	}{
 		{"zz_good_own", []string{forced, isolation, ownScope}, ""},
 		{"zz_good_shared", []string{forced, isolation, `COMMENT ON TABLE %[1]s IS 'scope: tenant-shared'`}, ""},
+		// Foreign keys between tables with tenant_id pair tenant_id with tenant_id. The
+		// parent comes first: the children reference it. NOT VALID skips the check of
+		// existing rows, which would query the parent under its forced RLS without
+		// variables; the key is in pg_constraint all the same.
+		{"zz_fk_parent", []string{forced, isolation, shared, `ALTER TABLE %[1]s ADD UNIQUE (tenant_id, id)`}, ""},
+		{"zz_fk_composite", []string{forced, isolation, shared, `ALTER TABLE %[1]s ADD COLUMN parent_id uuid,
+			ADD FOREIGN KEY (tenant_id, parent_id) REFERENCES zz_fk_parent (tenant_id, id) NOT VALID`}, ""},
+		{"zz_fk_simple", []string{forced, isolation, shared, `ALTER TABLE %[1]s ADD COLUMN parent_id uuid,
+			ADD FOREIGN KEY (parent_id) REFERENCES zz_fk_parent (id) NOT VALID`}, "does not pair tenant_id with tenant_id"},
+		{"zz_fk_swapped", []string{forced, isolation, shared, `ALTER TABLE %[1]s ADD COLUMN parent_id uuid,
+			ADD FOREIGN KEY (tenant_id, parent_id) REFERENCES zz_fk_parent (id, tenant_id) NOT VALID`}, "does not pair tenant_id with tenant_id"},
+		{"zz_fk_to_users", []string{forced, isolation, shared, `ALTER TABLE %[1]s ADD COLUMN user_id uuid,
+			ADD FOREIGN KEY (user_id) REFERENCES users (id) NOT VALID`}, ""},
+		{"zz_fk_to_tenants", []string{forced, isolation, shared, `ALTER TABLE %[1]s ADD FOREIGN KEY (tenant_id) REFERENCES tenants (id) NOT VALID`}, ""},
 		{"zz_no_rls", []string{isolation, ownScope}, "row level security is not enabled"},
 		{"zz_no_force", []string{`ALTER TABLE %[1]s ENABLE ROW LEVEL SECURITY`, isolation, ownScope}, "not forced"},
 		{"zz_no_isolation", []string{forced, ownScope}, "missing policy tenant_isolation"},

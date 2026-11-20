@@ -6,9 +6,9 @@ tenancy, sección 7.3). Todos están aplicados en las tablas de ejemplo de
 de estructura y los tests de comportamiento de `platform/db`.
 
 El test de estructura (`api/internal/platform/db/schematest/rules.go`) comprueba en cada
-tabla con `tenant_id`: RLS activo y forzado, `tenant_isolation`, el alcance declarado y,
-en las tablas de acceso, sus políticas de escritura. Cada mensaje dice qué falta y cómo
-añadirlo.
+tabla con `tenant_id`: RLS activo y forzado, `tenant_isolation`, el alcance declarado, las
+claves foráneas compuestas hacia otras tablas con `tenant_id` y, en las tablas de acceso,
+sus políticas de escritura. Cada mensaje dice qué falta y cómo añadirlo.
 
 ## Tabla de acceso
 
@@ -70,7 +70,9 @@ Toda tabla que referencia a un padre con `tenant_id`, incluidas las tablas de ac
 hace con la clave compuesta `(tenant_id, parent_id)` hacia un `UNIQUE (tenant_id, id)` del
 padre. Nunca con una clave simple a `parent(id)`: esa no comprueba el tenant, y una fila
 hija del tenant A podría colgar de un padre de B. Con la clave compuesta la base de datos
-lo rechaza (`23503`) sea cual sea el código.
+lo rechaza (`23503`) sea cual sea el código. El test de estructura descubre las claves en
+`pg_constraint` y falla si alguna no empareja `tenant_id` con `tenant_id`; las claves
+hacia `tenants` y `users`, que no tienen `tenant_id`, quedan exentas.
 
 ```sql
 CREATE TABLE cases (

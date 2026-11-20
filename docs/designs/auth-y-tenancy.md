@@ -294,6 +294,7 @@ Un `UPDATE` con alcance `own` no ve ninguna fila y no afecta a ninguna.
 - `tenant_isolation` existe, es permisiva, `FOR ALL`, y su expresión compara la columna (`tenant_id`, o `id` en `tenants`) con `app.tenant_id`;
 - o bien el comentario `scope: tenant-shared`, o bien `own_scope` restrictiva y `FOR ALL`;
 - en las tablas con el comentario `scope: access`: `own_scope` y políticas restrictivas para `INSERT` (en `WITH CHECK`), `UPDATE` y `DELETE` (en `USING`) cuya expresión es exactamente `current_setting('app.scope') = 'tenant'`;
+- toda clave foránea hacia otra tabla con `tenant_id` es compuesta y empareja `tenant_id` con `tenant_id` (las claves hacia `tenants` y `users` quedan exentas);
 - ninguna política usa `current_setting(…, true)` ni `NULLIF`;
 - ninguna política permisiva adicional además de `tenant_isolation` (las restrictivas adicionales se admiten, con las mismas comprobaciones de expresión).
 
@@ -407,6 +408,7 @@ Los `{id}` son de la membresía o de la invitación, nunca del usuario. El rol `
 - Cada tabla con `tenant_id`, y `tenants` por su `id`: RLS activo y forzado, `tenant_isolation` permisiva y `FOR ALL`, alcance declarado; si es `own_scope`, restrictiva y `FOR ALL`; ninguna otra política permisiva.
 - Una tabla de prueba con `own_scope` permisiva hace fallar el test (el test se prueba a sí mismo).
 - Una tabla de acceso sin la política de escritura de `INSERT`, `UPDATE` o `DELETE` hace fallar el test.
+- Una tabla hija con una clave foránea simple hacia una tabla con `tenant_id` hace fallar el test.
 - Funciones: `search_path`, `EXECUTE` revocado a `PUBLIC`, propietario y sin parámetro `user_id`.
 - Foto de permisos: todos los de `app_runtime` (de tabla, de columna y de ejecución, también los heredados de `PUBLIC`) coinciden con `testdata/runtime_privileges.golden`. Cambiar ese fichero es una decisión de seguridad que se justifica en el PR.
 
