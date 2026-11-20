@@ -192,6 +192,23 @@ func newEnv(t *testing.T, opts options) *env {
 	noContent := func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }
 	mux.HandleFunc("GET /whoami", noContent)
 	mux.HandleFunc("GET /undeclared", noContent)
+	// A use case that writes, then checks a permission it lacks inside its transaction:
+	// the write rolls back, and the denial must still be audited.
+	database := db.New(pool)
+	mux.HandleFunc("POST /deny-in-tx", func(w http.ResponseWriter, r *http.Request) {
+		err := database.WithTenantTx(r.Context(), func(ctx context.Context, q db.Querier) error {
+			if _, err := q.Exec(ctx, `UPDATE tenants SET name = name || ' (renamed)' WHERE id = $1`,
+				r.Header.Get("X-Tenant-ID")); err != nil {
+				return err
+			}
+			return m.Authorizer().Require(ctx, authz.PermMembersManage)
+		})
+		if err != nil {
+			httpx.WriteProblem(w, r, err, logger)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("GET /in-tenant", func(w http.ResponseWriter, r *http.Request) {
 		p, ok := authctx.PrincipalFrom(r.Context())
 		if !ok {
@@ -209,6 +226,7 @@ func newEnv(t *testing.T, opts options) *env {
 	security := routes.Security()
 	security["GET /whoami"] = httpx.Security{Session: true}
 	security["GET /in-tenant"] = httpx.Security{Session: true, Tenant: true}
+	security["POST /deny-in-tx"] = httpx.Security{Session: true, Tenant: true}
 	// The same chain as cmd/api.
 	h := httpx.Chain(httpx.WithRouteFallback(mux, logger),
 		httpx.RequestID(),
@@ -1409,5 +1427,48 @@ func TestCurrentTenant(t *testing.T) {
 	}
 	if res := e.browser().doHeaders(http.MethodGet, "/tenant", "", http.Header{"X-Tenant-Id": {mine}}); res.status != http.StatusUnauthorized {
 		t.Fatalf("without a session: %d", res.status)
+	}
+}
+
+func TestAuthorizer_DeniedInsideARolledBackTransactionIsStillAudited(t *testing.T) {
+	e := newEnv(t, options{})
+	who := e.person()
+	b := e.browser()
+	b.login(who)
+	tenant := e.tenant()
+	e.member(who, tenant, "member")
+	name := e.scalar(`SELECT name FROM tenants WHERE id = $1`, tenant)
+
+	res := b.doHeaders(http.MethodPost, "/deny-in-tx", frontOrigin, http.Header{"X-Tenant-Id": {tenant}})
+	if res.status != http.StatusForbidden || res.problemCode(t) != "authz.denied" {
+		t.Fatalf("POST /deny-in-tx: %d %s, want 403 authz.denied", res.status, res.body)
+	}
+	if got := e.scalar(`SELECT name FROM tenants WHERE id = $1`, tenant); got != name {
+		t.Fatalf("the use case's write was not rolled back: %q", got)
+	}
+	n := e.count(`SELECT count(*) FROM audit_log WHERE action = 'authz.denied' AND tenant_id = $1
+		AND actor_user_id = $2 AND target_id = 'members:manage'`, tenant, e.userID(who))
+	if n != 1 {
+		t.Fatalf("authz.denied events = %d, want 1 despite the rollback", n)
+	}
+}
+
+func TestAuthorizer_DeniesWhenTheAuditFails(t *testing.T) {
+	e := newEnv(t, options{})
+	who := e.person()
+	e.browser().login(who)
+	// A tenant that does not exist: the audit insert breaks its foreign key.
+	ghostTenant := "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f7777"
+	p, err := authctx.NewPrincipal(e.userID(who), ghostTenant, "member")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = e.module.Authorizer().Require(authctx.WithPrincipal(t.Context(), p), authz.PermAuditRead)
+	if !errors.Is(err, authz.ErrDenied()) {
+		t.Fatalf("Require = %v, want authz.denied", err)
+	}
+	recs := e.logRecords("record authz.denied")
+	if len(recs) != 1 || recs[0]["level"] != "ERROR" {
+		t.Fatalf("the failed audit must be logged at Error: %v", recs)
 	}
 }

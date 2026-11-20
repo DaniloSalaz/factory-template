@@ -51,7 +51,7 @@ Ejemplo vivo: `api/internal/modules/health`.
 - `platform` no importa `internal/modules`; `platform/apperr` y `platform/authctx` solo importan la stdlib; el dominio solo importa la stdlib y `platform/apperr` (depguard).
 - El código generado (`api/gen/`, `web/src/gen/`) no se edita: cambia el contrato o la query y ejecuta `mise run generate`.
 - Un GET nunca modifica datos: SameSite=Lax envía la cookie en navegaciones GET entre sitios y la protección CSRF por Origin no lo cubriría.
-- Los permisos se comprueban en el caso de uso con `Authorizer.Require` (`platform/authz`), antes de abrir su transacción; nunca en `adapters/http` (depguard, `[authz-in-use-cases]`). Los roles y sus permisos son el catálogo de `cmd/api/roles.go`.
+- Los permisos se comprueban en el caso de uso con `Authorizer.Require` (`platform/authz`), en cualquier punto, también dentro de su transacción: la denegación se audita en una transacción propia que sobrevive al rollback. Nunca en `adapters/http` (depguard, `[authz-in-use-cases]`). Los roles y sus permisos son el catálogo de `cmd/api/roles.go`.
 - Errores de negocio con `apperr` (`NotFound`, `Validation`, `Wrap`…). Los handlers nunca escriben errores a mano: usan `httpx.WriteProblem` (RFC 9457).
 - `os.Getenv` (y cualquier lectura del entorno) solo en `platform/config`; el resto recibe `config.Config` (forbidigo).
 - Datos personales o secretos en logs, siempre con los tipos de `pii` (`Email`, `Phone`, `Secret`); el request ID se lee y escribe solo con `logx`.
@@ -59,6 +59,7 @@ Ejemplo vivo: `api/internal/modules/health`.
 - Un `*apperr.Error` no se modifica después de crearlo.
 - No uses `WithGroup` en el logger base (mete dentro del grupo los atributos del contexto); agrupa con `slog.Group` en cada registro.
 - Nunca uses un nombre sensible (email, token, password…) como nombre de grupo de slog: slog no enmascara los grupos por su nombre.
+- Las transacciones no se anidan; `db.Independent` solo para escrituras que deben sobrevivir al rollback de quien llama (hoy, la auditoría de `authz.denied`).
 - Datos de un tenant, solo dentro de `db.WithTenantTx`; los flujos sin tenant usan `WithUserTx` o `WithAnonTx`. Ningún fichero Go fuera de `platform/db` llama a `set_config` ni nombra las variables de RLS (`mise run arch`). Los errores `TN0xx` de las funciones de la BD se traducen con `db.MapError`.
 - Base de datos: la API conecta como `app_runtime` (RLS siempre); las migraciones, como `app_owner`. Toda tabla con `tenant_id` lleva RLS forzado, `tenant_isolation` y alcance declarado (diseño 7.3); los permisos se conceden explícitamente en la migración que crea la tabla (`docs/runbooks/database.md`).
 - Los permisos de `app_runtime` (de tabla, de columna y de ejecución) están fijados en `api/internal/platform/db/schematest/testdata/runtime_privileges.golden`; nunca un `UPDATE` sin columnas. Cambiar ese fichero es una decisión de seguridad: se edita a mano y el PR justifica qué permiso cambia y por qué el diseño lo necesita.

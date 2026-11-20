@@ -859,3 +859,71 @@ func TestTx_NestingIsRefused(t *testing.T) {
 		}
 	}
 }
+
+func TestTx_Independent(t *testing.T) {
+	t.Parallel()
+
+	f := newFixtures(t)
+	tnt, u := f.tenant(), f.user()
+	f.member(tnt, u, "owner")
+	ctx := principalCtx(t, u, tnt, authctx.PermScopeTenant)
+	// Two connections: the outer transaction keeps one while the independent one runs.
+	d, _ := newDB(t, 2)
+	insert := func(ctx context.Context, q db.Querier, body string) error {
+		_, err := q.Exec(ctx, `INSERT INTO notes (tenant_id, owner_user_id, body) VALUES ($1, $2, $3)`, tnt, u, body)
+		return err
+	}
+	stored := func(body string) bool {
+		return f.scalar(`SELECT count(*)::text FROM notes WHERE tenant_id = $1 AND body = $2`, tnt, body) == "1"
+	}
+
+	t.Run("survives the outer rollback", func(t *testing.T) {
+		errBoom := errors.New("boom")
+		err := d.WithTenantTx(ctx, func(ctx context.Context, q db.Querier) error {
+			if err := insert(ctx, q, "outer"); err != nil {
+				return err
+			}
+			if err := d.WithTenantTx(db.Independent(ctx), func(ctx context.Context, q db.Querier) error {
+				return insert(ctx, q, "independent")
+			}); err != nil {
+				return err
+			}
+			return errBoom
+		})
+		if !errors.Is(err, errBoom) {
+			t.Fatalf("got %v, want the outer error", err)
+		}
+		if stored("outer") || !stored("independent") {
+			t.Fatalf("outer stored %v (want false), independent stored %v (want true)", stored("outer"), stored("independent"))
+		}
+	})
+
+	t.Run("nesting is refused again inside it", func(t *testing.T) {
+		err := d.WithTenantTx(db.Independent(ctx), func(ctx context.Context, _ db.Querier) error {
+			return d.WithTenantTx(ctx, func(context.Context, db.Querier) error { return nil })
+		})
+		if !errors.Is(err, db.ErrNestedTx) {
+			t.Fatalf("got %v, want ErrNestedTx", err)
+		}
+	})
+
+	t.Run("does not wait forever on the outer transaction's locks", func(t *testing.T) {
+		start := time.Now()
+		err := d.WithTenantTx(ctx, func(ctx context.Context, q db.Querier) error {
+			// The independent insert needs a KEY SHARE lock on this row for its foreign key.
+			if _, err := q.Exec(ctx, `SELECT id FROM tenants WHERE id = $1 FOR UPDATE`, tnt); err != nil {
+				return err
+			}
+			return d.WithTenantTx(db.Independent(ctx), func(ctx context.Context, q db.Querier) error {
+				return insert(ctx, q, "blocked")
+			})
+		})
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "55P03" {
+			t.Fatalf("got %v, want lock_not_available (55P03)", err)
+		}
+		if d := time.Since(start); d > 10*time.Second {
+			t.Fatalf("took %s", d)
+		}
+	})
+}

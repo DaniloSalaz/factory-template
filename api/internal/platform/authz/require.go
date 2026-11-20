@@ -4,16 +4,22 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/db"
 )
+
+// auditTimeout bounds the denial's audit, which also runs if the request is cancelled.
+const auditTimeout = 5 * time.Second
 
 // AuditDenied is the audit action of a refused permission (design, section 9).
 const AuditDenied = "authz.denied"
 
-// Auditor records a refused permission in the principal's tenant. It runs its own
-// transaction, so Require must be called before the use case opens one.
+// Auditor records a refused permission in the principal's tenant, in a transaction of
+// its own: Require hands it a db.Independent context, so it may be called inside the
+// caller's transaction and the event survives that transaction's rollback.
 type Auditor interface {
 	RecordDenied(ctx context.Context, p authctx.Principal, perm authctx.Permission) error
 }
@@ -37,8 +43,10 @@ func ErrDenied() error {
 
 // Require returns nil if the context's principal holds perm. Otherwise it records
 // authz.denied in the tenant's audit trail and returns ErrDenied; if the event cannot be
-// recorded, it logs why and still refuses. Without a principal (a use case reached
-// without the tenant middleware) it refuses with an internal error.
+// recorded, it logs why and still refuses. It may be called anywhere in the use case,
+// inside its transaction too: the event is written in an independent transaction on
+// its own connection, so the caller's rollback does not erase it. Without a principal
+// (a use case reached without the tenant middleware) it refuses with an internal error.
 func (a *Authorizer) Require(ctx context.Context, perm authctx.Permission) error {
 	p, ok := authctx.PrincipalFrom(ctx)
 	if !ok {
@@ -48,7 +56,9 @@ func (a *Authorizer) Require(ctx context.Context, perm authctx.Permission) error
 	if p.Has(perm) {
 		return nil
 	}
-	if err := a.auditor.RecordDenied(ctx, p, perm); err != nil {
+	auditCtx, cancel := context.WithTimeout(db.Independent(context.WithoutCancel(ctx)), auditTimeout)
+	defer cancel()
+	if err := a.auditor.RecordDenied(auditCtx, p, perm); err != nil {
 		a.logger.ErrorContext(ctx, "record authz.denied",
 			slog.String("permission", string(perm)), slog.Any("error", err))
 	}

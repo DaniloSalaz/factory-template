@@ -128,6 +128,8 @@ El step-up de versiones anteriores (reautenticar con MFA y rotar el token en la 
 
 Las tres viven en `platform/db`. Las dos últimas solo pueden llamar a funciones `SECURITY DEFINER` o tocar tablas de identidad, nunca tablas de negocio: sin `app.tenant_id`, RLS hace fallar cualquier intento.
 
+No se anidan: dentro de una, llamar a otra falla (`ErrNestedTx`). La única excepción es `db.Independent(ctx)`: la siguiente transacción abre otra conexión del pool y hace commit pase lo que pase con la exterior. Es para escrituras que deben sobrevivir al rollback de quien llama; hoy, solo la auditoría de `authz.denied` (5.4.5). Fija `lock_timeout` (2 s): la transacción exterior sigue abierta y podría tener bloqueada una fila que necesite una clave foránea de la escritura (por ejemplo, `tenants … FOR UPDATE`); sin ese límite sería un interbloqueo que Postgres no detecta.
+
 **El callback usa dos transacciones, y no son atómicas.**
 - `WithAnonTx` para resolver el usuario (5.1.5 a 5.1.7): todavía no hay usuario; si hay rechazo, aquí solo se registra su evento.
 - `WithUserTx`, con el usuario ya resuelto, para revocar la sesión anterior, crear la nueva, actualizar `last_login_at` y registrar `auth.login`. Va aparte para que `record_audit` tome el actor de `app.user_id`: en una transacción anónima, `auth.login` quedaría sin actor.
@@ -142,7 +144,7 @@ Qué exige cada ruta lo declara el contrato OpenAPI con `security`: por defecto,
 2. **Tenant**: valida que `X-Tenant-ID` es un UUID y, con `WithUserTx`, llama a `auth_membership(tenant_id)`: rol, estado del tenant y del usuario. Si algo falla (cabecera ausente o mal formada, tenant inexistente o suspendido, sin membresía, usuario deshabilitado), el mismo `403 auth.tenant_forbidden`. **No se audita**: cualquiera con sesión podría llenar el registro con UUIDs inventados, y en el de otro tenant no puede entrar (sección 7.4, `TN031`). Se registra en el log a nivel `Warn`, con `user_id`, el motivo y el tenant pedido solo si es un UUID válido.
 3. **MFA del rol**: si el rol la requiere y `mfa_auth_time` es nulo o más antiguo que la antigüedad máxima del rol: `403 auth.mfa_required`.
 4. **Principal** en el contexto (`platform/authctx`): `UserID`, `TenantID`, `Role`, `Permissions`, `Scope`. `user_id` y `tenant_id`, a los logs, también al registro de acceso.
-5. **Caso de uso**: `Authorizer.Require(ctx, perm)` (`platform/authz`), antes de abrir su transacción. Sin el permiso: `403 authz.denied` y el evento `authz.denied` en la auditoría del tenant.
+5. **Caso de uso**: `Authorizer.Require(ctx, perm)` (`platform/authz`), en cualquier punto del caso de uso, también dentro de su transacción. Sin el permiso: `403 authz.denied` y el evento `authz.denied` en la auditoría del tenant, escrito en una transacción propia (`db.Independent`, 5.3) que sobrevive al rollback de quien llama. Si no se puede auditar, deniega igualmente y lo registra en el log como `Error`.
 6. **Datos**: `WithTenantTx`.
 
 El rol del middleware sirve para autorizar la petición. Las operaciones que dependen del rol del actor para modificar otros roles **lo releen y bloquean dentro de su transacción** (sección 5.7).
