@@ -842,6 +842,61 @@ func TestFunc_TenantStatusAndRolesInUse(t *testing.T) {
 	}
 }
 
+// Client IPs are stored only truncated (design, section 6): /24 for IPv4 and /48 for
+// IPv6, in sessions and audit_log alike. Each value goes through app_runtime's own path
+// into each column: an INSERT into sessions and record_audit into audit_log.
+func TestIPPrefixIsTruncated(t *testing.T) {
+	t.Parallel()
+
+	u := newFixtures(t).user(true, false)
+	const (
+		ok          = ""
+		checkFailed = "23514" // the truncation CHECK
+		notCIDR     = "22P02" // cidr itself refuses host bits beyond the mask
+	)
+	tests := []struct {
+		name, prefix, wantState string
+	}{
+		{"IPv4 /24", "203.0.113.0/24", ok},
+		{"IPv6 /48", "2001:db8:1::/48", ok},
+		{"full IPv4 address", "203.0.113.7", checkFailed},
+		{"full IPv6 address", "2001:db8::1", checkFailed},
+		{"IPv4 /16", "203.0.0.0/16", checkFailed},
+		{"IPv4 /25", "203.0.113.128/25", checkFailed},
+		{"IPv6 /64", "2001:db8:1:2::/64", checkFailed},
+		{"IPv6 /32", "2001:db8::/32", checkFailed},
+		{"IPv4 /24 with host bits", "203.0.113.7/24", notCIDR},
+	}
+	writes := map[string]string{
+		"sessions": `INSERT INTO sessions (token_hash, user_id, auth_time, idle_expires_at, absolute_expires_at, ip_prefix)
+			VALUES (sha256(uuidv7()::text::bytea), $2, now(), now() + interval '7 days', now() + interval '30 days', $1::cidr)`,
+		"audit_log": `SELECT record_audit(NULL, 'test.ip_prefix', NULL, NULL, '{}', $1::cidr)`,
+	}
+	for table, sql := range writes {
+		for _, tc := range tests {
+			t.Run(table+"/"+tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				args := []any{tc.prefix}
+				if table == "sessions" {
+					args = append(args, u.id)
+				}
+				err := inTx(t, connect(t, testDB.RuntimeURL), userVars(u.id), func(tx pgx.Tx) error {
+					_, err := tx.Exec(t.Context(), sql, args...)
+					return err
+				})
+				if tc.wantState == ok {
+					if err != nil {
+						t.Fatalf("%s rejected: %v", tc.prefix, err)
+					}
+					return
+				}
+				wantSQLState(t, err, tc.wantState)
+			})
+		}
+	}
+}
+
 func ptr(s string) *string { return &s }
 
 func deref(s *string) string {

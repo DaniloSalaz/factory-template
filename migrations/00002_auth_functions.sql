@@ -36,7 +36,8 @@
 -- create_tenant_with_owner and accept_invitation run without app.tenant_id, so
 -- record_audit would refuse their tenant's events (TN031): they write those events
 -- themselves, in the same transaction. Their p_ip_prefix is the client IP already
--- truncated by the caller, never the full address.
+-- truncated by the caller, never the full address; audit_log's CHECK refuses anything
+-- but /24 (IPv4) or /48 (IPv6).
 
 -- What the functions read and write, and nothing else. Column-level UPDATE on
 -- invitations is the minimum for SELECT ... FOR UPDATE and for marking it accepted.

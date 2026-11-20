@@ -67,6 +67,9 @@ CREATE TABLE tenants (
 CREATE TRIGGER tenants_set_updated_at BEFORE UPDATE ON tenants
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+-- Client IPs are stored only truncated (design, section 6): /24 for IPv4, /48 for IPv6.
+-- cidr already rejects host bits beyond the mask; the CHECKs pin the mask itself, so a
+-- full address (/32, /128) or another truncation is refused.
 CREATE TABLE sessions (
   id                  uuid PRIMARY KEY DEFAULT uuidv7(),
   -- SHA-256 of the cookie token; the token itself is never stored.
@@ -77,7 +80,10 @@ CREATE TABLE sessions (
   last_seen_at        timestamptz NOT NULL DEFAULT now(),
   idle_expires_at     timestamptz NOT NULL,
   absolute_expires_at timestamptz NOT NULL,
-  ip_prefix           cidr,
+  ip_prefix           cidr CONSTRAINT sessions_ip_prefix_truncated CHECK (
+    ip_prefix IS NULL
+    OR (family(ip_prefix) = 4 AND masklen(ip_prefix) = 24)
+    OR (family(ip_prefix) = 6 AND masklen(ip_prefix) = 48)),
   user_agent          text,
   revoked_at          timestamptz,
   created_at          timestamptz NOT NULL DEFAULT now(),
@@ -147,7 +153,10 @@ CREATE TABLE audit_log (
   target_id     text,
   -- No personal data (section 9); always a JSON object.
   metadata      jsonb NOT NULL DEFAULT '{}' CHECK (jsonb_typeof(metadata) = 'object'),
-  ip_prefix     cidr,
+  ip_prefix     cidr CONSTRAINT audit_log_ip_prefix_truncated CHECK (
+    ip_prefix IS NULL
+    OR (family(ip_prefix) = 4 AND masklen(ip_prefix) = 24)
+    OR (family(ip_prefix) = 6 AND masklen(ip_prefix) = 48)),
   created_at    timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX audit_log_tenant_created_idx ON audit_log (tenant_id, created_at DESC);

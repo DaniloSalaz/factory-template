@@ -186,7 +186,7 @@ Comando de administración, con `app_admin`:
 - **CSRF**: `SameSite=Lax` y `Origin` en `ALLOWED_ORIGINS` en los métodos que modifican datos.
 - **CORS**: `ALLOWED_ORIGINS` explícita, con `credentials`, sin comodines.
 - **Límite de peticiones** en `/auth/login`, `/auth/stepup`, `/auth/callback`, `POST /invitations`, `POST /invitations/{id}/resend`, `POST /invitations/accept` y `POST /tenants`, por IP y por usuario. `429`.
-- **Datos personales**: emails con `pii.Email`; IPs solo truncadas.
+- **Datos personales**: emails con `pii.Email`; IPs solo truncadas: `/24` en IPv4 y `/48` en IPv6, guardadas como `cidr` (`sessions.ip_prefix`, `audit_log.ip_prefix`). Go trunca antes de escribir; un `CHECK` en cada columna rechaza una IP completa (`/32`, `/128`) o cualquier otra máscara, y el tipo `cidr` rechaza bits de host tras la máscara.
 
 ## 7. RLS
 
