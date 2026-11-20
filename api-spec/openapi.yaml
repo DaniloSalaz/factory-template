@@ -182,6 +182,28 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalError"
+  /tenant:
+    get:
+      operationId: getCurrentTenant
+      summary: The tenant named by X-Tenant-ID, with the caller's role and permissions in it
+      description: >-
+        Declares no security, so it takes the default: a session and X-Tenant-ID. The front
+        end uses the permissions to show only what the role allows; the API checks them
+        again in every use case.
+      tags: [identity]
+      responses:
+        "200":
+          description: The current tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentTenant"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   securitySchemes:
     session:
@@ -240,6 +262,29 @@ components:
         role:
           description: The member's role in the app's role catalog.
           type: string
+    CurrentTenant:
+      type: object
+      additionalProperties: false
+      required: [id, slug, name, role, scope, permissions]
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        scope:
+          description: tenant sees every row of the tenant; own, only the caller's own.
+          type: string
+          enum: [tenant, own]
+        permissions:
+          description: The role's permissions in the app's catalog, sorted; none for an unknown role.
+          type: array
+          items:
+            type: string
     Logout:
       type: object
       additionalProperties: false

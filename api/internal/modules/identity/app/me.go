@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
 )
 
 // Accounts answers what a user may know about their own account (design, section 10).
@@ -46,4 +47,36 @@ func (a *Accounts) Me(ctx context.Context, userID string) (Me, error) {
 		return Me{}, fmt.Errorf("me: %w", err)
 	}
 	return me, nil
+}
+
+// CurrentTenant is the tenant a principal acts in, with its role and permissions.
+type CurrentTenant struct {
+	Tenant    Tenant
+	Principal authctx.Principal
+}
+
+// CurrentTenant returns the context's principal and its tenant, read under RLS in the
+// tenant's own transaction. It needs no permission: every member may know their role.
+func (a *Accounts) CurrentTenant(ctx context.Context) (CurrentTenant, error) {
+	p, ok := authctx.PrincipalFrom(ctx)
+	if !ok {
+		return CurrentTenant{}, domain.ErrTenantForbidden()
+	}
+	var t Tenant
+	err := a.store.InTenant(ctx, p, func(ctx context.Context, r Repo) error {
+		var found bool
+		var err error
+		t, found, err = r.TenantByID(ctx, p.TenantID())
+		if err != nil {
+			return fmt.Errorf("tenant: %w", err)
+		}
+		if !found {
+			return domain.ErrTenantForbidden()
+		}
+		return nil
+	})
+	if err != nil {
+		return CurrentTenant{}, fmt.Errorf("current tenant: %w", err)
+	}
+	return CurrentTenant{Tenant: t, Principal: p}, nil
 }

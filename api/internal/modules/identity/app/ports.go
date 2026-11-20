@@ -80,6 +80,15 @@ type Repo interface {
 	UserByID(ctx context.Context, id string) (p Profile, found bool, err error)
 	// MembershipsForUser returns the transaction user's memberships, and only theirs.
 	MembershipsForUser(ctx context.Context) ([]TenantMembership, error)
+	// TenantByID returns a tenant; under RLS, only the transaction's own (InTenant).
+	TenantByID(ctx context.Context, id string) (t Tenant, found bool, err error)
+}
+
+// Tenant is a tenant as its members see it.
+type Tenant struct {
+	ID   string
+	Slug string
+	Name string
 }
 
 // Profile is what a user may see of themselves.

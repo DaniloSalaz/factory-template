@@ -130,6 +130,28 @@ func (h *Handler) GetMe(ctx context.Context, _ identityapi.GetMeRequestObject) (
 	return out, nil
 }
 
+// GetCurrentTenant returns the tenant of X-Tenant-ID with the caller's role and
+// permissions in it.
+func (h *Handler) GetCurrentTenant(ctx context.Context, _ identityapi.GetCurrentTenantRequestObject) (identityapi.GetCurrentTenantResponseObject, error) {
+	cur, err := h.accounts.CurrentTenant(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, err := uuid(cur.Tenant.ID)
+	if err != nil {
+		return nil, err
+	}
+	p := cur.Principal
+	perms := make([]string, 0, len(p.Permissions()))
+	for _, perm := range p.Permissions() {
+		perms = append(perms, string(perm))
+	}
+	return identityapi.GetCurrentTenant200JSONResponse{
+		Id: id, Slug: cur.Tenant.Slug, Name: cur.Tenant.Name, Role: p.Role(),
+		Scope: identityapi.CurrentTenantScope(p.Scope()), Permissions: perms,
+	}, nil
+}
+
 func uuid(s string) (openapi_types.UUID, error) {
 	var id openapi_types.UUID
 	if err := id.UnmarshalText([]byte(s)); err != nil {

@@ -309,6 +309,24 @@ func (q *Queries) SetLastLogin(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const tenantByID = `-- name: TenantByID :one
+SELECT t.id, t.slug, t.name FROM tenants t WHERE t.id = $1
+`
+
+type TenantByIDRow struct {
+	ID   pgtype.UUID
+	Slug string
+	Name string
+}
+
+// Under RLS, inside the tenant's own transaction; the WHERE is defence in depth.
+func (q *Queries) TenantByID(ctx context.Context, id pgtype.UUID) (TenantByIDRow, error) {
+	row := q.db.QueryRow(ctx, tenantByID, id)
+	var i TenantByIDRow
+	err := row.Scan(&i.ID, &i.Slug, &i.Name)
+	return i, err
+}
+
 const touchSession = `-- name: TouchSession :exec
 UPDATE sessions
 SET last_seen_at = $1, idle_expires_at = $2

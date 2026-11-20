@@ -271,6 +271,14 @@ func (r *memRepo) MembershipsForUser(context.Context) ([]app.TenantMembership, e
 	return out, nil
 }
 
+func (r *memRepo) TenantByID(_ context.Context, id string) (app.Tenant, bool, error) {
+	// Like RLS: only the transaction's own tenant is visible.
+	if r.tenant == "" || id != r.tenant {
+		return app.Tenant{}, false, nil
+	}
+	return app.Tenant{ID: id, Slug: "slug-" + id[:4], Name: "Tenant " + id[:4]}, true, nil
+}
+
 func (r *memRepo) Membership(_ context.Context, tenantID string) (app.Membership, bool, error) {
 	m, ok := r.st.memberships[tenantID][r.actor]
 	return m, ok, nil

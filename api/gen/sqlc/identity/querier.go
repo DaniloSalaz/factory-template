@@ -30,6 +30,8 @@ type Querier interface {
 	RolesInUse(ctx context.Context) ([]string, error)
 	SessionByHash(ctx context.Context, tokenHash []byte) (SessionByHashRow, error)
 	SetLastLogin(ctx context.Context, id pgtype.UUID) error
+	// Under RLS, inside the tenant's own transaction; the WHERE is defence in depth.
+	TenantByID(ctx context.Context, id pgtype.UUID) (TenantByIDRow, error)
 	// The WHERE on last_seen_at makes concurrent touches of the same session a no-op.
 	TouchSession(ctx context.Context, arg TouchSessionParams) error
 	// A new email always comes with the provider's verification of it (issue #4).

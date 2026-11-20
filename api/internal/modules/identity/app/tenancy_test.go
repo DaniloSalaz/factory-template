@@ -213,3 +213,20 @@ func TestAccounts_MeOnlyHasTheUsersOwnMemberships(t *testing.T) {
 		t.Fatalf("a user that no longer exists: %v, want auth.session_invalid", err)
 	}
 }
+
+func TestAccounts_CurrentTenant(t *testing.T) {
+	t.Parallel()
+
+	accounts := app.NewAccounts(newMemStore())
+	if _, err := accounts.CurrentTenant(t.Context()); !errors.Is(err, domain.ErrTenantForbidden()) {
+		t.Fatalf("without a principal: %v", err)
+	}
+	p, err := authctx.NewPrincipal(memberID, tenantA, "member", authctx.PermScopeTenant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cur, err := accounts.CurrentTenant(authctx.WithPrincipal(t.Context(), p))
+	if err != nil || cur.Tenant.ID != tenantA || cur.Principal.Role() != "member" {
+		t.Fatalf("CurrentTenant = %+v, %v", cur, err)
+	}
+}

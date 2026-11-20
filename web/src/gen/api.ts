@@ -35,6 +35,28 @@ export interface Me {
   memberships: Membership[];
 }
 
+/**
+ * tenant sees every row of the tenant; own, only the caller's own.
+ */
+export type CurrentTenantScope = typeof CurrentTenantScope[keyof typeof CurrentTenantScope];
+
+
+export const CurrentTenantScope = {
+  tenant: 'tenant',
+  own: 'own',
+} as const;
+
+export interface CurrentTenant {
+  id: string;
+  slug: string;
+  name: string;
+  role: string;
+  /** tenant sees every row of the tenant; own, only the caller's own. */
+  scope: CurrentTenantScope;
+  /** The role's permissions in the app's catalog, sorted; none for an unknown role. */
+  permissions: string[];
+}
+
 export interface Logout {
   /**
      * Where to send the browser to end the AuthKit session too; null if there is none.
@@ -530,6 +552,60 @@ export const getGetMeUrl = () => {
 export const getMe = async ( options?: Parameters<typeof apiFetch>[1]): Promise<getMeResponse> => {
 
   return apiFetch<getMeResponse>(getGetMeUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+export type getCurrentTenantResponse200 = {
+  data: CurrentTenant
+  status: 200
+}
+
+export type getCurrentTenantResponse401 = {
+  data: UnauthorizedResponse
+  status: 401
+}
+
+export type getCurrentTenantResponse403 = {
+  data: ForbiddenResponse
+  status: 403
+}
+
+export type getCurrentTenantResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type getCurrentTenantResponseSuccess = (getCurrentTenantResponse200) & {
+  headers: Headers;
+};
+export type getCurrentTenantResponseError = (getCurrentTenantResponse401 | getCurrentTenantResponse403 | getCurrentTenantResponse500) & {
+  headers: Headers;
+};
+
+export type getCurrentTenantResponse = (getCurrentTenantResponseSuccess | getCurrentTenantResponseError)
+
+export const getGetCurrentTenantUrl = () => {
+
+
+
+
+  return `/tenant`
+}
+
+/**
+ * Declares no security, so it takes the default: a session and X-Tenant-ID. The front end uses the permissions to show only what the role allows; the API checks them again in every use case.
+ * @summary The tenant named by X-Tenant-ID, with the caller's role and permissions in it
+ */
+export const getCurrentTenant = async ( options?: Parameters<typeof apiFetch>[1]): Promise<getCurrentTenantResponse> => {
+
+  return apiFetch<getCurrentTenantResponse>(getGetCurrentTenantUrl(),
   {
     ...options,
     method: 'GET'

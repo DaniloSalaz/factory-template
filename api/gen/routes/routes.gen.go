@@ -14,6 +14,7 @@ func Security() map[string]httpx.Security {
 		"GET /healthz":          {Session: false, Tenant: false},
 		"GET /me":               {Session: true, Tenant: false},
 		"GET /readyz":           {Session: false, Tenant: false},
+		"GET /tenant":           {Session: true, Tenant: true},
 		"POST /auth/logout":     {Session: true, Tenant: false},
 		"POST /auth/logout-all": {Session: true, Tenant: false},
 	}

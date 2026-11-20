@@ -288,6 +288,21 @@ func (r repo) MembershipsForUser(ctx context.Context) ([]app.TenantMembership, e
 	return out, nil
 }
 
+func (r repo) TenantByID(ctx context.Context, id string) (app.Tenant, bool, error) {
+	tid, err := parseUUID(id)
+	if err != nil {
+		return app.Tenant{}, false, err
+	}
+	row, err := r.q.TenantByID(ctx, tid)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return app.Tenant{}, false, nil
+	}
+	if err != nil {
+		return app.Tenant{}, false, fmt.Errorf("tenant by id: %w", err)
+	}
+	return app.Tenant{ID: row.ID.String(), Slug: row.Slug, Name: row.Name}, true, nil
+}
+
 // tenantActive is the tenants.status of a tenant that may be used.
 const tenantActive = "active"
 

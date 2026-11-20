@@ -1364,3 +1364,50 @@ func TestMe_OnlyTheCurrentUsersMemberships(t *testing.T) {
 		t.Fatalf("/me needs no tenant and ignores X-Tenant-ID: %d", res.status)
 	}
 }
+
+// The first real route with a tenant (design 11, isolation): user A gets the same 403
+// with tenant B as with any tenant they cannot use.
+func TestCurrentTenant(t *testing.T) {
+	e := newEnv(t, options{})
+	who, other := e.person(), e.person()
+	b := e.browser()
+	b.login(who)
+	e.browser().login(other)
+	mine, foreign := e.tenant(), e.tenant()
+	e.member(who, mine, "admin")
+	e.member(other, foreign, "owner")
+
+	get := func(tenant string) response {
+		return b.doHeaders(http.MethodGet, "/tenant", "", http.Header{"X-Tenant-Id": {tenant}})
+	}
+	res := get(mine)
+	if res.status != http.StatusOK {
+		t.Fatalf("own tenant: %d %s", res.status, res.body)
+	}
+	var cur struct {
+		ID          string   `json:"id"`
+		Slug        string   `json:"slug"`
+		Name        string   `json:"name"`
+		Role        string   `json:"role"`
+		Scope       string   `json:"scope"`
+		Permissions []string `json:"permissions"`
+	}
+	if err := json.Unmarshal(res.body, &cur); err != nil {
+		t.Fatal(err)
+	}
+	wantSlug := e.scalar(`SELECT slug FROM tenants WHERE id = $1`, mine)
+	if cur.ID != mine || cur.Slug != wantSlug || cur.Role != "admin" || cur.Scope != "tenant" ||
+		!slices.Contains(cur.Permissions, string(authz.PermMembersManage)) ||
+		slices.Contains(cur.Permissions, string(authz.PermTenantOwn)) {
+		t.Fatalf("current tenant = %+v", cur)
+	}
+
+	for name, tenant := range map[string]string{"foreign": foreign, "malformed": "x", "missing": ""} {
+		if res := get(tenant); res.status != http.StatusForbidden || res.problemCode(t) != "auth.tenant_forbidden" {
+			t.Fatalf("%s tenant: %d %s", name, res.status, res.body)
+		}
+	}
+	if res := e.browser().doHeaders(http.MethodGet, "/tenant", "", http.Header{"X-Tenant-Id": {mine}}); res.status != http.StatusUnauthorized {
+		t.Fatalf("without a session: %d", res.status)
+	}
+}

@@ -92,3 +92,7 @@ WHERE u.id = $1;
 SELECT m.tenant_id::uuid AS tenant_id, m.tenant_slug::text AS tenant_slug, m.tenant_name::text AS tenant_name,
        m.tenant_status::text AS tenant_status, m.role::text AS role
 FROM auth_memberships_for_user() AS m(tenant_id, tenant_slug, tenant_name, tenant_status, role);
+
+-- Under RLS, inside the tenant's own transaction; the WHERE is defence in depth.
+-- name: TenantByID :one
+SELECT t.id, t.slug, t.name FROM tenants t WHERE t.id = $1;
