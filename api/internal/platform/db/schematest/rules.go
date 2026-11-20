@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -42,7 +43,16 @@ type policyInfo struct {
 	WithCheck  string
 }
 
-const tenantSharedComment = "scope: tenant-shared"
+const (
+	tenantSharedComment = "scope: tenant-shared"
+	// An access table (case_access) grants access to other rows. Scope own may read its
+	// own access rows but never write them, or it could grant itself any row.
+	accessComment = "scope: access"
+)
+
+// tenantScopeOnly is "current_setting('app.scope') = 'tenant'" as pg_policies deparses
+// it, without spaces.
+const tenantScopeOnly = "(current_setting('app.scope'::text)='tenant'::text)"
 
 // exprRules are the expressions a policy may not contain. pg_policies shows them
 // deparsed, e.g. current_setting('app.x'::text, true).
@@ -116,12 +126,13 @@ func tableViolations(t tableInfo, policies []policyInfo, rules exprRules) []stri
 		add("row level security is not forced, so the table owner bypasses it: ALTER TABLE %s FORCE ROW LEVEL SECURITY", t.Name)
 	}
 
-	var own []policyInfo
+	var own, mine []policyInfo
 	var isolation *policyInfo
 	for _, p := range policies {
 		if p.Table != t.Name {
 			continue
 		}
+		mine = append(mine, p)
 		switch p.Name {
 		case "tenant_isolation":
 			isolation = &p
@@ -173,7 +184,44 @@ func tableViolations(t tableInfo, policies []policyInfo, rules exprRules) []stri
 	case !shared:
 		add("no declared scope: add COMMENT ON TABLE %s IS '%s' or a RESTRICTIVE FOR ALL own_scope policy (design, section 7.3)", t.Name, tenantSharedComment)
 	}
+
+	if t.Comment == accessComment {
+		if len(own) == 0 {
+			add("access table (%q) without own_scope: add a RESTRICTIVE FOR ALL own_scope policy on its user column", accessComment)
+		}
+		for _, cmd := range []string{"INSERT", "UPDATE", "DELETE"} {
+			if !slices.ContainsFunc(mine, func(p policyInfo) bool { return writeForTenantScopeOnly(p, cmd) }) {
+				clause := "USING"
+				if cmd == "INSERT" {
+					clause = "WITH CHECK"
+				}
+				add("access table (%q) lets scope own %s its access rows and grant itself access: "+
+					"CREATE POLICY own_write_%s ON %s AS RESTRICTIVE FOR %s %s (current_setting('app.scope') = 'tenant')",
+					accessComment, cmd, strings.ToLower(cmd), t.Name, cmd, clause)
+			}
+		}
+	}
 	return out
+}
+
+// writeForTenantScopeOnly reports whether p is a restrictive policy for cmd that allows
+// it only with scope tenant. An INSERT is decided by WITH CHECK, a DELETE by USING, and
+// an UPDATE is stopped by either. FOR ALL policies do not count: on an access table the
+// only one is own_scope, which must let scope own read its rows.
+func writeForTenantScopeOnly(p policyInfo, cmd string) bool {
+	if p.Permissive != "RESTRICTIVE" || p.Cmd != cmd {
+		return false
+	}
+	using := strings.ReplaceAll(p.Qual, " ", "") == tenantScopeOnly
+	check := strings.ReplaceAll(p.WithCheck, " ", "") == tenantScopeOnly
+	switch cmd {
+	case "INSERT":
+		return check
+	case "DELETE":
+		return using
+	default:
+		return using || check
+	}
 }
 
 func schemaViolations(ctx context.Context, q querier) (map[string][]string, []tableInfo, error) {

@@ -4,7 +4,8 @@
 -- the patterns of design section 7.3 that every app copies:
 --   notes           a row with an owner (own_scope on owner_user_id);
 --   cases           a row reachable through an access table (own_scope with EXISTS);
---   case_access     the access table itself (own_scope on user_id);
+--   case_access     the access table itself ('scope: access': own_scope on user_id and
+--                   writes for scope 'tenant' only);
 --   case_documents  a child table, scoped through its parent's access rows.
 
 CREATE TABLE notes (
@@ -95,11 +96,15 @@ CREATE POLICY tenant_isolation ON case_access AS PERMISSIVE FOR ALL
 CREATE POLICY own_scope ON case_access AS RESTRICTIVE FOR ALL
   USING (current_setting('app.scope') = 'tenant'
          OR user_id = current_setting('app.user_id')::uuid);
--- own_scope alone would let scope 'own' insert an access row for itself, granting
--- itself any case of the tenant. Granting, changing and removing access is for scope
--- 'tenant' only.
+-- An access table: own_scope alone would let scope 'own' insert an access row for
+-- itself, or move its row to another case, and so reach any case of the tenant.
+-- Granting, changing and removing access is for scope 'tenant' only; the structure test
+-- requires these three policies on every table marked 'scope: access'.
+COMMENT ON TABLE case_access IS 'scope: access';
 CREATE POLICY own_write_insert ON case_access AS RESTRICTIVE FOR INSERT
   WITH CHECK (current_setting('app.scope') = 'tenant');
+CREATE POLICY own_write_update ON case_access AS RESTRICTIVE FOR UPDATE
+  USING (current_setting('app.scope') = 'tenant');
 CREATE POLICY own_write_delete ON case_access AS RESTRICTIVE FOR DELETE
   USING (current_setting('app.scope') = 'tenant');
 

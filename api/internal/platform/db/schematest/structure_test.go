@@ -58,6 +58,17 @@ func TestSchema_DetectsMisbuiltTables(t *testing.T) {
 	// Like memberships' own_write: an extra restrictive policy only narrows access.
 	const ownWrite = `CREATE POLICY own_write ON %[1]s AS RESTRICTIVE FOR UPDATE
 		USING (current_setting('app.scope') = 'tenant')`
+	// An access table: scope own reads its rows but only scope tenant writes them. The
+	// table has no user column; id stands in for it.
+	const access = `COMMENT ON TABLE %[1]s IS 'scope: access'`
+	const accessScope = `CREATE POLICY own_scope ON %[1]s AS RESTRICTIVE FOR ALL
+		USING (current_setting('app.scope') = 'tenant' OR id = current_setting('app.user_id')::uuid)`
+	const writeInsert = `CREATE POLICY own_write_insert ON %[1]s AS RESTRICTIVE FOR INSERT
+		WITH CHECK (current_setting('app.scope') = 'tenant')`
+	const writeUpdate = `CREATE POLICY own_write_update ON %[1]s AS RESTRICTIVE FOR UPDATE
+		USING (current_setting('app.scope') = 'tenant')`
+	const writeDelete = `CREATE POLICY own_write_delete ON %[1]s AS RESTRICTIVE FOR DELETE
+		USING (current_setting('app.scope') = 'tenant')`
 
 	tests := []struct {
 		table string
@@ -84,6 +95,16 @@ func TestSchema_DetectsMisbuiltTables(t *testing.T) {
 		{"zz_own_write_nullif", []string{forced, isolation, ownScope, `CREATE POLICY own_write ON %[1]s AS RESTRICTIVE FOR UPDATE
 			USING (NULLIF(current_setting('app.scope'), '') = 'tenant')`}, `policy "own_write" uses NULLIF`},
 		{"zz_no_scope", []string{forced, isolation}, "no declared scope"},
+		{"zz_good_access", []string{forced, isolation, accessScope, access, writeInsert, writeUpdate, writeDelete}, ""},
+		{"zz_access_no_insert", []string{forced, isolation, accessScope, access, writeUpdate, writeDelete}, "lets scope own INSERT"},
+		// Without it a client moves its access row to another case.
+		{"zz_access_no_update", []string{forced, isolation, accessScope, access, writeInsert, writeDelete}, "lets scope own UPDATE"},
+		{"zz_access_no_delete", []string{forced, isolation, accessScope, access, writeInsert, writeUpdate}, "lets scope own DELETE"},
+		{"zz_access_no_own_scope", []string{forced, isolation, access, writeInsert, writeUpdate, writeDelete}, `access table ("scope: access") without own_scope`},
+		{"zz_access_weak_update", []string{forced, isolation, accessScope, access, writeInsert, writeDelete,
+			`CREATE POLICY own_write_update ON %[1]s AS RESTRICTIVE FOR UPDATE USING (true)`}, "lets scope own UPDATE"},
+		{"zz_access_insert_wrong_cmd", []string{forced, isolation, accessScope, access, writeUpdate, writeDelete,
+			`CREATE POLICY own_write_insert ON %[1]s AS RESTRICTIVE FOR UPDATE WITH CHECK (current_setting('app.scope') = 'tenant')`}, "lets scope own INSERT"},
 		{"zz_extra_permissive", []string{forced, isolation, ownScope, `CREATE POLICY open_reads ON %[1]s FOR SELECT USING (true)`}, `extra permissive policy "open_reads"`},
 		{"zz_missing_ok", []string{forced, `CREATE POLICY tenant_isolation ON %[1]s FOR ALL
 			USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
