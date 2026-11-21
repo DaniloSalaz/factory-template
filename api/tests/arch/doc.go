@@ -12,8 +12,8 @@
 //     schema tests in tests/db), tests and generated code included, calls the function
 //     that sets them or names one of them, so tenant data is reachable only through
 //     db.WithTenantTx;
-//   - the depguard and forbidigo rules in .golangci.yml still catch their fixtures in
-//     testdata/lint, so a config change cannot silently disable them.
+//   - the depguard, forbidigo, revive and nolintlint rules in .golangci.yml still catch
+//     their fixtures in testdata/lint, so a config change cannot silently disable them.
 //
 // The packages are listed with the "integration" tag too, so the imports of the tests
 // that need Docker are checked as well.

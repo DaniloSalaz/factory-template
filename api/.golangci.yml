@@ -98,6 +98,11 @@ linters:
               desc: >-
                 [domain-pure] persistence belongs in adapters/postgres behind a port
                 declared in usecases/
+    nolintlint:
+      # A //nolint must name the linter it silences and say why, so the exception can be
+      # reviewed without guessing what it hides.
+      require-explanation: true
+      require-specific: true
     sloglint:
       kv-only: false
       attr-only: true
@@ -115,6 +120,13 @@ linters:
       # The one package allowed to read the environment, tests included.
       - path: platform/kit/config/
         linters: [forbidigo]
+      # An adapter's exported methods implement a port whose contract is documented in
+      # usecases/ (and checked with var _ Port = (*T)(nil)); requiring a comment on each
+      # one, or one that starts with its name, only produces "X implements Port." filler.
+      # package-comments still applies.
+      - path: (^|/)(platform/[^/]+|app/modules/[^/]+)/adapters/
+        linters: [revive]
+        text: "^exported: (exported .* should have comment|comment on exported .* should be of the form)"
 
 formatters:
   enable:
