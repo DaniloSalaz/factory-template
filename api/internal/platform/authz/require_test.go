@@ -46,7 +46,7 @@ func TestRequire_Granted(t *testing.T) {
 	t.Parallel()
 
 	aud := &fakeAuditor{}
-	a := authz.NewAuthorizer(aud, slog.New(slog.DiscardHandler))
+	a := authz.NewAuthorizer(aud, nil, slog.New(slog.DiscardHandler))
 	if err := a.Require(principalCtx(t, authz.PermMembersRead), authz.PermMembersRead); err != nil {
 		t.Fatalf("Require = %v", err)
 	}
@@ -59,7 +59,7 @@ func TestRequire_DeniedIsAudited(t *testing.T) {
 	t.Parallel()
 
 	aud := &fakeAuditor{}
-	a := authz.NewAuthorizer(aud, slog.New(slog.DiscardHandler))
+	a := authz.NewAuthorizer(aud, nil, slog.New(slog.DiscardHandler))
 	err := a.Require(principalCtx(t, authz.PermMembersRead), authz.PermMembersManage)
 	if !errors.Is(err, authz.ErrDenied()) || apperr.KindOf(err) != apperr.KindForbidden {
 		t.Fatalf("Require = %v, want authz.denied (403)", err)
@@ -74,7 +74,7 @@ func TestRequire_DeniedEvenIfTheAuditFails(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	a := authz.NewAuthorizer(&fakeAuditor{err: errors.New("db down")}, slog.New(slog.NewJSONHandler(&buf, nil)))
+	a := authz.NewAuthorizer(&fakeAuditor{err: errors.New("db down")}, nil, slog.New(slog.NewJSONHandler(&buf, nil)))
 	if err := a.Require(principalCtx(t), authz.PermAuditRead); !errors.Is(err, authz.ErrDenied()) {
 		t.Fatalf("Require = %v, want authz.denied", err)
 	}
@@ -87,7 +87,7 @@ func TestRequire_WithoutPrincipal(t *testing.T) {
 	t.Parallel()
 
 	aud := &fakeAuditor{}
-	a := authz.NewAuthorizer(aud, slog.New(slog.DiscardHandler))
+	a := authz.NewAuthorizer(aud, nil, slog.New(slog.DiscardHandler))
 	err := a.Require(t.Context(), authz.PermMembersRead)
 	if err == nil || apperr.KindOf(err) != apperr.KindInternal {
 		t.Fatalf("Require without a principal = %v, want an internal error", err)

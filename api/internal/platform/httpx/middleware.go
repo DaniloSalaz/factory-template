@@ -132,6 +132,9 @@ func recoverPanic(rw *responseWriter, r *http.Request, logger *slog.Logger) {
 	}
 	perr := &panicError{value: v, stack: debug.Stack()}
 	if rw.headerWritten() {
+		if rep, ok := r.Context().Value(reporterKey{}).(ErrorReporter); ok {
+			rep.ReportError(r.Context(), perr)
+		}
 		logger.ErrorContext(r.Context(), "panic after response started",
 			slog.String("path", r.URL.Path), slog.Any("error", perr))
 		return

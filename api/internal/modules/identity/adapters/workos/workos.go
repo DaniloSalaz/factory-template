@@ -17,11 +17,14 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
+
 	sdk "github.com/workos/workos-go/v7"
 
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/telemetry"
 )
 
 // ProviderName is stored in user_identities.provider.
@@ -36,6 +39,9 @@ type Config struct {
 	RedirectURI string
 	// BaseURL overrides the API host; empty means WorkOS. Tests point it at a fake.
 	BaseURL string
+	// Tracers traces each call as a client span (peer.service workos), without URL,
+	// parameters or body; nil traces nothing.
+	Tracers trace.TracerProvider
 }
 
 // Provider is the WorkOS AuthKit identity provider.
@@ -43,6 +49,7 @@ type Provider struct {
 	um          *sdk.UserManagementService
 	mfa         *sdk.MultiFactorAuthService
 	redirectURI string
+	tracers     trace.TracerProvider
 	logger      *slog.Logger
 }
 
@@ -64,7 +71,7 @@ func New(cfg Config, logger *slog.Logger) *Provider {
 		opts = append(opts, sdk.WithBaseURL(cfg.BaseURL))
 	}
 	client := sdk.NewClient(cfg.APIKey.Reveal(), opts...)
-	return &Provider{um: client.UserManagement(), mfa: client.MultiFactorAuth(), redirectURI: cfg.RedirectURI, logger: logger}
+	return &Provider{um: client.UserManagement(), mfa: client.MultiFactorAuth(), redirectURI: cfg.RedirectURI, tracers: cfg.Tracers, logger: logger}
 }
 
 // Name implements app.IdentityProvider.
@@ -92,7 +99,9 @@ func (p *Provider) AuthorizationURL(state, codeChallenge string) (string, error)
 }
 
 // ExchangeCode implements app.IdentityProvider.
-func (p *Provider) ExchangeCode(ctx context.Context, code, codeVerifier string) (app.Authentication, error) {
+func (p *Provider) ExchangeCode(ctx context.Context, code, codeVerifier string) (_ app.Authentication, err error) {
+	ctx, end := telemetry.ClientSpan(ctx, p.tracers, "workos", "authenticate_with_code")
+	defer func() { end(err) }()
 	res, err := p.um.AuthenticateWithCode(ctx, &sdk.UserManagementAuthenticateWithCodeParams{
 		Code: code, CodeVerifier: &codeVerifier,
 	})
@@ -144,7 +153,9 @@ func (p *Provider) LogoutURL(providerSessionID string) (string, error) {
 
 // EnrollTOTP implements app.MFAProvider. Issuer and account name are left to WorkOS: its
 // team name and the user's email.
-func (p *Provider) EnrollTOTP(ctx context.Context, subject string) (app.TOTPEnrollment, error) {
+func (p *Provider) EnrollTOTP(ctx context.Context, subject string) (_ app.TOTPEnrollment, err error) {
+	ctx, end := telemetry.ClientSpan(ctx, p.tracers, "workos", "create_auth_factor")
+	defer func() { end(err) }()
 	res, err := p.mfa.CreateUserAuthFactor(ctx, subject, &sdk.MultiFactorAuthCreateUserAuthFactorParams{Type: "totp"})
 	if err != nil {
 		return app.TOTPEnrollment{}, classifyMFA(err)
@@ -160,7 +171,9 @@ func (p *Provider) EnrollTOTP(ctx context.Context, subject string) (app.TOTPEnro
 }
 
 // Challenge implements app.MFAProvider.
-func (p *Provider) Challenge(ctx context.Context, providerFactorID string) (string, error) {
+func (p *Provider) Challenge(ctx context.Context, providerFactorID string) (_ string, err error) {
+	ctx, end := telemetry.ClientSpan(ctx, p.tracers, "workos", "challenge_factor")
+	defer func() { end(err) }()
 	c, err := p.mfa.ChallengeFactor(ctx, providerFactorID, &sdk.MultiFactorAuthChallengeFactorParams{})
 	if err != nil {
 		return "", classifyMFA(err)
@@ -172,7 +185,9 @@ func (p *Provider) Challenge(ctx context.Context, providerFactorID string) (stri
 }
 
 // Verify implements app.MFAProvider: only valid: true counts.
-func (p *Provider) Verify(ctx context.Context, providerChallengeID, code string) (bool, error) {
+func (p *Provider) Verify(ctx context.Context, providerChallengeID, code string) (_ bool, err error) {
+	ctx, end := telemetry.ClientSpan(ctx, p.tracers, "workos", "verify_challenge")
+	defer func() { end(err) }()
 	res, err := p.mfa.VerifyChallenge(ctx, providerChallengeID, &sdk.MultiFactorAuthVerifyChallengeParams{Code: code})
 	if err != nil {
 		return false, classifyMFA(err)
@@ -181,8 +196,10 @@ func (p *Provider) Verify(ctx context.Context, providerChallengeID, code string)
 }
 
 // DeleteFactor implements app.MFAProvider. A factor WorkOS no longer has is already gone.
-func (p *Provider) DeleteFactor(ctx context.Context, providerFactorID string) error {
-	err := p.mfa.DeleteFactor(ctx, providerFactorID)
+func (p *Provider) DeleteFactor(ctx context.Context, providerFactorID string) (err error) {
+	ctx, end := telemetry.ClientSpan(ctx, p.tracers, "workos", "delete_factor")
+	defer func() { end(err) }()
+	err = p.mfa.DeleteFactor(ctx, providerFactorID)
 	var notFound *sdk.NotFoundError
 	if err == nil || errors.As(err, &notFound) {
 		return nil

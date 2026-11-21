@@ -37,6 +37,11 @@ SMTP_PORT = "1025"
 SMTP_FROM = "Factory Template <no-reply@localhost.test>"
 SMTP_TLS = "starttls"
 SMTP_TLS_SKIP_VERIFY = "true"
+# Traces and metrics go to the local LGTM (compose.yaml, `mise run obs`); without it
+# running, exports fail in the background and the API works the same. Metrics every
+# 10 s instead of 60 s, to see them sooner. See docs/runbooks/observability.md.
+OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318"
+OTEL_METRIC_EXPORT_INTERVAL = "10000"
 # WORKOS_API_KEY lives in secrets.env (SOPS + age). mise cannot decrypt dotenv files
 # (it would load the ciphertext), so `dev` runs under `sops exec-env` instead of _.file.
 _.file = ".env"
@@ -58,7 +63,7 @@ fi
 """
 
 [tasks.up]
-description = "Start local infrastructure (Postgres, Mailpit) and wait until healthy"
+description = "Start local infrastructure (Postgres, Mailpit, LGTM) and wait until healthy"
 run = "docker compose up -d --wait"
 
 [tasks.down]
@@ -68,6 +73,10 @@ run = "docker compose down"
 [tasks.mail]
 description = "Open Mailpit, the development inbox (needs `up`)"
 run = "command -v open >/dev/null && open http://localhost:8025 || xdg-open http://localhost:8025"
+
+[tasks.obs]
+description = "Open the local Grafana (LGTM) on the API dashboard (needs `up`)"
+run = "command -v open >/dev/null && open http://localhost:3000/d/factory-template-api || xdg-open http://localhost:3000/d/factory-template-api"
 
 [tasks.dev]
 description = "Run the API with the secrets of secrets.env decrypted into its environment"

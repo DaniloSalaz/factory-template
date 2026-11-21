@@ -20,6 +20,7 @@ import (
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/httpx"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/logx"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/ratelimit"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/telemetry"
 )
 
 // Requests per client IP and minute to /auth/login and /auth/callback together: a login
@@ -82,9 +83,26 @@ func main() {
 	stop()
 }
 
+// telemetryShutdownTimeout bounds the final flush of spans and metrics, after the HTTP
+// server has drained: a collector that does not answer must not hold the process.
+const telemetryShutdownTimeout = 5 * time.Second
+
 // run wires the application: database, module handlers, middlewares and server.
 func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	logger.InfoContext(ctx, "config loaded", slog.Any("config", cfg))
+
+	tel, err := telemetry.New(ctx, telemetry.Settings{Config: cfg.Telemetry, Env: cfg.Env, Version: version(), Logger: logger})
+	if err != nil {
+		return fmt.Errorf("telemetry: %w", err)
+	}
+	defer func() {
+		// ctx is cancelled by now; the flush gets its own deadline.
+		flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), telemetryShutdownTimeout)
+		defer cancel()
+		if serr := tel.Shutdown(flushCtx); serr != nil {
+			logger.WarnContext(ctx, "telemetry flush on shutdown", slog.Any("error", serr))
+		}
+	}()
 
 	// An invalid catalog stops the start-up before anything else (design, section 8).
 	catalog, err := roleCatalog()
@@ -92,14 +110,17 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		return err
 	}
 
-	pool, err := db.NewPool(ctx, cfg.DB.URL.Reveal())
+	pool, err := db.NewPool(ctx, cfg.DB.URL.Reveal(), db.WithTracer(tel.PgxTracer()))
 	if err != nil {
 		return fmt.Errorf("connect database: %w", err)
 	}
 	defer pool.Close()
+	if err := tel.RecordPoolStats(pool); err != nil {
+		return err
+	}
 
 	// Email by SMTP; only development may log the links instead (design, 5.6.7).
-	sender, err := identity.NewInvitationSender(cfg.Env, cfg.SMTP, logger)
+	sender, err := identity.NewInvitationSender(cfg.Env, cfg.SMTP, tel, logger)
 	if err != nil {
 		return fmt.Errorf("invitation sender: %w", err)
 	}
@@ -114,6 +135,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		InvitationRateLimiter: ratelimit.NewMemory(inviteRateLimit, inviteRateWindow, nil),
 		AcceptRateLimiter:     ratelimit.NewMemory(acceptRateLimit, acceptRateWindow, nil),
 		InvitationSender:      sender,
+		Telemetry:             tel,
 	})
 	if err != nil {
 		return fmt.Errorf("wire identity module: %w", err)
@@ -124,7 +146,11 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	health.New(health.Deps{DB: pool, Logger: logger, Version: version()}).Register(mux)
 	idm.Register(mux)
 
-	handler := httpx.Chain(httpx.WithRouteFallback(mux, logger),
+	// Telemetry is outermost, so its span covers the whole request (ADR 0004; the probes
+	// get none).
+	handler := tel.HTTP(httpx.Chain(httpx.WithRouteFallback(mux, logger),
+		// Before Recover, so that a recovered panic reaches Sentry too.
+		httpx.ReportErrors(tel),
 		httpx.RequestID(),
 		httpx.AccessLog(logger, "/healthz", "/readyz"),
 		httpx.Recover(logger),
@@ -139,7 +165,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		idm.TenantMiddleware(),
 		// After authentication, so a caller without a session gets 401, not 400.
 		httpx.KnownBodyFields(mux, routes.BodyFields(), logger),
-	)
+	), "/healthz", "/readyz")
 
 	if err := httpx.NewServer(cfg.HTTP, handler, logger).Run(ctx); err != nil {
 		return fmt.Errorf("run http server: %w", err)

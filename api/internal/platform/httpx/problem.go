@@ -2,6 +2,7 @@
 package httpx
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -47,6 +48,9 @@ func WriteProblem(w http.ResponseWriter, r *http.Request, err error, logger *slo
 	}
 
 	if p.Status >= http.StatusInternalServerError {
+		if rep, ok := ctx.Value(reporterKey{}).(ErrorReporter); ok {
+			rep.ReportError(ctx, err)
+		}
 		logger.ErrorContext(ctx, "request failed",
 			slog.String("method", r.Method),
 			slog.String("path", r.URL.Path),
@@ -69,6 +73,24 @@ func WriteProblem(w http.ResponseWriter, r *http.Request, err error, logger *slo
 // that waits exactly that long is not refused again (RFC 9110, 10.2.3).
 func retryAfterSeconds(d time.Duration) string {
 	return strconv.FormatInt(int64(math.Ceil(d.Seconds())), 10)
+}
+
+// ErrorReporter receives the errors that end in a 5xx (telemetry.Telemetry sends them to
+// Sentry). Expected answers, every 4xx, never reach it.
+type ErrorReporter interface {
+	ReportError(ctx context.Context, err error)
+}
+
+type reporterKey struct{}
+
+// ReportErrors makes rep receive every error WriteProblem answers with a 5xx, recovered
+// panics included, so it goes before Recover in the chain.
+func ReportErrors(rep ErrorReporter) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), reporterKey{}, rep)))
+		})
+	}
 }
 
 // RequestErrorHandler answers requests the generated server could not decode. The decoder

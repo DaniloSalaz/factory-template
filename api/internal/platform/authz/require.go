@@ -9,6 +9,7 @@ import (
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/db"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/telemetry"
 )
 
 // auditTimeout bounds the denial's audit, which also runs if the request is cancelled.
@@ -28,12 +29,14 @@ type Auditor interface {
 // call it: a depguard rule keeps it out of adapters/http.
 type Authorizer struct {
 	auditor Auditor
+	metrics *telemetry.Metrics
 	logger  *slog.Logger
 }
 
-// NewAuthorizer builds an Authorizer that records denials with auditor.
-func NewAuthorizer(auditor Auditor, logger *slog.Logger) *Authorizer {
-	return &Authorizer{auditor: auditor, logger: logger}
+// NewAuthorizer builds an Authorizer that records denials with auditor and counts them
+// in authz.denied, by tenant (metrics may be nil).
+func NewAuthorizer(auditor Auditor, metrics *telemetry.Metrics, logger *slog.Logger) *Authorizer {
+	return &Authorizer{auditor: auditor, metrics: metrics, logger: logger}
 }
 
 // ErrDenied is returned when the principal lacks a permission.
@@ -56,6 +59,7 @@ func (a *Authorizer) Require(ctx context.Context, perm authctx.Permission) error
 	if p.Has(perm) {
 		return nil
 	}
+	a.metrics.AuthzDenied(ctx, p.TenantID())
 	auditCtx, cancel := context.WithTimeout(db.Independent(context.WithoutCancel(ctx)), auditTimeout)
 	defer cancel()
 	if err := a.auditor.RecordDenied(auditCtx, p, perm); err != nil {

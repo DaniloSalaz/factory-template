@@ -38,7 +38,7 @@ func newMFAFixture(t *testing.T, role string) *mfaFixture {
 	clock := func() time.Time { return f.now }
 	m := &mfaFixture{
 		fixture: f,
-		mfa:     app.NewMFA(f.idp, f.idp.Name(), f.store, catalog, ratelimit.NewMemory(5, 15*time.Minute, clock), clock),
+		mfa:     app.NewMFA(f.idp, f.idp.Name(), f.store, catalog, ratelimit.NewMemory(5, 15*time.Minute, clock), nil, clock),
 		token:   done.Token,
 	}
 	m.user = m.current(t).UserID

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/config"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/logx"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
@@ -251,5 +253,31 @@ func TestAccessAttrs(t *testing.T) {
 	logger.InfoContext(inner, "inside")
 	if line := decodeLines(t, buf)[0]; line["user_id"] != nil || line["tenant_id"] != nil {
 		t.Fatalf("access attributes leaked into a normal record: %v", line)
+	}
+}
+
+// A record logged in a span's context names its trace and span; without one, neither.
+func TestNew_AddsTraceAndSpan(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	logger := logx.New(&buf, config.Log{Level: slog.LevelInfo, Format: config.LogFormatJSON})
+	traceID, _ := trace.TraceIDFromHex("4bf92f3577b34da6a3ce929d0e0e4736")
+	spanID, _ := trace.SpanIDFromHex("00f067aa0ba902b7")
+	ctx := trace.ContextWithSpanContext(t.Context(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: traceID, SpanID: spanID, TraceFlags: trace.FlagsSampled,
+	}))
+	logger.InfoContext(ctx, "in a span")
+	logger.InfoContext(t.Context(), "outside")
+
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("lines = %q", lines)
+	}
+	if !strings.Contains(lines[0], `"trace_id":"4bf92f3577b34da6a3ce929d0e0e4736"`) || !strings.Contains(lines[0], `"span_id":"00f067aa0ba902b7"`) {
+		t.Errorf("in a span: %s", lines[0])
+	}
+	if strings.Contains(lines[1], "trace_id") {
+		t.Errorf("outside a span: %s", lines[1])
 	}
 }

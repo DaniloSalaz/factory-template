@@ -12,9 +12,11 @@ import (
 	"html/template"
 
 	"github.com/wneessen/go-mail"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/config"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/telemetry"
 )
 
 // Sender emails invitations through an SMTP relay.
@@ -22,13 +24,15 @@ type Sender struct {
 	cfg     config.SMTP
 	rootCAs *x509.CertPool
 	html    *template.Template
+	tracers trace.TracerProvider
 }
 
 var _ app.InvitationSender = (*Sender)(nil)
 
 // New builds a Sender from a validated configuration. rootCAs replaces the system's
-// trusted roots; nil keeps them (only tests pass their own).
-func New(cfg config.SMTP, rootCAs *x509.CertPool) (*Sender, error) {
+// trusted roots; nil keeps them (only tests pass their own). tracers traces each send as
+// a client span (peer.service smtp); nil traces nothing.
+func New(cfg config.SMTP, rootCAs *x509.CertPool, tracers trace.TracerProvider) (*Sender, error) {
 	if !cfg.Enabled() {
 		return nil, errors.New("smtpsender: SMTP_HOST is not set")
 	}
@@ -36,12 +40,14 @@ func New(cfg config.SMTP, rootCAs *x509.CertPool) (*Sender, error) {
 	if err != nil {
 		return nil, fmt.Errorf("smtpsender: %w", err)
 	}
-	return &Sender{cfg: cfg, rootCAs: rootCAs, html: html}, nil
+	return &Sender{cfg: cfg, rootCAs: rootCAs, html: html, tracers: tracers}, nil
 }
 
 // Send implements app.InvitationSender. The link travels only in the message body: no
 // error it returns names the link, the token or the recipient.
-func (s *Sender) Send(ctx context.Context, msg app.InvitationMessage) error {
+func (s *Sender) Send(ctx context.Context, msg app.InvitationMessage) (err error) {
+	ctx, end := telemetry.ClientSpan(ctx, s.tracers, "smtp", "send")
+	defer func() { end(err) }()
 	body, err := compose(s.html, msg)
 	if err != nil {
 		return err

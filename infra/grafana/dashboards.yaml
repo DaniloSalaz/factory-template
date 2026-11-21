@@ -1,0 +1,10 @@
+# Loads the dashboards of infra/grafana/dashboards into the local Grafana of
+# grafana/otel-lgtm (compose.yaml). The same JSON files can be imported into Grafana
+# Cloud (docs/runbooks/observability.md).
+apiVersion: 1
+providers:
+  - name: factory-template
+    type: file
+    options:
+      path: /otel-lgtm/grafana/conf/provisioning/dashboards/custom
+      foldersFromFilesStructure: false

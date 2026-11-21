@@ -26,6 +26,7 @@ import (
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/db"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/httpx"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/ratelimit"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/telemetry"
 )
 
 // Paths of the module that are rate limited per client IP.
@@ -65,6 +66,9 @@ type Deps struct {
 	// InvitationSender delivers invitation links: NewInvitationSender picks it from the
 	// configuration.
 	InvitationSender InvitationSender
+	// Telemetry traces the calls to WorkOS and SMTP and counts logins, MFA verifications,
+	// denials, refused tenants and invitation emails; nil records nothing.
+	Telemetry *telemetry.Telemetry
 	// Provider replaces WorkOS; only tests set it.
 	Provider Provider
 	// Now is the clock; nil means time.Now.
@@ -83,9 +87,9 @@ type InvitationSender = app.InvitationSender
 // NewInvitationSender returns the SMTP sender when SMTP is configured (always, outside
 // development: config refuses to start without it), and otherwise the development one,
 // which writes each link to the log and fails outside development.
-func NewInvitationSender(env config.Environment, smtp config.SMTP, logger *slog.Logger) (InvitationSender, error) {
+func NewInvitationSender(env config.Environment, smtp config.SMTP, tel *telemetry.Telemetry, logger *slog.Logger) (InvitationSender, error) {
 	if smtp.Enabled() {
-		s, err := smtpsender.New(smtp, nil)
+		s, err := smtpsender.New(smtp, nil, tel.Tracers())
 		if err != nil {
 			return nil, fmt.Errorf("identity: %w", err)
 		}
@@ -108,6 +112,7 @@ type Module struct {
 	catalog  *authz.Catalog
 	limiter  ratelimit.Limiter
 	logger   *slog.Logger
+	metrics  *telemetry.Metrics
 }
 
 // New wires adapters and use cases.
@@ -136,26 +141,28 @@ func New(deps Deps) (*Module, error) {
 	if idp == nil {
 		idp = workos.New(workos.Config{
 			ClientID: deps.WorkOS.ClientID, APIKey: deps.WorkOS.APIKey, RedirectURI: deps.WorkOS.RedirectURI,
+			Tracers: deps.Telemetry.Tracers(),
 		}, deps.Logger)
 	}
 	store := postgres.NewStore(deps.DB)
 	policy := domain.SessionPolicy{IdleTTL: deps.Auth.SessionIdleTTL, AbsoluteTTL: deps.Auth.SessionAbsoluteTTL}
 
 	login := app.NewLogin(idp, store, codec, app.LoginConfig{
-		FrontendOrigin: deps.Web.FrontendOrigin, Policy: policy,
+		FrontendOrigin: deps.Web.FrontendOrigin, Policy: policy, Metrics: deps.Telemetry.Metrics(),
 	}, deps.Now)
 	sessions := app.NewSessions(idp, store, policy, deps.Now)
-	authorizer := authz.NewAuthorizer(app.NewDenialAuditor(store), deps.Logger)
+	authorizer := authz.NewAuthorizer(app.NewDenialAuditor(store), deps.Telemetry.Metrics(), deps.Logger)
 	tenantStore := postgres.NewTenantStore(deps.DB)
 	members := app.NewMembers(tenantStore, authorizer, deps.Catalog)
 	return &Module{
 		handler: identityhttp.NewHandler(identityhttp.UseCases{
 			Login: login, Sessions: sessions, Accounts: app.NewAccounts(store, deps.Catalog),
-			MFA:     app.NewMFA(idp, idp.Name(), store, deps.Catalog, deps.MFARateLimiter, deps.Now),
+			MFA:     app.NewMFA(idp, idp.Name(), store, deps.Catalog, deps.MFARateLimiter, deps.Telemetry.Metrics(), deps.Now),
 			Tenants: app.NewTenants(tenantStore, authorizer, deps.Tenancy.MaxTenantsPerUser, deps.TenantRateLimiter),
 			Members: members,
 			Invitations: app.NewInvitations(tenantStore, authorizer, members, deps.InvitationSender, app.InvitationsConfig{
 				FrontBaseURL: deps.Web.FrontBaseURL, InviteLimiter: deps.InvitationRateLimiter, AcceptLimiter: deps.AcceptRateLimiter,
+				Metrics: deps.Telemetry.Metrics(),
 			}, deps.Logger, deps.Now),
 		}, deps.Logger),
 		sessions: sessions,
@@ -165,6 +172,7 @@ func New(deps Deps) (*Module, error) {
 		catalog:  deps.Catalog,
 		limiter:  deps.RateLimiter,
 		logger:   deps.Logger,
+		metrics:  deps.Telemetry.Metrics(),
 	}, nil
 }
 
@@ -178,7 +186,7 @@ func (m *Module) Authorizer() *authz.Authorizer {
 // route whose contract security asks for a tenant, and builds the request's Principal
 // from the catalog. It goes right after SessionMiddleware.
 func (m *Module) TenantMiddleware() httpx.Middleware {
-	return identityhttp.TenantMiddleware(m.tenancy, m.logger)
+	return identityhttp.TenantMiddleware(m.tenancy, m.metrics, m.logger)
 }
 
 // CheckRolesInUse logs an error for every role stored in a membership that the catalog

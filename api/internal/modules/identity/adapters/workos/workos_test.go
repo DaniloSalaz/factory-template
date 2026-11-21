@@ -16,6 +16,10 @@ import (
 
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
+
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const testKey = "sk_test_never-leak-this-key"
@@ -276,5 +280,36 @@ func TestMFA(t *testing.T) {
 	}
 	if _, err := p.Challenge(ctx, "auth_factor_unknown"); apperr.KindOf(err) != apperr.KindConflict {
 		t.Fatalf("Challenge of an unknown factor = %v, want mfa.provider_rejected", err)
+	}
+}
+
+// Each call to WorkOS is a client span with the provider and the result, never the URL,
+// the code, the API key or a body.
+func TestExchangeCode_ClientSpan(t *testing.T) {
+	t.Parallel()
+	spans := tracetest.NewInMemoryExporter()
+	p, _, _ := fakeWorkOS(t, http.StatusBadRequest, `{"error":"invalid_grant"}`)
+	p.tracers = sdktrace.NewTracerProvider(sdktrace.WithSyncer(spans))
+
+	const code = "secret-authorization-code"
+	if _, err := p.ExchangeCode(t.Context(), code, "verifier"); err == nil {
+		t.Fatal("expected an error")
+	}
+	got := spans.GetSpans()
+	if len(got) != 1 {
+		t.Fatalf("spans = %d", len(got))
+	}
+	s := got[0]
+	attrs := map[string]string{}
+	for _, kv := range s.Attributes {
+		attrs[string(kv.Key)] = kv.Value.AsString()
+	}
+	if s.Name != "workos.authenticate_with_code" || s.SpanKind != trace.SpanKindClient ||
+		attrs["peer.service"] != "workos" || attrs["result"] != "auth.code_invalid" || len(attrs) != 2 {
+		t.Fatalf("span = %s %v %v", s.Name, s.SpanKind, attrs)
+	}
+	if dump := fmt.Sprintf("%+v", s); strings.Contains(dump, code) || strings.Contains(dump, testKey) ||
+		strings.Contains(dump, "user_management") || strings.Contains(dump, "verifier") {
+		t.Fatalf("the span carries the call's details: %s", dump)
 	}
 }

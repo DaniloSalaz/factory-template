@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import "./platform/styles.css";
 import "./app/theme.css";
 import { PlatformProvider } from "./platform/bootstrap";
+import { PlatformErrorBoundary } from "./platform/components/ErrorScreen";
 import { platform, router } from "./router";
 
 const root = document.getElementById("root");
@@ -13,8 +14,10 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
-    <PlatformProvider value={platform.context}>
-      <RouterProvider router={router} />
-    </PlatformProvider>
+    <PlatformErrorBoundary>
+      <PlatformProvider value={platform.context}>
+        <RouterProvider router={router} />
+      </PlatformProvider>
+    </PlatformErrorBoundary>
   </StrictMode>,
 );

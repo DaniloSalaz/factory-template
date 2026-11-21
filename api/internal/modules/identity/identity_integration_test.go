@@ -42,6 +42,7 @@ import (
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/logx"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/ratelimit"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/telemetry"
 )
 
 // Integration tests of the login, the session middleware and logout, over HTTPS (the
@@ -129,6 +130,8 @@ type options struct {
 	acceptLimit int
 	// catalog defaults to testCatalog.
 	catalog *authz.Catalog
+	// telemetry, if set, instruments the module and the server as cmd/api does.
+	telemetry *telemetry.Telemetry
 }
 
 // testCatalog has the example roles; owner requires MFA only when ownerMFA > 0, so tests
@@ -199,6 +202,7 @@ func newEnv(t *testing.T, opts options) *env {
 		InvitationRateLimiter: ratelimit.NewMemory(1000, time.Hour, nil),
 		AcceptRateLimiter:     ratelimit.NewMemory(opts.acceptLimit, 15*time.Minute, nil),
 		InvitationSender:      sender,
+		Telemetry:             opts.telemetry,
 		Provider:              idp, Now: clk.Now,
 	})
 	if err != nil {
@@ -259,6 +263,9 @@ func newEnv(t *testing.T, opts options) *env {
 		m.TenantMiddleware(),
 		httpx.KnownBodyFields(mux, routes.BodyFields(), logger),
 	)
+	if opts.telemetry != nil {
+		h = opts.telemetry.HTTP(h, "/healthz", "/readyz")
+	}
 	srv := httptest.NewTLSServer(h)
 	t.Cleanup(srv.Close)
 	return &env{t: t, srv: srv, idp: idp, clock: clk, super: super, logs: logs, module: m, sender: sender}

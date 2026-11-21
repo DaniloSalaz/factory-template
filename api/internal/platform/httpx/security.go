@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/logx"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/telemetry"
 )
 
 // Security is what a route requires before its handler runs: a session, and a tenant
@@ -20,8 +21,9 @@ type Security struct {
 // RouteSecurity resolves the route of each request on mux and stores its Security in
 // the context, where the session and tenant middlewares read it (SecurityFrom). table
 // maps ServeMux patterns ("GET /me") to their security. It also adds the route pattern
-// to the access record: inner middlewares pass a copy of the request on, so AccessLog
-// never sees the Pattern that ServeMux sets.
+// to the access record, and names the request's span after it (telemetry.Routed): inner
+// middlewares pass a copy of the request on, so neither AccessLog nor the telemetry
+// middleware ever see the Pattern that ServeMux sets.
 func RouteSecurity(mux *http.ServeMux, table map[string]Security) Middleware {
 	routes := maps.Clone(table)
 	return func(next http.Handler) http.Handler {
@@ -33,6 +35,7 @@ func RouteSecurity(mux *http.ServeMux, table map[string]Security) Middleware {
 			sec := Security{Session: true}
 			if _, pattern := mux.Handler(r); pattern != "" {
 				logx.AddAccessAttrs(r.Context(), slog.String("pattern", pattern))
+				telemetry.Routed(r.Context(), pattern)
 				s, ok := routes[pattern]
 				if !ok {
 					s = Security{Session: true, Tenant: true}
