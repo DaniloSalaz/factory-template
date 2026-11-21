@@ -581,3 +581,41 @@ func TestLoad_SMTP(t *testing.T) {
 		})
 	}
 }
+
+func TestLoad_Telemetry(t *testing.T) {
+	t.Parallel()
+
+	const dsnKey = "examplepublickey"
+	cfg, err := load(with(map[string]string{
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318", "SENTRY_DSN": "https://" + dsnKey + "@o1.ingest.sentry.io/42",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Telemetry.TracesEnabled() || !cfg.Telemetry.MetricsEnabled() {
+		t.Fatalf("telemetry = %+v", cfg.Telemetry)
+	}
+	if strings.Contains(cfg.String(), dsnKey) || strings.Contains(fmt.Sprintf("%+v", cfg), dsnKey) {
+		t.Fatal("the Sentry DSN is rendered")
+	}
+
+	if cfg, err := load(validEnv()); err != nil || cfg.Telemetry.TracesEnabled() || cfg.Telemetry.MetricsEnabled() {
+		t.Fatalf("without endpoints: %v %+v", err, cfg.Telemetry)
+	}
+	if cfg, err := load(with(map[string]string{"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "https://otlp.example.com/v1/traces"})); err != nil ||
+		!cfg.Telemetry.TracesEnabled() || cfg.Telemetry.MetricsEnabled() {
+		t.Fatalf("traces only: %v %+v", err, cfg.Telemetry)
+	}
+
+	_, err = load(with(map[string]string{
+		"OTEL_EXPORTER_OTLP_ENDPOINT": "localhost:4317", "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc", "SENTRY_DSN": "not-a-dsn",
+	}))
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	for _, want := range []string{"OTEL_EXPORTER_OTLP_ENDPOINT must be", "OTEL_EXPORTER_OTLP_PROTOCOL must be http/protobuf", "SENTRY_DSN must be"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error does not contain %q: %v", want, err)
+		}
+	}
+}

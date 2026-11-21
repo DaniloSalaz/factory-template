@@ -11,12 +11,21 @@ import (
 	"sync"
 	"unicode"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/config"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
 )
 
 // RequestIDKey is the attribute key under which the request ID is logged.
 const RequestIDKey = "request_id"
+
+// Keys of the trace and span of a record, when its context carries a span: they join
+// the log line to its trace.
+const (
+	TraceIDKey = "trace_id"
+	SpanIDKey  = "span_id"
+)
 
 // New returns a logger writing to w in the configured format and level. Records pick up
 // attributes stored in their context with With and WithRequestID, and values under
@@ -95,7 +104,8 @@ func attrsFrom(ctx context.Context) []slog.Attr {
 	return attrs
 }
 
-// contextHandler adds the context's request ID and attributes to every record.
+// contextHandler adds the context's request ID, trace, span and attributes to every
+// record.
 type contextHandler struct {
 	inner slog.Handler
 }
@@ -107,10 +117,14 @@ func (h *contextHandler) Enabled(ctx context.Context, level slog.Level) bool {
 func (h *contextHandler) Handle(ctx context.Context, r slog.Record) error {
 	attrs := attrsFrom(ctx)
 	id, hasID := RequestIDFrom(ctx)
-	if len(attrs) > 0 || hasID {
+	sc := trace.SpanContextFromContext(ctx)
+	if len(attrs) > 0 || hasID || sc.IsValid() {
 		r = r.Clone()
 		if hasID {
 			r.AddAttrs(slog.String(RequestIDKey, id))
+		}
+		if sc.IsValid() {
+			r.AddAttrs(slog.String(TraceIDKey, sc.TraceID().String()), slog.String(SpanIDKey, sc.SpanID().String()))
 		}
 		r.AddAttrs(attrs...)
 	}

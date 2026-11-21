@@ -20,6 +20,7 @@ import (
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/httpx"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/logx"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/ratelimit"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/telemetry"
 )
 
 // Requests per client IP and minute to /auth/login and /auth/callback together: a login
@@ -82,9 +83,26 @@ func main() {
 	stop()
 }
 
+// telemetryShutdownTimeout bounds the final flush of spans and metrics, after the HTTP
+// server has drained: a collector that does not answer must not hold the process.
+const telemetryShutdownTimeout = 5 * time.Second
+
 // run wires the application: database, module handlers, middlewares and server.
 func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	logger.InfoContext(ctx, "config loaded", slog.Any("config", cfg))
+
+	tel, err := telemetry.New(ctx, telemetry.Settings{Config: cfg.Telemetry, Env: cfg.Env, Version: version(), Logger: logger})
+	if err != nil {
+		return fmt.Errorf("telemetry: %w", err)
+	}
+	defer func() {
+		// ctx is cancelled by now; the flush gets its own deadline.
+		flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), telemetryShutdownTimeout)
+		defer cancel()
+		if serr := tel.Shutdown(flushCtx); serr != nil {
+			logger.WarnContext(ctx, "telemetry flush on shutdown", slog.Any("error", serr))
+		}
+	}()
 
 	// An invalid catalog stops the start-up before anything else (design, section 8).
 	catalog, err := roleCatalog()

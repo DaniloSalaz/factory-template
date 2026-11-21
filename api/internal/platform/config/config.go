@@ -54,15 +54,16 @@ func (f LogFormat) Valid() bool { return f == LogFormatJSON || f == LogFormatTex
 
 // Config is the typed process configuration.
 type Config struct {
-	Env     Environment `env:"APP_ENV"`
-	HTTP    HTTP
-	DB      DB
-	Log     Log
-	Web     Web
-	Auth    Auth
-	WorkOS  WorkOS
-	Tenancy Tenancy
-	SMTP    SMTP
+	Env       Environment `env:"APP_ENV"`
+	HTTP      HTTP
+	DB        DB
+	Log       Log
+	Web       Web
+	Auth      Auth
+	WorkOS    WorkOS
+	Tenancy   Tenancy
+	SMTP      SMTP
+	Telemetry Telemetry
 }
 
 // HTTP configures the HTTP server.
@@ -128,6 +129,31 @@ type WorkOS struct {
 	ClientID    string     `env:"WORKOS_CLIENT_ID"`
 	APIKey      pii.Secret `env:"WORKOS_API_KEY"`
 	RedirectURI string     `env:"WORKOS_REDIRECT_URI"`
+}
+
+// Telemetry configures traces, metrics and error reports (ADR 0004). Only what the API
+// decides on is read here: whether there is an OTLP endpoint (none: no telemetry) and
+// that the protocol is one it speaks. The OTLP exporters and the SDK read the other
+// standard variables themselves (OTEL_EXPORTER_OTLP_HEADERS, *_TIMEOUT,
+// OTEL_TRACES_SAMPLER, OTEL_TRACES_SAMPLER_ARG…), so their values, which may carry
+// credentials, never go through this struct.
+type Telemetry struct {
+	OTLPEndpoint        string `env:"OTEL_EXPORTER_OTLP_ENDPOINT"`
+	OTLPTracesEndpoint  string `env:"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"`
+	OTLPMetricsEndpoint string `env:"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"`
+	// OTLPProtocol must be empty or http/protobuf: the API does not ship the gRPC
+	// exporters.
+	OTLPProtocol string `env:"OTEL_EXPORTER_OTLP_PROTOCOL"`
+	// SentryDSN enables error reports; empty, none are sent.
+	SentryDSN pii.Secret `env:"SENTRY_DSN"`
+}
+
+// TracesEnabled reports whether spans are exported.
+func (t Telemetry) TracesEnabled() bool { return t.OTLPEndpoint != "" || t.OTLPTracesEndpoint != "" }
+
+// MetricsEnabled reports whether metrics are exported.
+func (t Telemetry) MetricsEnabled() bool {
+	return t.OTLPEndpoint != "" || t.OTLPMetricsEndpoint != ""
 }
 
 // SMTPTLS is how the SMTP connection is encrypted. There is no plain-text mode.
@@ -288,6 +314,7 @@ func (c Config) validate() []*VarError {
 	c.validateAuth(add)
 	c.validateWorkOS(add)
 	c.validateSMTP(add)
+	c.validateTelemetry(add)
 	if n := c.Tenancy.MaxTenantsPerUser; n < 1 || n > maxTenantsPerUserCeiling {
 		add("TENANT_MAX_PER_USER", fmt.Sprintf("must be between 1 and %d", maxTenantsPerUserCeiling))
 	}
@@ -413,6 +440,27 @@ func (c Config) validateSMTP(add func(v, reason string)) {
 	}
 }
 
+func (c Config) validateTelemetry(add func(v, reason string)) {
+	t := c.Telemetry
+	for _, e := range []struct{ name, value string }{
+		{"OTEL_EXPORTER_OTLP_ENDPOINT", t.OTLPEndpoint},
+		{"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", t.OTLPTracesEndpoint},
+		{"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", t.OTLPMetricsEndpoint},
+	} {
+		if u, err := url.Parse(e.value); e.value != "" && (err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https")) {
+			add(e.name, "must be an absolute http(s) URL")
+		}
+	}
+	if t.OTLPProtocol != "" && t.OTLPProtocol != "http/protobuf" {
+		add("OTEL_EXPORTER_OTLP_PROTOCOL", "must be http/protobuf (the API does not ship the gRPC exporters)")
+	}
+	if dsn := t.SentryDSN.Reveal(); dsn != "" {
+		if u, err := url.Parse(dsn); err != nil || u.Host == "" || u.User == nil || u.Scheme != "https" {
+			add("SENTRY_DSN", "must be a Sentry DSN: https://<key>@<host>/<project>")
+		}
+	}
+}
+
 // normalizeOrigin returns scheme://host[:port] in lower case, or false when raw is not
 // a bare http(s) origin.
 func normalizeOrigin(raw string) (string, bool) {
@@ -526,12 +574,14 @@ func (c Config) String() string {
 		"Config{Env:%s HTTP:{Port:%d ReadHeaderTimeout:%s ReadTimeout:%s WriteTimeout:%s IdleTimeout:%s ShutdownTimeout:%s MaxHeaderBytes:%d MaxBodyBytes:%d} DB:{URL:%s} Log:{Level:%s Format:%s} "+
 			"Web:{FrontendOrigin:%s FrontBaseURL:%s AllowedOrigins:%v TrustedClientIPHeader:%s} Auth:{SessionIdleTTL:%s SessionAbsoluteTTL:%s} "+
 			"WorkOS:{ClientID:%s APIKey:%s RedirectURI:%s} Tenancy:{MaxTenantsPerUser:%d} "+
-			"SMTP:{Host:%s Port:%d Username:%s Password:%s From:%s TLS:%s Timeout:%s TLSSkipVerify:%t}}",
+			"SMTP:{Host:%s Port:%d Username:%s Password:%s From:%s TLS:%s Timeout:%s TLSSkipVerify:%t} "+
+			"Telemetry:{OTLPEndpoint:%s OTLPTracesEndpoint:%s OTLPMetricsEndpoint:%s OTLPProtocol:%s SentryDSN:%s}}",
 		c.Env, c.HTTP.Port, c.HTTP.ReadHeaderTimeout, c.HTTP.ReadTimeout, c.HTTP.WriteTimeout,
 		c.HTTP.IdleTimeout, c.HTTP.ShutdownTimeout, c.HTTP.MaxHeaderBytes, c.HTTP.MaxBodyBytes, c.DB.URL, c.Log.Level, c.Log.Format,
 		c.Web.FrontendOrigin, c.Web.FrontBaseURL, c.Web.AllowedOrigins, c.Web.TrustedClientIPHeader, c.Auth.SessionIdleTTL, c.Auth.SessionAbsoluteTTL,
 		c.WorkOS.ClientID, c.WorkOS.APIKey, c.WorkOS.RedirectURI, c.Tenancy.MaxTenantsPerUser,
 		c.SMTP.Host, c.SMTP.SMTPPort, c.SMTP.Username, c.SMTP.Password, c.SMTP.From, c.SMTP.TLS, c.SMTP.Timeout, c.SMTP.TLSSkipVerify,
+		c.Telemetry.OTLPEndpoint, c.Telemetry.OTLPTracesEndpoint, c.Telemetry.OTLPMetricsEndpoint, c.Telemetry.OTLPProtocol, c.Telemetry.SentryDSN,
 	)
 }
 
@@ -579,6 +629,13 @@ func (c Config) LogValue() slog.Value {
 			slog.String("tls", string(c.SMTP.TLS)),
 			slog.Duration("timeout", c.SMTP.Timeout),
 			slog.Bool("tls_skip_verify", c.SMTP.TLSSkipVerify),
+		),
+		slog.Group("telemetry",
+			slog.String("otlp_endpoint", c.Telemetry.OTLPEndpoint),
+			slog.String("otlp_traces_endpoint", c.Telemetry.OTLPTracesEndpoint),
+			slog.String("otlp_metrics_endpoint", c.Telemetry.OTLPMetricsEndpoint),
+			slog.String("otlp_protocol", c.Telemetry.OTLPProtocol),
+			slog.Any("sentry_dsn", c.Telemetry.SentryDSN),
 		),
 	)
 }
