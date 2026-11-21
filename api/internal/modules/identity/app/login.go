@@ -10,12 +10,15 @@ import (
 
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/telemetry"
 )
 
 // LoginConfig configures the login use cases.
 type LoginConfig struct {
 	FrontendOrigin string
 	Policy         domain.SessionPolicy
+	// Metrics counts every completed or refused login (auth.login); nil records nothing.
+	Metrics *telemetry.Metrics
 }
 
 // Login implements the login of the design (5.1): the redirect to the provider and the
@@ -96,6 +99,12 @@ type Completed struct {
 // Complete runs the callback (design, 5.1.3 to 5.1.10). Nothing is written until every
 // check has passed, except the audit event of a rejection.
 func (l *Login) Complete(ctx context.Context, cb Callback) (Completed, error) {
+	out, err := l.complete(ctx, cb)
+	l.cfg.Metrics.Login(ctx, telemetry.ResultOf(err))
+	return out, err
+}
+
+func (l *Login) complete(ctx context.Context, cb Callback) (Completed, error) {
 	intent, err := l.codec.Open(cb.State, cb.IntentValue, l.now())
 	if err != nil {
 		return Completed{}, err

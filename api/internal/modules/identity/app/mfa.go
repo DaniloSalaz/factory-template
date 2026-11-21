@@ -12,6 +12,7 @@ import (
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/clientip"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/ratelimit"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/telemetry"
 )
 
 // MFA is the second factor the app verifies itself (design, 5.2; ADR 0002): enrolling a
@@ -23,17 +24,21 @@ type MFA struct {
 	store    Store
 	catalog  *authz.Catalog
 	limiter  ratelimit.Limiter
+	metrics  *telemetry.Metrics
 	now      func() time.Time
 }
 
 // NewMFA builds MFA. provider is the name stored with each factor (the identity
 // provider's); limiter caps verification attempts and challenges per user and per
-// session; now is the clock (nil: time.Now).
-func NewMFA(idp MFAProvider, provider string, store Store, catalog *authz.Catalog, limiter ratelimit.Limiter, now func() time.Time) *MFA {
+// session; metrics counts verifications (mfa.verify; nil records nothing); now is the
+// clock (nil: time.Now).
+func NewMFA(idp MFAProvider, provider string, store Store, catalog *authz.Catalog, limiter ratelimit.Limiter,
+	metrics *telemetry.Metrics, now func() time.Time,
+) *MFA {
 	if now == nil {
 		now = time.Now
 	}
-	return &MFA{idp: idp, provider: provider, store: store, catalog: catalog, limiter: limiter, now: now}
+	return &MFA{idp: idp, provider: provider, store: store, catalog: catalog, limiter: limiter, metrics: metrics, now: now}
 }
 
 // Enrollment is a TOTP factor just enrolled, waiting for its first code.
@@ -151,6 +156,12 @@ func (m *MFA) Challenge(ctx context.Context, cur Current, factorID string) (Chal
 // not the last one accepted with the factor, the session is replaced by a new one with
 // its MFA verified now; the old token stops working. Failures and lockouts are audited.
 func (m *MFA) Verify(ctx context.Context, cur Current, challengeID, code string) (Rotated, error) {
+	out, err := m.verify(ctx, cur, challengeID, code)
+	m.metrics.MFAVerify(ctx, telemetry.ResultOf(err))
+	return out, err
+}
+
+func (m *MFA) verify(ctx context.Context, cur Current, challengeID, code string) (Rotated, error) {
 	if err := m.allow(ctx, cur, "verify:user:"+cur.UserID, "verify:session:"+cur.ID); err != nil {
 		return Rotated{}, err
 	}

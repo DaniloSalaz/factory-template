@@ -118,14 +118,30 @@ func New(ctx context.Context, s Settings) (*Telemetry, error) {
 	return t, nil
 }
 
-// Tracers is the tracer provider to hand to instrumentation.
-func (t *Telemetry) Tracers() trace.TracerProvider { return t.tracers }
+// Tracers is the tracer provider to hand to instrumentation; a nil Telemetry gives a
+// no-op one, so tests may go without telemetry.
+func (t *Telemetry) Tracers() trace.TracerProvider {
+	if t == nil {
+		return tracenoop.NewTracerProvider()
+	}
+	return t.tracers
+}
 
-// Meters is the meter provider to hand to instrumentation.
-func (t *Telemetry) Meters() metric.MeterProvider { return t.meters }
+// Meters is the meter provider to hand to instrumentation (no-op for a nil Telemetry).
+func (t *Telemetry) Meters() metric.MeterProvider {
+	if t == nil {
+		return metricnoop.NewMeterProvider()
+	}
+	return t.meters
+}
 
-// Metrics are the API's own counters.
-func (t *Telemetry) Metrics() *Metrics { return t.metrics }
+// Metrics are the API's own counters; nil, which records nothing, for a nil Telemetry.
+func (t *Telemetry) Metrics() *Metrics {
+	if t == nil {
+		return nil
+	}
+	return t.metrics
+}
 
 // Propagator reads and writes W3C traceparent.
 func (t *Telemetry) Propagator() propagation.TextMapPropagator { return t.propagator }

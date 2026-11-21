@@ -10,6 +10,7 @@ import (
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/httpx"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/logx"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/telemetry"
 )
 
 // TenantHeader names the tenant a request acts in (design, section 2).
@@ -20,7 +21,7 @@ const TenantHeader = "X-Tenant-ID"
 // httpx.RouteSecurity did not run (a wiring bug). It runs after SessionMiddleware and
 // puts the authctx.Principal in the context and tenant_id in the logs, the access
 // record included (design, 5.4.2 to 5.4.4).
-func TenantMiddleware(tenancy *app.Tenancy, logger *slog.Logger) httpx.Middleware {
+func TenantMiddleware(tenancy *app.Tenancy, metrics *telemetry.Metrics, logger *slog.Logger) httpx.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if sec, ok := httpx.SecurityFrom(r.Context()); ok && !sec.Tenant {
@@ -36,6 +37,10 @@ func TenantMiddleware(tenancy *app.Tenancy, logger *slog.Logger) httpx.Middlewar
 			raw := r.Header.Get(TenantHeader)
 			entered, err := tenancy.Enter(ctx, user, raw)
 			if err != nil {
+				if e, ok := apperr.As(err); ok && e.Code == "auth.tenant_forbidden" {
+					// No tenant on purpose: the requested id is the prober's (ADR 0004).
+					metrics.TenantForbidden(ctx)
+				}
 				logDenied(r, err, raw, logger)
 				httpx.WriteProblem(w, r, err, logger)
 				return
@@ -45,6 +50,7 @@ func TenantMiddleware(tenancy *app.Tenancy, logger *slog.Logger) httpx.Middlewar
 				logger.ErrorContext(ctx, "the member's role is not in the catalog: acting with no permissions",
 					slog.String("tenant_id", p.TenantID()), slog.String("role", p.Role()))
 			}
+			telemetry.TenantEntered(ctx, p.TenantID())
 			ctx = authctx.WithPrincipal(ctx, p)
 			ctx = logx.With(ctx, slog.String("tenant_id", p.TenantID()))
 			logx.AddAccessAttrs(ctx, slog.String("tenant_id", p.TenantID()))

@@ -166,7 +166,7 @@ func TestSender_Mailpit(t *testing.T) {
 				env[k] = v
 			}
 			m := startMailpit(t, env, certFile, keyFile)
-			sender, err := smtpsender.New(smtpConfig(m, tc.mode), pool)
+			sender, err := smtpsender.New(smtpConfig(m, tc.mode), pool, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -232,7 +232,7 @@ func TestSender_Mailpit(t *testing.T) {
 		m := startMailpit(t, map[string]string{}, "", "")
 		cfg := smtpConfig(m, config.SMTPStartTLS)
 		cfg.Username, cfg.Password = "", ""
-		sender, err := smtpsender.New(cfg, pool)
+		sender, err := smtpsender.New(cfg, pool, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -256,7 +256,7 @@ func TestSender_Mailpit(t *testing.T) {
 			"MP_SMTP_TLS_CERT": "/certs/cert.pem", "MP_SMTP_TLS_KEY": "/certs/key.pem",
 			"MP_SMTP_REQUIRE_STARTTLS": "true", "MP_SMTP_AUTH_ACCEPT_ANY": "true",
 		}, certFile, keyFile)
-		sender, err := smtpsender.New(smtpConfig(m, config.SMTPStartTLS), x509.NewCertPool())
+		sender, err := smtpsender.New(smtpConfig(m, config.SMTPStartTLS), x509.NewCertPool(), nil)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -12,6 +12,7 @@ import (
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/authz"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/ratelimit"
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/telemetry"
 )
 
 // Invitations creates, lists, resends, revokes and accepts invitations (design, 5.6).
@@ -22,6 +23,7 @@ type Invitations struct {
 	sender    InvitationSender
 	invite    ratelimit.Limiter // creations and resends, per user
 	accept    ratelimit.Limiter // accepts, per user
+	metrics   *telemetry.Metrics
 	frontBase string
 	logger    *slog.Logger
 	now       func() time.Time
@@ -33,6 +35,9 @@ type InvitationsConfig struct {
 	FrontBaseURL  string
 	InviteLimiter ratelimit.Limiter
 	AcceptLimiter ratelimit.Limiter
+	// Metrics counts invitation emails sent and failed (invitation.email); nil records
+	// nothing.
+	Metrics *telemetry.Metrics
 }
 
 // NewInvitations builds Invitations. now is the clock; nil means time.Now.
@@ -44,7 +49,7 @@ func NewInvitations(store TenantStore, authorizer Authorizer, members *Members, 
 	}
 	return &Invitations{
 		store: store, authz: authorizer, members: members, sender: sender,
-		invite: cfg.InviteLimiter, accept: cfg.AcceptLimiter, frontBase: cfg.FrontBaseURL, logger: logger, now: now,
+		invite: cfg.InviteLimiter, accept: cfg.AcceptLimiter, metrics: cfg.Metrics, frontBase: cfg.FrontBaseURL, logger: logger, now: now,
 	}
 }
 
@@ -348,9 +353,12 @@ func (in *Invitations) send(ctx context.Context, inv Invitation, token, tenantNa
 		TenantName: tenantName, Role: inv.Role, InviterName: name,
 	}
 	if err := in.sender.Send(ctx, msg); err != nil {
+		in.metrics.InvitationEmail(ctx, telemetry.ResultFailure)
 		in.logger.ErrorContext(ctx, "send invitation: resend it to retry",
 			slog.String("invitation_id", inv.ID), slog.Any("error", err))
+		return
 	}
+	in.metrics.InvitationEmail(ctx, telemetry.ResultSuccess)
 }
 
 // allow counts one request of key against limiter.

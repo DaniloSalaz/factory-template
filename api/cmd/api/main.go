@@ -120,7 +120,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 
 	// Email by SMTP; only development may log the links instead (design, 5.6.7).
-	sender, err := identity.NewInvitationSender(cfg.Env, cfg.SMTP, logger)
+	sender, err := identity.NewInvitationSender(cfg.Env, cfg.SMTP, tel, logger)
 	if err != nil {
 		return fmt.Errorf("invitation sender: %w", err)
 	}
@@ -135,6 +135,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		InvitationRateLimiter: ratelimit.NewMemory(inviteRateLimit, inviteRateWindow, nil),
 		AcceptRateLimiter:     ratelimit.NewMemory(acceptRateLimit, acceptRateWindow, nil),
 		InvitationSender:      sender,
+		Telemetry:             tel,
 	})
 	if err != nil {
 		return fmt.Errorf("wire identity module: %w", err)
