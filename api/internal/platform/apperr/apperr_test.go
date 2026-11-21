@@ -107,7 +107,7 @@ func TestKindString(t *testing.T) {
 		want string
 	}{
 		{apperr.KindInternal, "internal"},
-		{apperr.KindNotFound, "not_found"},
+		{apperr.KindNotFound, "roto_a_proposito"},
 		{apperr.KindConflict, "conflict"},
 		{apperr.KindValidation, "validation"},
 		{apperr.KindUnauthorized, "unauthorized"},
