@@ -90,8 +90,11 @@ jobs:
             ~/.cache/go-build
           key: go-${{ runner.os }}-${{ hashFiles('api/go.sum') }}
           restore-keys: go-${{ runner.os }}-
-      # Integration tests start Postgres with Testcontainers on the runner's Docker.
+      # Unit tests first: they need no Docker, so a failure there is reported quickly.
       - run: mise run test
+      # Tests with the integration tag start Postgres (and Mailpit) with Testcontainers on
+      # the runner's Docker.
+      - run: mise run test:integration
 
   generate:
     name: generate

@@ -6,19 +6,19 @@ import (
 	"slices"
 	"testing"
 
-	"chaskicode.dev/saas/platform/kit/db/dbtest"
 	"chaskicode.dev/saas/platform/migrations"
+	"chaskicode.dev/saas/tests/testkit"
 )
 
-// The tests of platform/kit migrate with dbtest.PlatformFromSource, which reads this
+// The tests of platform/kit migrate with testkit.PlatformFromSource, which reads this
 // directory from disk because kit cannot import this package. It must be the very set
 // the binary embeds: same name, same version table, same files.
 func TestSet_MatchesPlatformFromSource(t *testing.T) {
 	t.Parallel()
 
-	embedded, source := migrations.Set(), dbtest.PlatformFromSource()
+	embedded, source := migrations.Set(), testkit.PlatformFromSource()
 	if embedded.Name != source.Name || embedded.Table != source.Table {
-		t.Fatalf("embedded set %s/%s, dbtest set %s/%s", embedded.Name, embedded.Table, source.Name, source.Table)
+		t.Fatalf("embedded set %s/%s, testkit set %s/%s", embedded.Name, embedded.Table, source.Name, source.Table)
 	}
 	if embedded.AllowEmpty || source.AllowEmpty {
 		t.Fatal("the platform's set must not allow being empty: finding no migration means a wrong path")

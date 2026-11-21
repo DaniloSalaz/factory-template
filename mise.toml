@@ -135,14 +135,20 @@ description = "Re-run the role and extension bootstrap on the local Postgres (id
 run = "docker compose exec -T postgres /docker-entrypoint-initdb.d/10-bootstrap.sh"
 
 [tasks.test]
-description = "Run Go tests with the race detector (integration tests need Docker)"
+description = "Run the Go unit tests with the race detector (no Docker needed)"
 dir = "api"
 run = "go test -race -cover ./..."
 
-[tasks.arch]
-description = "Run architecture tests (module boundaries and lint-rule fixtures)"
+[tasks."test:integration"]
+description = "Run the Go tests that need Docker (Testcontainers), unit tests included: -tags integration"
 dir = "api"
-run = "go test -tags arch -count=1 ./archtest/..."
+# Go cannot leave untagged files out, so the unit tests run again here; they take seconds.
+run = "go test -race -cover -tags integration ./..."
+
+[tasks.arch]
+description = "Run architecture tests (module boundaries and lint-rule fixtures, api/tests/arch)"
+dir = "api"
+run = "go test -tags arch -count=1 ./tests/arch/..."
 
 [tasks.lint]
 description = "Lint Go, GitHub workflows and web code"
@@ -254,6 +260,7 @@ run = [
   { task = "lint:actions" },
   { task = "arch" },
   { task = "test" },
+  { task = "test:integration" },
   { task = "generate:check" },
   { task = "security:govulncheck" },
   { task = "security:gitleaks" },
