@@ -98,9 +98,8 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 	defer pool.Close()
 
-	// Only a development sender exists: outside development the API does not start
-	// until real email arrives with the deployment (design, 5.6.6).
-	sender, err := identity.NewDevInvitationSender(cfg.Env, logger)
+	// Email by SMTP; only development may log the links instead (design, 5.6.7).
+	sender, err := identity.NewInvitationSender(cfg.Env, cfg.SMTP, logger)
 	if err != nil {
 		return fmt.Errorf("invitation sender: %w", err)
 	}

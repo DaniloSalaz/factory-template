@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/mail"
 	"net/url"
 	"os"
 	"reflect"
@@ -61,6 +62,7 @@ type Config struct {
 	Auth    Auth
 	WorkOS  WorkOS
 	Tenancy Tenancy
+	SMTP    SMTP
 }
 
 // HTTP configures the HTTP server.
@@ -127,6 +129,39 @@ type WorkOS struct {
 	APIKey      pii.Secret `env:"WORKOS_API_KEY"`
 	RedirectURI string     `env:"WORKOS_REDIRECT_URI"`
 }
+
+// SMTPTLS is how the SMTP connection is encrypted. There is no plain-text mode.
+type SMTPTLS string
+
+// Supported SMTP TLS modes.
+const (
+	// SMTPStartTLS upgrades a plain connection (usually port 587) and fails if the server
+	// does not offer STARTTLS.
+	SMTPStartTLS SMTPTLS = "starttls"
+	// SMTPImplicitTLS speaks TLS from the first byte (usually port 465).
+	SMTPImplicitTLS SMTPTLS = "implicit"
+)
+
+// SMTP configures the invitation email (design, 5.6.7). It is required outside
+// development; in development, without SMTP_HOST, invitation links go to the log.
+type SMTP struct {
+	Host     string     `env:"SMTP_HOST"`
+	SMTPPort int        `env:"SMTP_PORT"` // not Port: field names are unique across Config
+	Username string     `env:"SMTP_USERNAME"`
+	Password pii.Secret `env:"SMTP_PASSWORD"`
+	// From is the sender, an address of a domain with SPF, DKIM and DMARC
+	// (docs/runbooks/email.md), optionally with a display name: "Acme <no-reply@acme.com>".
+	From string  `env:"SMTP_FROM"`
+	TLS  SMTPTLS `env:"SMTP_TLS"     envDefault:"starttls"`
+	// Timeout bounds the connection and each SMTP command.
+	Timeout time.Duration `env:"SMTP_TIMEOUT" envDefault:"10s"`
+	// TLSSkipVerify accepts any server certificate: only in development, for Mailpit's
+	// self-signed one. The connection is still encrypted.
+	TLSSkipVerify bool `env:"SMTP_TLS_SKIP_VERIFY"`
+}
+
+// Enabled reports whether invitations go by SMTP.
+func (s SMTP) Enabled() bool { return s.Host != "" }
 
 // DefaultDeployedClientIPHeader is the client IP header in staging and production, where
 // the API is reachable only through Cloudflare Tunnel (design, section 3). Without it,
@@ -252,6 +287,7 @@ func (c Config) validate() []*VarError {
 	c.validateWeb(add)
 	c.validateAuth(add)
 	c.validateWorkOS(add)
+	c.validateSMTP(add)
 	if n := c.Tenancy.MaxTenantsPerUser; n < 1 || n > maxTenantsPerUserCeiling {
 		add("TENANT_MAX_PER_USER", fmt.Sprintf("must be between 1 and %d", maxTenantsPerUserCeiling))
 	}
@@ -339,6 +375,41 @@ func (c Config) validateWorkOS(add func(v, reason string)) {
 		add("WORKOS_REDIRECT_URI", "must be an absolute http(s) URL")
 	case c.httpsOnly() && u.Scheme != "https":
 		add("WORKOS_REDIRECT_URI", "must use https outside development")
+	}
+}
+
+func (c Config) validateSMTP(add func(v, reason string)) {
+	s := c.SMTP
+	if s.TLS != SMTPStartTLS && s.TLS != SMTPImplicitTLS {
+		add("SMTP_TLS", "must be one of starttls, implicit")
+	}
+	if s.TLSSkipVerify && c.Env != EnvDevelopment {
+		add("SMTP_TLS_SKIP_VERIFY", "is only allowed in development")
+	}
+	if !s.Enabled() {
+		if c.Env != EnvDevelopment && c.Env.Valid() {
+			// The development adapter logs working tokens: elsewhere, email is the only way.
+			add("SMTP_HOST", "is required outside development")
+		}
+		return
+	}
+	if strings.ContainsAny(s.Host, "/: ") {
+		add("SMTP_HOST", "must be a host name, without scheme or port")
+	}
+	if s.SMTPPort < 1 || s.SMTPPort > 65535 {
+		add("SMTP_PORT", "must be between 1 and 65535")
+	}
+	if addr, err := mail.ParseAddress(s.From); s.From == "" || err != nil || addr.Address == "" {
+		add("SMTP_FROM", "must be an email address, optionally with a name: Name <address>")
+	}
+	if s.Timeout <= 0 {
+		add("SMTP_TIMEOUT", "must be greater than zero")
+	}
+	switch {
+	case (s.Username == "") != (s.Password == ""):
+		add("SMTP_USERNAME", "and SMTP_PASSWORD go together")
+	case s.Username == "" && c.Env != EnvDevelopment:
+		add("SMTP_USERNAME", "and SMTP_PASSWORD are required outside development")
 	}
 }
 
@@ -454,11 +525,13 @@ func (c Config) String() string {
 	return fmt.Sprintf(
 		"Config{Env:%s HTTP:{Port:%d ReadHeaderTimeout:%s ReadTimeout:%s WriteTimeout:%s IdleTimeout:%s ShutdownTimeout:%s MaxHeaderBytes:%d MaxBodyBytes:%d} DB:{URL:%s} Log:{Level:%s Format:%s} "+
 			"Web:{FrontendOrigin:%s FrontBaseURL:%s AllowedOrigins:%v TrustedClientIPHeader:%s} Auth:{SessionIdleTTL:%s SessionAbsoluteTTL:%s} "+
-			"WorkOS:{ClientID:%s APIKey:%s RedirectURI:%s} Tenancy:{MaxTenantsPerUser:%d}}",
+			"WorkOS:{ClientID:%s APIKey:%s RedirectURI:%s} Tenancy:{MaxTenantsPerUser:%d} "+
+			"SMTP:{Host:%s Port:%d Username:%s Password:%s From:%s TLS:%s Timeout:%s TLSSkipVerify:%t}}",
 		c.Env, c.HTTP.Port, c.HTTP.ReadHeaderTimeout, c.HTTP.ReadTimeout, c.HTTP.WriteTimeout,
 		c.HTTP.IdleTimeout, c.HTTP.ShutdownTimeout, c.HTTP.MaxHeaderBytes, c.HTTP.MaxBodyBytes, c.DB.URL, c.Log.Level, c.Log.Format,
 		c.Web.FrontendOrigin, c.Web.FrontBaseURL, c.Web.AllowedOrigins, c.Web.TrustedClientIPHeader, c.Auth.SessionIdleTTL, c.Auth.SessionAbsoluteTTL,
 		c.WorkOS.ClientID, c.WorkOS.APIKey, c.WorkOS.RedirectURI, c.Tenancy.MaxTenantsPerUser,
+		c.SMTP.Host, c.SMTP.SMTPPort, c.SMTP.Username, c.SMTP.Password, c.SMTP.From, c.SMTP.TLS, c.SMTP.Timeout, c.SMTP.TLSSkipVerify,
 	)
 }
 
@@ -497,6 +570,16 @@ func (c Config) LogValue() slog.Value {
 			slog.String("redirect_uri", c.WorkOS.RedirectURI),
 		),
 		slog.Group("tenancy", slog.Int("max_tenants_per_user", c.Tenancy.MaxTenantsPerUser)),
+		slog.Group("smtp",
+			slog.String("host", c.SMTP.Host),
+			slog.Int("port", c.SMTP.SMTPPort),
+			slog.String("username", c.SMTP.Username),
+			slog.Any("password", c.SMTP.Password),
+			slog.String("from", c.SMTP.From),
+			slog.String("tls", string(c.SMTP.TLS)),
+			slog.Duration("timeout", c.SMTP.Timeout),
+			slog.Bool("tls_skip_verify", c.SMTP.TLSSkipVerify),
+		),
 	)
 }
 

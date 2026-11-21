@@ -29,6 +29,14 @@ FRONTEND_ORIGIN = "http://localhost:5173"
 ALLOWED_ORIGINS = "http://localhost:5173"
 WORKOS_CLIENT_ID = "client_01M7V77YXSVNXZYGAW64XGHV92"
 WORKOS_REDIRECT_URI = "http://localhost:5173/auth/callback"
+# Invitations go to Mailpit (compose.yaml, `mise run mail`) by STARTTLS. Its certificate
+# is self-signed, so verification is skipped: config accepts that only in development.
+# Without SMTP_HOST (empty in .env) the links go to the API log instead.
+SMTP_HOST = "localhost"
+SMTP_PORT = "1025"
+SMTP_FROM = "Factory Template <no-reply@localhost.test>"
+SMTP_TLS = "starttls"
+SMTP_TLS_SKIP_VERIFY = "true"
 # WORKOS_API_KEY lives in secrets.env (SOPS + age). mise cannot decrypt dotenv files
 # (it would load the ciphertext), so `dev` runs under `sops exec-env` instead of _.file.
 _.file = ".env"
@@ -50,12 +58,16 @@ fi
 """
 
 [tasks.up]
-description = "Start local infrastructure (Postgres) and wait until healthy"
+description = "Start local infrastructure (Postgres, Mailpit) and wait until healthy"
 run = "docker compose up -d --wait"
 
 [tasks.down]
 description = "Stop local infrastructure"
 run = "docker compose down"
+
+[tasks.mail]
+description = "Open Mailpit, the development inbox (needs `up`)"
+run = "command -v open >/dev/null && open http://localhost:8025 || xdg-open http://localhost:8025"
 
 [tasks.dev]
 description = "Run the API with the secrets of secrets.env decrypted into its environment"

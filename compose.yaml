@@ -26,5 +26,21 @@ services:
       timeout: 3s
       retries: 30
 
+  # Development email: the API sends invitations here over STARTTLS, as it would to a
+  # real relay; read them at http://localhost:8025 (`mise run mail`). The certificate is
+  # self-signed and new on every start, hence SMTP_TLS_SKIP_VERIFY in mise.toml, which
+  # only development accepts.
+  mailpit:
+    image: axllent/mailpit:v1.34.0
+    environment:
+      MP_SMTP_TLS_CERT: sans:localhost
+      MP_SMTP_TLS_KEY: sans:localhost
+      MP_SMTP_REQUIRE_STARTTLS: "true"
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+    # Only this machine: the inbox holds working invitation links.
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+
 volumes:
   pgdata:
