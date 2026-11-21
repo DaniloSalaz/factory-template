@@ -225,11 +225,14 @@ func TestSender_Mailpit(t *testing.T) {
 		})
 	}
 
-	// TLS is mandatory: a server that offers no STARTTLS gets nothing, credentials
-	// included, and the error names neither the token nor the recipient.
+	// TLS is mandatory: a server that offers no STARTTLS gets nothing, and the error
+	// names neither the token nor the recipient. Without credentials, so that only the
+	// TLS policy stands between the message and a plain-text server.
 	t.Run("a server without TLS is refused", func(t *testing.T) {
-		m := startMailpit(t, map[string]string{"MP_SMTP_AUTH_ACCEPT_ANY": "true", "MP_SMTP_AUTH_ALLOW_INSECURE": "true"}, "", "")
-		sender, err := smtpsender.New(smtpConfig(m, config.SMTPStartTLS), pool)
+		m := startMailpit(t, map[string]string{}, "", "")
+		cfg := smtpConfig(m, config.SMTPStartTLS)
+		cfg.Username, cfg.Password = "", ""
+		sender, err := smtpsender.New(cfg, pool)
 		if err != nil {
 			t.Fatal(err)
 		}
