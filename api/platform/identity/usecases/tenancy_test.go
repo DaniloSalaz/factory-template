@@ -1,4 +1,4 @@
-package app_test
+package usecases_test
 
 import (
 	"errors"
@@ -35,24 +35,24 @@ func tenancyCatalog(t *testing.T) *authz.Catalog {
 
 // tenancyFixture: memberID is a member of tenantA and of the suspended tenant; otherID
 // is the one member of tenantB.
-func tenancyFixture(t *testing.T, now time.Time, role string, disabled bool) *app.Tenancy {
+func tenancyFixture(t *testing.T, now time.Time, role string, disabled bool) *usecases.Tenancy {
 	t.Helper()
 	return tenancyFixtureWithFactor(t, now, role, disabled, false)
 }
 
 // tenancyFixtureWithFactor also gives memberID a verified factor when verified is true.
-func tenancyFixtureWithFactor(t *testing.T, now time.Time, role string, disabled, verified bool) *app.Tenancy {
+func tenancyFixtureWithFactor(t *testing.T, now time.Time, role string, disabled, verified bool) *usecases.Tenancy {
 	t.Helper()
 	store := newMemStore()
 	if verified {
 		store.st.factors["factor-1"] = memFactor{user: memberID, providerID: "pf-1", verifiedAt: now.Add(-24 * time.Hour)}
 	}
-	store.st.memberships = map[string]map[string]app.Membership{
+	store.st.memberships = map[string]map[string]usecases.Membership{
 		tenantA:   {memberID: {Role: role, TenantActive: true, UserDisabled: disabled}},
 		tenantB:   {otherID: {Role: "member", TenantActive: true}},
 		suspended: {memberID: {Role: role, TenantActive: false}},
 	}
-	return app.NewTenancy(store, tenancyCatalog(t), func() time.Time { return now })
+	return usecases.NewTenancy(store, tenancyCatalog(t), func() time.Time { return now })
 }
 
 func user(t *testing.T, mfa time.Time) authctx.User {
@@ -182,7 +182,7 @@ func TestDenialAuditor_RecordsInThePrincipalsTenant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := app.NewDenialAuditor(store).RecordDenied(t.Context(), p, authz.PermAuditRead); err != nil {
+	if err := usecases.NewDenialAuditor(store).RecordDenied(t.Context(), p, authz.PermAuditRead); err != nil {
 		t.Fatal(err)
 	}
 	audit := store.snapshot().audit
@@ -201,14 +201,14 @@ func TestAccounts_MeOnlyHasTheUsersOwnMemberships(t *testing.T) {
 
 	store := newMemStore()
 	store.st.users[memberID] = memUser{email: "me@example.test"}
-	store.st.memberships = map[string]map[string]app.Membership{
+	store.st.memberships = map[string]map[string]usecases.Membership{
 		tenantA:   {memberID: {Role: "member", TenantActive: true}, otherID: {Role: "owner", TenantActive: true}},
 		tenantB:   {otherID: {Role: "member", TenantActive: true}},
 		suspended: {memberID: {Role: "client"}},
 	}
 	store.st.factors["factor-1"] = memFactor{user: memberID, providerID: "pf-1", verifiedAt: time.Now()}
 	store.st.factors["factor-2"] = memFactor{user: otherID, providerID: "pf-2", verifiedAt: time.Now()}
-	me, err := app.NewAccounts(store, tenancyCatalog(t)).Me(t.Context(), app.Current{UserID: memberID})
+	me, err := usecases.NewAccounts(store, tenancyCatalog(t)).Me(t.Context(), usecases.Current{UserID: memberID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func TestAccounts_MeOnlyHasTheUsersOwnMemberships(t *testing.T) {
 	if me.User.ID != memberID || me.User.Email.Reveal() != "me@example.test" {
 		t.Fatalf("user = %+v", me.User)
 	}
-	want := []app.TenantMembership{
+	want := []usecases.TenantMembership{
 		{TenantID: tenantA, TenantStatus: "active", Role: "member"},
 		{TenantID: suspended, TenantStatus: "suspended", Role: "client"},
 	}
@@ -226,7 +226,7 @@ func TestAccounts_MeOnlyHasTheUsersOwnMemberships(t *testing.T) {
 		t.Fatalf("memberships = %+v, want %+v", me.Memberships, want)
 	}
 
-	if _, err := app.NewAccounts(store, tenancyCatalog(t)).Me(t.Context(), app.Current{UserID: "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f0003"}); !errors.Is(err, domain.ErrSessionInvalid()) {
+	if _, err := usecases.NewAccounts(store, tenancyCatalog(t)).Me(t.Context(), usecases.Current{UserID: "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f0003"}); !errors.Is(err, domain.ErrSessionInvalid()) {
 		t.Fatalf("a user that no longer exists: %v, want auth.session_invalid", err)
 	}
 }
@@ -234,7 +234,7 @@ func TestAccounts_MeOnlyHasTheUsersOwnMemberships(t *testing.T) {
 func TestAccounts_CurrentTenant(t *testing.T) {
 	t.Parallel()
 
-	accounts := app.NewAccounts(newMemStore(), tenancyCatalog(t))
+	accounts := usecases.NewAccounts(newMemStore(), tenancyCatalog(t))
 	if _, err := accounts.CurrentTenant(t.Context()); !errors.Is(err, domain.ErrTenantForbidden()) {
 		t.Fatalf("without a principal: %v", err)
 	}

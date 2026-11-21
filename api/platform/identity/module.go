@@ -77,12 +77,12 @@ type Deps struct {
 
 // Provider is the identity provider: login and, for the second factor, its MFA API.
 type Provider interface {
-	app.IdentityProvider
-	app.MFAProvider
+	usecases.IdentityProvider
+	usecases.MFAProvider
 }
 
-// InvitationSender delivers an invitation's link (app.InvitationSender).
-type InvitationSender = app.InvitationSender
+// InvitationSender delivers an invitation's link (usecases.InvitationSender).
+type InvitationSender = usecases.InvitationSender
 
 // NewInvitationSender returns the SMTP sender when SMTP is configured (always, outside
 // development: config refuses to start without it), and otherwise the development one,
@@ -105,10 +105,10 @@ func NewInvitationSender(env config.Environment, smtp config.SMTP, tel *telemetr
 // Module wires the identity module.
 type Module struct {
 	handler  *identityhttp.Handler
-	sessions *app.Sessions
-	tenancy  *app.Tenancy
+	sessions *usecases.Sessions
+	tenancy  *usecases.Tenancy
 	authz    *authz.Authorizer
-	store    app.Store
+	store    usecases.Store
 	catalog  *authz.Catalog
 	limiter  ratelimit.Limiter
 	logger   *slog.Logger
@@ -147,26 +147,26 @@ func New(deps Deps) (*Module, error) {
 	store := postgres.NewStore(deps.DB)
 	policy := domain.SessionPolicy{IdleTTL: deps.Auth.SessionIdleTTL, AbsoluteTTL: deps.Auth.SessionAbsoluteTTL}
 
-	login := app.NewLogin(idp, store, codec, app.LoginConfig{
+	login := usecases.NewLogin(idp, store, codec, usecases.LoginConfig{
 		FrontendOrigin: deps.Web.FrontendOrigin, Policy: policy, Metrics: deps.Telemetry.Metrics(),
 	}, deps.Now)
-	sessions := app.NewSessions(idp, store, policy, deps.Now)
-	authorizer := authz.NewAuthorizer(app.NewDenialAuditor(store), deps.Telemetry.Metrics(), deps.Logger)
+	sessions := usecases.NewSessions(idp, store, policy, deps.Now)
+	authorizer := authz.NewAuthorizer(usecases.NewDenialAuditor(store), deps.Telemetry.Metrics(), deps.Logger)
 	tenantStore := postgres.NewTenantStore(deps.DB)
-	members := app.NewMembers(tenantStore, authorizer, deps.Catalog)
+	members := usecases.NewMembers(tenantStore, authorizer, deps.Catalog)
 	return &Module{
 		handler: identityhttp.NewHandler(identityhttp.UseCases{
-			Login: login, Sessions: sessions, Accounts: app.NewAccounts(store, deps.Catalog),
-			MFA:     app.NewMFA(idp, idp.Name(), store, deps.Catalog, deps.MFARateLimiter, deps.Telemetry.Metrics(), deps.Now),
-			Tenants: app.NewTenants(tenantStore, authorizer, deps.Tenancy.MaxTenantsPerUser, deps.TenantRateLimiter),
+			Login: login, Sessions: sessions, Accounts: usecases.NewAccounts(store, deps.Catalog),
+			MFA:     usecases.NewMFA(idp, idp.Name(), store, deps.Catalog, deps.MFARateLimiter, deps.Telemetry.Metrics(), deps.Now),
+			Tenants: usecases.NewTenants(tenantStore, authorizer, deps.Tenancy.MaxTenantsPerUser, deps.TenantRateLimiter),
 			Members: members,
-			Invitations: app.NewInvitations(tenantStore, authorizer, members, deps.InvitationSender, app.InvitationsConfig{
+			Invitations: usecases.NewInvitations(tenantStore, authorizer, members, deps.InvitationSender, usecases.InvitationsConfig{
 				FrontBaseURL: deps.Web.FrontBaseURL, InviteLimiter: deps.InvitationRateLimiter, AcceptLimiter: deps.AcceptRateLimiter,
 				Metrics: deps.Telemetry.Metrics(),
 			}, deps.Logger, deps.Now),
 		}, deps.Logger),
 		sessions: sessions,
-		tenancy:  app.NewTenancy(store, deps.Catalog, deps.Now),
+		tenancy:  usecases.NewTenancy(store, deps.Catalog, deps.Now),
 		authz:    authorizer,
 		store:    store,
 		catalog:  deps.Catalog,
@@ -193,7 +193,7 @@ func (m *Module) TenantMiddleware() httpx.Middleware {
 // lacks (design, section 8): those members act with no permissions. It never stops the
 // start-up, not even when the query fails.
 func (m *Module) CheckRolesInUse(ctx context.Context) {
-	unknown, err := app.UnknownRolesInUse(ctx, m.store, m.catalog)
+	unknown, err := usecases.UnknownRolesInUse(ctx, m.store, m.catalog)
 	if err != nil {
 		m.logger.ErrorContext(ctx, "check roles in use", slog.Any("error", err))
 		return

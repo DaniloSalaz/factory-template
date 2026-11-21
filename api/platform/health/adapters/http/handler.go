@@ -14,12 +14,12 @@ var _ healthapi.StrictServerInterface = (*Handler)(nil)
 // Handler implements the generated strict server interface. Errors are returned, not
 // written: the strict server hands them to httpx.WriteProblem.
 type Handler struct {
-	readiness *app.CheckReadiness
+	readiness *usecases.CheckReadiness
 	version   string
 }
 
 // NewHandler builds a Handler; version is the running build.
-func NewHandler(readiness *app.CheckReadiness, version string) *Handler {
+func NewHandler(readiness *usecases.CheckReadiness, version string) *Handler {
 	return &Handler{readiness: readiness, version: version}
 }
 

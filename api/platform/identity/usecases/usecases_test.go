@@ -1,4 +1,4 @@
-package app_test
+package usecases_test
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 	"chaskicode.dev/saas/platform/pii"
 )
 
-// memStore is an in-memory app.Store. A transaction works on a copy of the state that
+// memStore is an in-memory usecases.Store. A transaction works on a copy of the state that
 // replaces it only on success, so a failed transaction leaves no writes behind.
 type memStore struct {
 	now func() time.Time
@@ -28,9 +28,9 @@ type memStore struct {
 	st  state
 	// raceWinner, when set, makes the next CreateUser lose a race: the winner's user and
 	// identity are committed as if by a concurrent login, and CreateUser fails with
-	// app.ErrAlreadyExists, aborting its transaction.
-	raceWinner *app.Authentication
-	committed  *app.Authentication
+	// usecases.ErrAlreadyExists, aborting its transaction.
+	raceWinner *usecases.Authentication
+	committed  *usecases.Authentication
 }
 
 type state struct {
@@ -41,7 +41,7 @@ type state struct {
 	nextID     int
 	rolesInUse []string
 	// memberships by tenant id, then user id.
-	memberships map[string]map[string]app.Membership
+	memberships map[string]map[string]usecases.Membership
 	factors     map[string]memFactor
 	challenges  map[string]memChallenge
 }
@@ -68,7 +68,7 @@ type memUser struct {
 }
 
 type memSession struct {
-	app.NewSession
+	usecases.NewSession
 	revoked bool
 	mfaAt   time.Time
 }
@@ -76,7 +76,7 @@ type memSession struct {
 type memAudit struct {
 	actor  string
 	tenant string
-	app.AuditEvent
+	usecases.AuditEvent
 }
 
 func newMemStore() *memStore {
@@ -95,23 +95,23 @@ func (s state) clone() state {
 	}
 }
 
-func (m *memStore) Anon(ctx context.Context, fn func(context.Context, app.Repo) error) error {
+func (m *memStore) Anon(ctx context.Context, fn func(context.Context, usecases.Repo) error) error {
 	return m.tx(ctx, "", fn)
 }
 
-func (m *memStore) AsUser(ctx context.Context, userID string, fn func(context.Context, app.Repo) error) error {
+func (m *memStore) AsUser(ctx context.Context, userID string, fn func(context.Context, usecases.Repo) error) error {
 	return m.tx(ctx, userID, fn)
 }
 
-func (m *memStore) InTenant(ctx context.Context, p authctx.Principal, fn func(context.Context, app.Repo) error) error {
-	return m.tx(ctx, p.UserID(), func(ctx context.Context, r app.Repo) error {
+func (m *memStore) InTenant(ctx context.Context, p authctx.Principal, fn func(context.Context, usecases.Repo) error) error {
+	return m.tx(ctx, p.UserID(), func(ctx context.Context, r usecases.Repo) error {
 		mr, _ := r.(*memRepo)
 		mr.tenant = p.TenantID()
 		return fn(ctx, mr)
 	})
 }
 
-func (m *memStore) tx(ctx context.Context, actor string, fn func(context.Context, app.Repo) error) error {
+func (m *memStore) tx(ctx context.Context, actor string, fn func(context.Context, usecases.Repo) error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	r := &memRepo{st: m.st.clone(), actor: actor, store: m}
@@ -146,28 +146,28 @@ func (r *memRepo) id(prefix string) string {
 	return fmt.Sprintf("%s-%d", prefix, r.st.nextID)
 }
 
-func (r *memRepo) UserByIdentity(_ context.Context, provider, subject string) (app.User, bool, error) {
+func (r *memRepo) UserByIdentity(_ context.Context, provider, subject string) (usecases.User, bool, error) {
 	id, ok := r.st.identities[provider+"|"+subject]
 	if !ok {
-		return app.User{}, false, nil
+		return usecases.User{}, false, nil
 	}
 	u := r.st.users[id]
-	return app.User{ID: id, Email: u.email, Disabled: u.disabled}, true, nil
+	return usecases.User{ID: id, Email: u.email, Disabled: u.disabled}, true, nil
 }
 
-func (r *memRepo) UserByEmail(_ context.Context, email pii.Email) (app.User, bool, error) {
+func (r *memRepo) UserByEmail(_ context.Context, email pii.Email) (usecases.User, bool, error) {
 	for id, u := range r.st.users {
 		if strings.EqualFold(u.email.Reveal(), email.Reveal()) {
-			return app.User{ID: id, Email: u.email, Disabled: u.disabled}, true, nil
+			return usecases.User{ID: id, Email: u.email, Disabled: u.disabled}, true, nil
 		}
 	}
-	return app.User{}, false, nil
+	return usecases.User{}, false, nil
 }
 
 func (r *memRepo) CreateUser(_ context.Context, email pii.Email, verified bool, _ string) (string, error) {
 	if w := r.store.raceWinner; w != nil {
 		r.store.raceWinner, r.store.committed = nil, w
-		return "", fmt.Errorf("create user: %w", app.ErrAlreadyExists())
+		return "", fmt.Errorf("create user: %w", usecases.ErrAlreadyExists())
 	}
 	id := r.id("user")
 	r.st.users[id] = memUser{email: email, verified: verified}
@@ -193,16 +193,16 @@ func (r *memRepo) SetLastLogin(_ context.Context, userID string) error {
 	return nil
 }
 
-func (r *memRepo) CreateSession(_ context.Context, s app.NewSession) (string, error) {
+func (r *memRepo) CreateSession(_ context.Context, s usecases.NewSession) (string, error) {
 	id := r.id("session")
 	r.st.sessions[id] = memSession{NewSession: s}
 	return id, nil
 }
 
-func (r *memRepo) SessionByHash(_ context.Context, hash []byte) (app.Session, bool, error) {
+func (r *memRepo) SessionByHash(_ context.Context, hash []byte) (usecases.Session, bool, error) {
 	for id, s := range r.st.sessions {
 		if string(s.TokenHash) == string(hash) {
-			return app.Session{
+			return usecases.Session{
 				ID: id, UserID: s.UserID, MFAAuthTime: s.mfaAt, ProviderSessionID: s.ProviderSessionID,
 				State: domain.SessionState{
 					LastSeenAt: s.Now, IdleExpiresAt: s.IdleExpiresAt, AbsoluteExpiresAt: s.AbsoluteExpiresAt,
@@ -211,7 +211,7 @@ func (r *memRepo) SessionByHash(_ context.Context, hash []byte) (app.Session, bo
 			}, true, nil
 		}
 	}
-	return app.Session{}, false, nil
+	return usecases.Session{}, false, nil
 }
 
 func (r *memRepo) TouchSession(_ context.Context, id string, now, idle time.Time) error {
@@ -250,7 +250,7 @@ func (r *memRepo) RevokeUserSessions(_ context.Context, userID string) (int64, e
 	return n, nil
 }
 
-func (r *memRepo) RecordAudit(_ context.Context, e app.AuditEvent) error {
+func (r *memRepo) RecordAudit(_ context.Context, e usecases.AuditEvent) error {
 	r.st.audit = append(r.st.audit, memAudit{actor: r.actor, AuditEvent: e})
 	return nil
 }
@@ -270,11 +270,11 @@ func (r *memRepo) IdentitySubject(_ context.Context, userID, provider string) (s
 	return "", false, nil
 }
 
-func (r *memRepo) MFAFactors(context.Context) ([]app.MFAFactor, error) {
-	var out []app.MFAFactor
+func (r *memRepo) MFAFactors(context.Context) ([]usecases.MFAFactor, error) {
+	var out []usecases.MFAFactor
 	for _, id := range slices.Sorted(maps.Keys(r.st.factors)) {
 		if f := r.st.factors[id]; f.user == r.actor {
-			out = append(out, app.MFAFactor{ID: id, Provider: "fake", ProviderFactorID: f.providerID, VerifiedAt: f.verifiedAt, CreatedAt: f.createdAt})
+			out = append(out, usecases.MFAFactor{ID: id, Provider: "fake", ProviderFactorID: f.providerID, VerifiedAt: f.verifiedAt, CreatedAt: f.createdAt})
 		}
 	}
 	return out, nil
@@ -290,17 +290,17 @@ func (r *memRepo) liveSession(tokenHash []byte) (string, memSession, error) {
 	return "", memSession{}, apperr.Unauthorized("auth.session_invalid", "invalid session")
 }
 
-func (r *memRepo) addChallenge(sessionID, factorID, providerID string) app.Challenge {
+func (r *memRepo) addChallenge(sessionID, factorID, providerID string) usecases.Challenge {
 	id := r.id("challenge")
 	exp := r.store.now().Add(5 * time.Minute)
 	r.st.challenges[id] = memChallenge{factor: factorID, session: sessionID, providerID: providerID, expiresAt: exp}
-	return app.Challenge{ID: id, FactorID: factorID, ExpiresAt: exp}
+	return usecases.Challenge{ID: id, FactorID: factorID, ExpiresAt: exp}
 }
 
-func (r *memRepo) RegisterMFAFactor(_ context.Context, tokenHash []byte, _, providerFactorID, providerChallengeID string) (app.Challenge, error) {
+func (r *memRepo) RegisterMFAFactor(_ context.Context, tokenHash []byte, _, providerFactorID, providerChallengeID string) (usecases.Challenge, error) {
 	sid, _, err := r.liveSession(tokenHash)
 	if err != nil {
-		return app.Challenge{}, err
+		return usecases.Challenge{}, err
 	}
 	pending := 0
 	for _, f := range r.st.factors {
@@ -309,60 +309,60 @@ func (r *memRepo) RegisterMFAFactor(_ context.Context, tokenHash []byte, _, prov
 		}
 	}
 	if pending >= 3 {
-		return app.Challenge{}, apperr.Conflict("mfa.too_many_pending", "too many")
+		return usecases.Challenge{}, apperr.Conflict("mfa.too_many_pending", "too many")
 	}
 	fid := r.id("factor")
 	r.st.factors[fid] = memFactor{user: r.actor, providerID: providerFactorID, createdAt: r.store.now()}
 	return r.addChallenge(sid, fid, providerChallengeID), nil
 }
 
-func (r *memRepo) CreateMFAChallenge(_ context.Context, tokenHash []byte, factorID, providerChallengeID string) (app.Challenge, error) {
+func (r *memRepo) CreateMFAChallenge(_ context.Context, tokenHash []byte, factorID, providerChallengeID string) (usecases.Challenge, error) {
 	sid, _, err := r.liveSession(tokenHash)
 	if err != nil {
-		return app.Challenge{}, err
+		return usecases.Challenge{}, err
 	}
 	if f, ok := r.st.factors[factorID]; !ok || f.user != r.actor {
-		return app.Challenge{}, apperr.NotFound("mfa.factor_not_found", "not found")
+		return usecases.Challenge{}, apperr.NotFound("mfa.factor_not_found", "not found")
 	}
 	return r.addChallenge(sid, factorID, providerChallengeID), nil
 }
 
-func (r *memRepo) ConsumeMFAChallenge(_ context.Context, tokenHash []byte, challengeID string) (app.ConsumedChallenge, error) {
+func (r *memRepo) ConsumeMFAChallenge(_ context.Context, tokenHash []byte, challengeID string) (usecases.ConsumedChallenge, error) {
 	sid, _, err := r.liveSession(tokenHash)
 	if err != nil {
-		return app.ConsumedChallenge{}, apperr.NotFound("mfa.challenge_not_found", "not found")
+		return usecases.ConsumedChallenge{}, apperr.NotFound("mfa.challenge_not_found", "not found")
 	}
 	c, ok := r.st.challenges[challengeID]
 	if !ok || c.session != sid {
-		return app.ConsumedChallenge{}, apperr.NotFound("mfa.challenge_not_found", "not found")
+		return usecases.ConsumedChallenge{}, apperr.NotFound("mfa.challenge_not_found", "not found")
 	}
 	if c.consumed {
-		return app.ConsumedChallenge{}, apperr.Conflict("mfa.challenge_used", "used")
+		return usecases.ConsumedChallenge{}, apperr.Conflict("mfa.challenge_used", "used")
 	}
 	if !r.store.now().Before(c.expiresAt) {
-		return app.ConsumedChallenge{}, apperr.Conflict("mfa.challenge_expired", "expired")
+		return usecases.ConsumedChallenge{}, apperr.Conflict("mfa.challenge_expired", "expired")
 	}
 	c.consumed = true
 	r.st.challenges[challengeID] = c
-	return app.ConsumedChallenge{ProviderChallengeID: c.providerID, FactorID: c.factor, FactorVerified: !r.st.factors[c.factor].verifiedAt.IsZero()}, nil
+	return usecases.ConsumedChallenge{ProviderChallengeID: c.providerID, FactorID: c.factor, FactorVerified: !r.st.factors[c.factor].verifiedAt.IsZero()}, nil
 }
 
-func (r *memRepo) MarkSessionMFA(_ context.Context, tokenHash []byte, challengeID string, codeHash, newTokenHash []byte) (app.MarkedSession, error) {
+func (r *memRepo) MarkSessionMFA(_ context.Context, tokenHash []byte, challengeID string, codeHash, newTokenHash []byte) (usecases.MarkedSession, error) {
 	c, ok := r.st.challenges[challengeID]
 	if !ok || !c.consumed {
-		return app.MarkedSession{}, apperr.NotFound("mfa.challenge_not_found", "not found")
+		return usecases.MarkedSession{}, apperr.NotFound("mfa.challenge_not_found", "not found")
 	}
 	if c.completed {
-		return app.MarkedSession{}, apperr.Conflict("mfa.challenge_used", "used")
+		return usecases.MarkedSession{}, apperr.Conflict("mfa.challenge_used", "used")
 	}
 	sid, sess, err := r.liveSession(tokenHash)
 	if err != nil || sid != c.session {
-		return app.MarkedSession{}, apperr.Unauthorized("auth.session_invalid", "invalid session")
+		return usecases.MarkedSession{}, apperr.Unauthorized("auth.session_invalid", "invalid session")
 	}
 	now := r.store.now()
 	f := r.st.factors[c.factor]
 	if f.lastCode == string(codeHash) && now.Sub(f.lastAt) < 10*time.Minute {
-		return app.MarkedSession{}, apperr.Conflict("mfa.code_reused", "reused")
+		return usecases.MarkedSession{}, apperr.Conflict("mfa.code_reused", "reused")
 	}
 	first := f.verifiedAt.IsZero()
 	if first {
@@ -378,7 +378,7 @@ func (r *memRepo) MarkSessionMFA(_ context.Context, tokenHash []byte, challengeI
 	next.TokenHash = newTokenHash
 	newID := r.id("session")
 	r.st.sessions[newID] = next
-	return app.MarkedSession{SessionID: newID, MFAAuthTime: now, AbsoluteExpiresAt: sess.AbsoluteExpiresAt, FactorID: c.factor, FirstVerification: first}, nil
+	return usecases.MarkedSession{SessionID: newID, MFAAuthTime: now, AbsoluteExpiresAt: sess.AbsoluteExpiresAt, FactorID: c.factor, FirstVerification: first}, nil
 }
 
 func (r *memRepo) RemoveMFAFactor(_ context.Context, factorID string) (string, error) {
@@ -390,7 +390,7 @@ func (r *memRepo) RemoveMFAFactor(_ context.Context, factorID string) (string, e
 	return f.providerID, nil
 }
 
-func (r *memRepo) RecordTenantAudit(_ context.Context, tenantID string, e app.AuditEvent) error {
+func (r *memRepo) RecordTenantAudit(_ context.Context, tenantID string, e usecases.AuditEvent) error {
 	if r.tenant == "" || tenantID != r.tenant {
 		return errors.New("record_audit: TN030/TN031")
 	}
@@ -402,37 +402,37 @@ func (r *memRepo) RolesInUse(context.Context) ([]string, error) {
 	return slices.Clone(r.st.rolesInUse), nil
 }
 
-func (r *memRepo) UserByID(_ context.Context, id string) (app.Profile, bool, error) {
+func (r *memRepo) UserByID(_ context.Context, id string) (usecases.Profile, bool, error) {
 	u, ok := r.st.users[id]
 	if !ok {
-		return app.Profile{}, false, nil
+		return usecases.Profile{}, false, nil
 	}
-	return app.Profile{ID: id, Email: u.email}, true, nil
+	return usecases.Profile{ID: id, Email: u.email}, true, nil
 }
 
-func (r *memRepo) MembershipsForUser(context.Context) ([]app.TenantMembership, error) {
-	var out []app.TenantMembership
+func (r *memRepo) MembershipsForUser(context.Context) ([]usecases.TenantMembership, error) {
+	var out []usecases.TenantMembership
 	for _, tenant := range slices.Sorted(maps.Keys(r.st.memberships)) {
 		if m, ok := r.st.memberships[tenant][r.actor]; ok {
 			status := "active"
 			if !m.TenantActive {
 				status = "suspended"
 			}
-			out = append(out, app.TenantMembership{TenantID: tenant, TenantStatus: status, Role: m.Role})
+			out = append(out, usecases.TenantMembership{TenantID: tenant, TenantStatus: status, Role: m.Role})
 		}
 	}
 	return out, nil
 }
 
-func (r *memRepo) TenantByID(_ context.Context, id string) (app.Tenant, bool, error) {
+func (r *memRepo) TenantByID(_ context.Context, id string) (usecases.Tenant, bool, error) {
 	// Like RLS: only the transaction's own tenant is visible.
 	if r.tenant == "" || id != r.tenant {
-		return app.Tenant{}, false, nil
+		return usecases.Tenant{}, false, nil
 	}
-	return app.Tenant{ID: id, Slug: "slug-" + id[:4], Name: "Tenant " + id[:4]}, true, nil
+	return usecases.Tenant{ID: id, Slug: "slug-" + id[:4], Name: "Tenant " + id[:4]}, true, nil
 }
 
-func (r *memRepo) Membership(_ context.Context, tenantID string) (app.Membership, bool, error) {
+func (r *memRepo) Membership(_ context.Context, tenantID string) (usecases.Membership, bool, error) {
 	m, ok := r.st.memberships[tenantID][r.actor]
 	return m, ok, nil
 }
@@ -440,8 +440,8 @@ func (r *memRepo) Membership(_ context.Context, tenantID string) (app.Membership
 type fixture struct {
 	idp      *fakeidp.Provider
 	store    *memStore
-	login    *app.Login
-	sessions *app.Sessions
+	login    *usecases.Login
+	sessions *usecases.Sessions
 	now      time.Time
 }
 
@@ -455,13 +455,13 @@ func newFixture(t *testing.T) *fixture {
 	clock := func() time.Time { return f.now }
 	f.store.now = clock
 	policy := domain.SessionPolicy{IdleTTL: time.Hour, AbsoluteTTL: 24 * time.Hour}
-	f.login = app.NewLogin(f.idp, f.store, codec, app.LoginConfig{FrontendOrigin: front, Policy: policy}, clock)
-	f.sessions = app.NewSessions(f.idp, f.store, policy, clock)
+	f.login = usecases.NewLogin(f.idp, f.store, codec, usecases.LoginConfig{FrontendOrigin: front, Policy: policy}, clock)
+	f.sessions = usecases.NewSessions(f.idp, f.store, policy, clock)
 	return f
 }
 
-func person(n int) app.Authentication {
-	return app.Authentication{
+func person(n int) usecases.Authentication {
+	return usecases.Authentication{
 		Subject: fmt.Sprintf("sub-%d", n), Email: pii.Email(fmt.Sprintf("p%d@example.test", n)), EmailVerified: true,
 		SessionID: fmt.Sprintf("sid-%d", n), Method: "Password",
 		AuthTime: time.Unix(1_799_999_990, 0),
@@ -469,14 +469,14 @@ func person(n int) app.Authentication {
 }
 
 // complete runs Start and Complete for authn, with previous as the browser's token.
-func (f *fixture) complete(t *testing.T, authn app.Authentication, previous string) (app.Completed, error) {
+func (f *fixture) complete(t *testing.T, authn usecases.Authentication, previous string) (usecases.Completed, error) {
 	t.Helper()
 	started, err := f.login.Start("/x", nil)
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	f.idp.Authenticate(started.State, "code-"+started.State, authn)
-	return f.login.Complete(t.Context(), app.Callback{
+	return f.login.Complete(t.Context(), usecases.Callback{
 		State: started.State, IntentValue: started.Value, Code: "code-" + started.State, PreviousToken: previous,
 	})
 }
@@ -509,7 +509,7 @@ func TestComplete_NewUser(t *testing.T) {
 		}
 	}
 	last := st.audit[len(st.audit)-1]
-	if last.Action != app.AuditLogin || last.actor == "" {
+	if last.Action != usecases.AuditLogin || last.actor == "" {
 		t.Fatalf("audit = %+v, want auth.login by the user", last)
 	}
 }
@@ -520,27 +520,27 @@ func TestComplete_RejectionsWriteOnlyTheAudit(t *testing.T) {
 	tests := []struct {
 		name   string
 		setup  func(t *testing.T, f *fixture)
-		authn  func() app.Authentication
+		authn  func() usecases.Authentication
 		code   string
 		action string
 	}{
 		{
 			name:   "impersonation",
-			authn:  func() app.Authentication { a := person(1); a.Impersonated = true; return a },
+			authn:  func() usecases.Authentication { a := person(1); a.Impersonated = true; return a },
 			code:   "auth.impersonation_refused",
-			action: app.AuditLoginFailed,
+			action: usecases.AuditLoginFailed,
 		},
 		{
 			name:   "authentication older than the attempt",
-			authn:  func() app.Authentication { a := person(1); a.AuthTime = time.Unix(1_800_000_000-61, 0); return a },
+			authn:  func() usecases.Authentication { a := person(1); a.AuthTime = time.Unix(1_800_000_000-61, 0); return a },
 			code:   "auth.stale_authentication",
-			action: app.AuditLoginFailed,
+			action: usecases.AuditLoginFailed,
 		},
 		{
 			name:   "unverified email",
-			authn:  func() app.Authentication { a := person(1); a.EmailVerified = false; return a },
+			authn:  func() usecases.Authentication { a := person(1); a.EmailVerified = false; return a },
 			code:   "auth.email_unverified",
-			action: app.AuditLoginFailed,
+			action: usecases.AuditLoginFailed,
 		},
 		{
 			name: "email already used by another user",
@@ -550,9 +550,9 @@ func TestComplete_RejectionsWriteOnlyTheAudit(t *testing.T) {
 					t.Fatal(err)
 				}
 			},
-			authn:  func() app.Authentication { a := person(1); a.Email = person(9).Email; return a },
+			authn:  func() usecases.Authentication { a := person(1); a.Email = person(9).Email; return a },
 			code:   "auth.email_in_use",
-			action: app.AuditEmailInUse,
+			action: usecases.AuditEmailInUse,
 		},
 	}
 	for _, tc := range tests {
@@ -616,7 +616,7 @@ func TestComplete_DisabledUser(t *testing.T) {
 	_, err := f.complete(t, person(1), "")
 	wantCode(t, err, "auth.user_disabled")
 	after := f.store.snapshot()
-	if len(after.sessions) != len(before.sessions) || after.audit[len(after.audit)-1].Action != app.AuditLoginFailed {
+	if len(after.sessions) != len(before.sessions) || after.audit[len(after.audit)-1].Action != usecases.AuditLoginFailed {
 		t.Fatalf("a disabled user must leave only auth.login_failed: %+v", after.audit[len(before.audit):])
 	}
 }
@@ -715,7 +715,7 @@ func TestComplete_TruncatesTheUserAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.idp.Authenticate(started.State, "c", person(1))
-	if _, err := f.login.Complete(t.Context(), app.Callback{
+	if _, err := f.login.Complete(t.Context(), usecases.Callback{
 		State: started.State, IntentValue: started.Value, Code: "c", UserAgent: strings.Repeat("x", 10_000),
 	}); err != nil {
 		t.Fatal(err)
@@ -735,16 +735,16 @@ func TestComplete_IntentAndProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = f.login.Complete(t.Context(), app.Callback{State: started.State, IntentValue: "", Code: "c"})
+	_, err = f.login.Complete(t.Context(), usecases.Callback{State: started.State, IntentValue: "", Code: "c"})
 	wantCode(t, err, "auth.intent_invalid")
 
-	_, err = f.login.Complete(t.Context(), app.Callback{State: started.State, IntentValue: started.Value, ProviderError: "access_denied"})
+	_, err = f.login.Complete(t.Context(), usecases.Callback{State: started.State, IntentValue: started.Value, ProviderError: "access_denied"})
 	wantCode(t, err, "auth.provider_error")
 
 	// A code issued for another state does not match this intent's PKCE verifier.
 	other, _ := f.login.Start("/", nil)
 	f.idp.Authenticate(other.State, "stolen", person(1))
-	_, err = f.login.Complete(t.Context(), app.Callback{State: started.State, IntentValue: started.Value, Code: "stolen"})
+	_, err = f.login.Complete(t.Context(), usecases.Callback{State: started.State, IntentValue: started.Value, Code: "stolen"})
 	wantCode(t, err, "auth.code_invalid")
 
 	if _, err := f.login.Start("//evil.com", nil); !errors.Is(err, domain.ErrReturnToInvalid()) {
@@ -787,7 +787,7 @@ func TestSessions(t *testing.T) {
 	if _, err := f.sessions.Authenticate(t.Context(), second.Token); !errors.Is(err, domain.ErrSessionInvalid()) {
 		t.Fatalf("after logout: %v", err)
 	}
-	if a := f.store.snapshot().audit; a[len(a)-1].Action != app.AuditLogout || a[len(a)-1].actor != cur.UserID {
+	if a := f.store.snapshot().audit; a[len(a)-1].Action != usecases.AuditLogout || a[len(a)-1].actor != cur.UserID {
 		t.Fatalf("audit = %+v", a[len(a)-1])
 	}
 }
@@ -804,7 +804,7 @@ func TestUnknownRolesInUse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := app.UnknownRolesInUse(t.Context(), store, catalog)
+	got, err := usecases.UnknownRolesInUse(t.Context(), store, catalog)
 	if err != nil || !slices.Equal(got, []string{"ghost"}) {
 		t.Fatalf("UnknownRolesInUse = %v, %v; want [ghost]", got, err)
 	}

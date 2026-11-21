@@ -1,4 +1,4 @@
-package app_test
+package usecases_test
 
 import (
 	"errors"
@@ -16,7 +16,7 @@ import (
 // mfaFixture is a logged-in user with the MFA use cases over the fakes.
 type mfaFixture struct {
 	*fixture
-	mfa   *app.MFA
+	mfa   *usecases.MFA
 	token string
 	user  string
 }
@@ -38,18 +38,18 @@ func newMFAFixture(t *testing.T, role string) *mfaFixture {
 	clock := func() time.Time { return f.now }
 	m := &mfaFixture{
 		fixture: f,
-		mfa:     app.NewMFA(f.idp, f.idp.Name(), f.store, catalog, ratelimit.NewMemory(5, 15*time.Minute, clock), nil, clock),
+		mfa:     usecases.NewMFA(f.idp, f.idp.Name(), f.store, catalog, ratelimit.NewMemory(5, 15*time.Minute, clock), nil, clock),
 		token:   done.Token,
 	}
 	m.user = m.current(t).UserID
 	if role != "" {
-		f.store.st.memberships = map[string]map[string]app.Membership{"tenant-1": {m.user: {Role: role, TenantActive: true}}}
+		f.store.st.memberships = map[string]map[string]usecases.Membership{"tenant-1": {m.user: {Role: role, TenantActive: true}}}
 	}
 	return m
 }
 
 // current is the session of the fixture's token, as the session middleware reads it.
-func (m *mfaFixture) current(t *testing.T) app.Current {
+func (m *mfaFixture) current(t *testing.T) usecases.Current {
 	t.Helper()
 	cur, err := m.sessions.Authenticate(t.Context(), m.token)
 	if err != nil {
@@ -112,7 +112,7 @@ func TestMFA_EnrollAndVerifyRotatesTheSession(t *testing.T) {
 	if cur := m.current(t); !cur.MFAAuthTime.Equal(rotated.MFAAuthTime) {
 		t.Fatalf("the new session's MFA = %v", cur.MFAAuthTime)
 	}
-	if m.audits(app.AuditMFAEnrolled) != 1 || m.audits(app.AuditMFAVerified) != 1 {
+	if m.audits(usecases.AuditMFAEnrolled) != 1 || m.audits(usecases.AuditMFAVerified) != 1 {
 		t.Fatalf("audit = %+v", m.store.snapshot().audit)
 	}
 }
@@ -133,8 +133,8 @@ func TestMFA_ChallengeIsSingleUseAndExpires(t *testing.T) {
 	if _, err := m.mfa.Verify(t.Context(), m.current(t), ch.ID, "222222"); apperrCode(err) != "mfa.challenge_used" {
 		t.Fatalf("second attempt on the same challenge: %v, want mfa.challenge_used", err)
 	}
-	if m.audits(app.AuditMFAVerifyFailed) != 2 {
-		t.Fatalf("failures audited = %d, want 2", m.audits(app.AuditMFAVerifyFailed))
+	if m.audits(usecases.AuditMFAVerifyFailed) != 2 {
+		t.Fatalf("failures audited = %d, want 2", m.audits(usecases.AuditMFAVerifyFailed))
 	}
 
 	ch, err = m.mfa.Challenge(t.Context(), m.current(t), factor)
@@ -176,8 +176,8 @@ func TestMFA_VerificationIsRateLimited(t *testing.T) {
 	if !errors.Is(err, domain.ErrMFARateLimited(0)) || apperr.KindOf(err) != apperr.KindRateLimited {
 		t.Fatalf("6th attempt: %v, want 429 mfa.rate_limited", err)
 	}
-	if m.audits(app.AuditMFAVerifyLocked) != 1 || m.audits(app.AuditMFAVerifyFailed) != 5 {
-		t.Fatalf("locked = %d, failed = %d", m.audits(app.AuditMFAVerifyLocked), m.audits(app.AuditMFAVerifyFailed))
+	if m.audits(usecases.AuditMFAVerifyLocked) != 1 || m.audits(usecases.AuditMFAVerifyFailed) != 5 {
+		t.Fatalf("locked = %d, failed = %d", m.audits(usecases.AuditMFAVerifyLocked), m.audits(usecases.AuditMFAVerifyFailed))
 	}
 }
 

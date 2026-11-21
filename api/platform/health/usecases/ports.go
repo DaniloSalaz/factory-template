@@ -1,5 +1,5 @@
-// Package app contains the health module's use cases and the ports they depend on.
-package app
+// Package usecases contains the health module's use cases and the ports they depend on.
+package usecases
 
 import "context"
 

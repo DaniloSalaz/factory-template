@@ -1,5 +1,5 @@
-// Package app may check permissions: that is where they belong.
-package app
+// Package usecases may check permissions: that is where they belong.
+package usecases
 
 import "chaskicode.dev/saas/platform/authz"
 

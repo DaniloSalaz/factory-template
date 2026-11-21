@@ -61,7 +61,7 @@ func (b *browser) send(tenant, method, path string, body any) (response, error) 
 }
 
 // signedIn logs a fresh person in and returns them with their browser.
-func (e *env) signedIn() (app.Authentication, *browser) {
+func (e *env) signedIn() (usecases.Authentication, *browser) {
 	e.t.Helper()
 	who := e.person()
 	b := e.browser()
@@ -69,7 +69,7 @@ func (e *env) signedIn() (app.Authentication, *browser) {
 	return who, b
 }
 
-func (e *env) roleIn(tenant string, who app.Authentication) string {
+func (e *env) roleIn(tenant string, who usecases.Authentication) string {
 	e.t.Helper()
 	return e.scalar(`SELECT role FROM memberships m JOIN user_identities i ON i.user_id = m.user_id
 		WHERE m.tenant_id = $1 AND i.subject = $2`, tenant, who.Subject)
@@ -209,8 +209,8 @@ func TestTenants_Rename(t *testing.T) {
 // staff is a tenant with two owners, two admins and a member, each signed in.
 type staff struct {
 	tenant                 string
-	owner, owner2          app.Authentication
-	admin, admin2, member  app.Authentication
+	owner, owner2          usecases.Authentication
+	admin, admin2, member  usecases.Authentication
 	ob, o2b, ab, a2b, mb   *browser
 	ownerID, owner2ID      string
 	adminID, admin2ID, mID string
@@ -226,7 +226,7 @@ func (e *env) staff() staff {
 	s.member, s.mb = e.signedIn()
 	// In this order, which is the order of their memberships.
 	for _, m := range []struct {
-		who  app.Authentication
+		who  usecases.Authentication
 		role string
 	}{{s.owner, "owner"}, {s.owner2, "owner"}, {s.admin, "admin"}, {s.admin2, "admin"}, {s.member, "member"}} {
 		e.member(m.who, s.tenant, m.role)

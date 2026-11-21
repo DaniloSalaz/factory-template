@@ -21,7 +21,7 @@ const TenantHeader = "X-Tenant-ID"
 // httpx.RouteSecurity did not run (a wiring bug). It runs after SessionMiddleware and
 // puts the authctx.Principal in the context and tenant_id in the logs, the access
 // record included (design, 5.4.2 to 5.4.4).
-func TenantMiddleware(tenancy *app.Tenancy, metrics *telemetry.Metrics, logger *slog.Logger) httpx.Middleware {
+func TenantMiddleware(tenancy *usecases.Tenancy, metrics *telemetry.Metrics, logger *slog.Logger) httpx.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if sec, ok := httpx.SecurityFrom(r.Context()); ok && !sec.Tenant {

@@ -1,4 +1,4 @@
-// Package workos implements app.IdentityProvider with WorkOS AuthKit, and app.MFAProvider
+// Package workos implements usecases.IdentityProvider with WorkOS AuthKit, and usecases.MFAProvider
 // with its MFA API. It is the only package that imports the WorkOS SDK; none of its
 // types leave it.
 package workos
@@ -54,8 +54,8 @@ type Provider struct {
 }
 
 var (
-	_ app.IdentityProvider = (*Provider)(nil)
-	_ app.MFAProvider      = (*Provider)(nil)
+	_ usecases.IdentityProvider = (*Provider)(nil)
+	_ usecases.MFAProvider      = (*Provider)(nil)
 )
 
 // New builds the provider.
@@ -74,10 +74,10 @@ func New(cfg Config, logger *slog.Logger) *Provider {
 	return &Provider{um: client.UserManagement(), mfa: client.MultiFactorAuth(), redirectURI: cfg.RedirectURI, tracers: cfg.Tracers, logger: logger}
 }
 
-// Name implements app.IdentityProvider.
+// Name implements usecases.IdentityProvider.
 func (*Provider) Name() string { return ProviderName }
 
-// AuthorizationURL implements app.IdentityProvider. max_age=0 forces a fresh
+// AuthorizationURL implements usecases.IdentityProvider. max_age=0 forces a fresh
 // authentication even when AuthKit has a session, so auth_time is always the time of
 // this login (design, 5.2 and 13); WorkOS supports it only with provider=authkit, and
 // SDK v7 has no field for it.
@@ -98,39 +98,39 @@ func (p *Provider) AuthorizationURL(state, codeChallenge string) (string, error)
 	return u.String(), nil
 }
 
-// ExchangeCode implements app.IdentityProvider.
-func (p *Provider) ExchangeCode(ctx context.Context, code, codeVerifier string) (_ app.Authentication, err error) {
+// ExchangeCode implements usecases.IdentityProvider.
+func (p *Provider) ExchangeCode(ctx context.Context, code, codeVerifier string) (_ usecases.Authentication, err error) {
 	ctx, end := telemetry.ClientSpan(ctx, p.tracers, "workos", "authenticate_with_code")
 	defer func() { end(err) }()
 	res, err := p.um.AuthenticateWithCode(ctx, &sdk.UserManagementAuthenticateWithCodeParams{
 		Code: code, CodeVerifier: &codeVerifier,
 	})
 	if err != nil {
-		return app.Authentication{}, classify(err)
+		return usecases.Authentication{}, classify(err)
 	}
 	if res.User == nil || res.User.ID == "" || res.User.Email == "" {
-		return app.Authentication{}, unavailable(errors.New("workos: authentication response without a user"))
+		return usecases.Authentication{}, unavailable(errors.New("workos: authentication response without a user"))
 	}
 
 	claims, names, err := decodeClaims(res.AccessToken)
 	if err != nil {
-		return app.Authentication{}, unavailable(err)
+		return usecases.Authentication{}, unavailable(err)
 	}
 	// Only the names, never the values: whether WorkOS ever starts sending an MFA claim
 	// (design, section 13) shows here.
 	p.logger.DebugContext(ctx, "workos access token claims", slog.Any("claims", names))
 	if claims.Subject != res.User.ID {
-		return app.Authentication{}, unavailable(errors.New("workos: access token sub does not match the user"))
+		return usecases.Authentication{}, unavailable(errors.New("workos: access token sub does not match the user"))
 	}
 	if claims.AuthTime == nil || *claims.AuthTime <= 0 {
-		return app.Authentication{}, unavailable(errors.New("workos: access token without auth_time"))
+		return usecases.Authentication{}, unavailable(errors.New("workos: access token without auth_time"))
 	}
 
 	method := ""
 	if res.AuthenticationMethod != nil {
 		method = string(*res.AuthenticationMethod)
 	}
-	return app.Authentication{
+	return usecases.Authentication{
 		Subject:       res.User.ID,
 		Email:         pii.Email(res.User.Email),
 		EmailVerified: res.User.EmailVerified,
@@ -142,7 +142,7 @@ func (p *Provider) ExchangeCode(ctx context.Context, code, codeVerifier string) 
 	}, nil
 }
 
-// LogoutURL implements app.IdentityProvider. Without return_to, WorkOS sends the
+// LogoutURL implements usecases.IdentityProvider. Without return_to, WorkOS sends the
 // browser to the dashboard's default Sign-out URI.
 func (p *Provider) LogoutURL(providerSessionID string) (string, error) {
 	if providerSessionID == "" {
@@ -151,26 +151,26 @@ func (p *Provider) LogoutURL(providerSessionID string) (string, error) {
 	return p.um.GetLogoutURL(&sdk.UserManagementGetLogoutURLParams{SessionID: providerSessionID}), nil
 }
 
-// EnrollTOTP implements app.MFAProvider. Issuer and account name are left to WorkOS: its
+// EnrollTOTP implements usecases.MFAProvider. Issuer and account name are left to WorkOS: its
 // team name and the user's email.
-func (p *Provider) EnrollTOTP(ctx context.Context, subject string) (_ app.TOTPEnrollment, err error) {
+func (p *Provider) EnrollTOTP(ctx context.Context, subject string) (_ usecases.TOTPEnrollment, err error) {
 	ctx, end := telemetry.ClientSpan(ctx, p.tracers, "workos", "create_auth_factor")
 	defer func() { end(err) }()
 	res, err := p.mfa.CreateUserAuthFactor(ctx, subject, &sdk.MultiFactorAuthCreateUserAuthFactorParams{Type: "totp"})
 	if err != nil {
-		return app.TOTPEnrollment{}, classifyMFA(err)
+		return usecases.TOTPEnrollment{}, classifyMFA(err)
 	}
 	f, c := res.AuthenticationFactor, res.AuthenticationChallenge
 	if f == nil || f.ID == "" || f.TOTP == nil || c == nil || c.ID == "" {
-		return app.TOTPEnrollment{}, unavailable(errors.New("workos: enrollment response without a factor or challenge"))
+		return usecases.TOTPEnrollment{}, unavailable(errors.New("workos: enrollment response without a factor or challenge"))
 	}
-	return app.TOTPEnrollment{
+	return usecases.TOTPEnrollment{
 		FactorID: f.ID, ChallengeID: c.ID,
 		QRCode: pii.Secret(f.TOTP.QrCode), URI: pii.Secret(f.TOTP.URI), Secret: pii.Secret(f.TOTP.Secret),
 	}, nil
 }
 
-// Challenge implements app.MFAProvider.
+// Challenge implements usecases.MFAProvider.
 func (p *Provider) Challenge(ctx context.Context, providerFactorID string) (_ string, err error) {
 	ctx, end := telemetry.ClientSpan(ctx, p.tracers, "workos", "challenge_factor")
 	defer func() { end(err) }()
@@ -184,7 +184,7 @@ func (p *Provider) Challenge(ctx context.Context, providerFactorID string) (_ st
 	return c.ID, nil
 }
 
-// Verify implements app.MFAProvider: only valid: true counts.
+// Verify implements usecases.MFAProvider: only valid: true counts.
 func (p *Provider) Verify(ctx context.Context, providerChallengeID, code string) (_ bool, err error) {
 	ctx, end := telemetry.ClientSpan(ctx, p.tracers, "workos", "verify_challenge")
 	defer func() { end(err) }()
@@ -195,7 +195,7 @@ func (p *Provider) Verify(ctx context.Context, providerChallengeID, code string)
 	return res != nil && res.Valid, nil
 }
 
-// DeleteFactor implements app.MFAProvider. A factor WorkOS no longer has is already gone.
+// DeleteFactor implements usecases.MFAProvider. A factor WorkOS no longer has is already gone.
 func (p *Provider) DeleteFactor(ctx context.Context, providerFactorID string) (err error) {
 	ctx, end := telemetry.ClientSpan(ctx, p.tracers, "workos", "delete_factor")
 	defer func() { end(err) }()

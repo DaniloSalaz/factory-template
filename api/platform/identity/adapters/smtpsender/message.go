@@ -26,7 +26,7 @@ type content struct {
 
 // compose renders msg. Names lose control characters (no line breaks to fake
 // paragraphs) and are cut to maxNameRunes; html/template escapes them in the HTML.
-func compose(tmpl *template.Template, msg app.InvitationMessage) (content, error) {
+func compose(tmpl *template.Template, msg usecases.InvitationMessage) (content, error) {
 	v := view{
 		Inviter: cleanName(msg.InviterName),
 		Tenant:  cleanName(msg.TenantName),

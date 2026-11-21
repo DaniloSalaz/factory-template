@@ -377,7 +377,7 @@ func (b *browser) callback(state, code string) response {
 }
 
 // login runs a whole login as authn and fails the test unless it succeeds.
-func (b *browser) login(authn app.Authentication) {
+func (b *browser) login(authn usecases.Authentication) {
 	b.e.t.Helper()
 	state := b.startLogin("/")
 	code := "code-" + state
@@ -444,12 +444,12 @@ var seq struct {
 }
 
 // person returns a fresh provider identity with a unique email.
-func (e *env) person() app.Authentication {
+func (e *env) person() usecases.Authentication {
 	seq.mu.Lock()
 	seq.n++
 	n := seq.n
 	seq.mu.Unlock()
-	return app.Authentication{
+	return usecases.Authentication{
 		Subject:       fmt.Sprintf("user_%s_%d", strings.ReplaceAll(e.t.Name(), "/", "_"), n),
 		Email:         pii.Email(fmt.Sprintf("u%d.%d@example.test", n, time.Now().UnixNano())),
 		EmailVerified: true, DisplayName: "Test User", SessionID: fmt.Sprintf("session_%d", n), Method: "Password",
@@ -1098,7 +1098,7 @@ func (r response) principal(t *testing.T) principalView {
 	return p
 }
 
-func (e *env) userID(who app.Authentication) string {
+func (e *env) userID(who usecases.Authentication) string {
 	e.t.Helper()
 	return e.scalar(`SELECT user_id::text FROM user_identities WHERE subject = $1`, who.Subject)
 }
@@ -1132,7 +1132,7 @@ func (e *env) tenant() string {
 }
 
 // member makes the user of who a member of tenantID with role.
-func (e *env) member(who app.Authentication, tenantID, role string) {
+func (e *env) member(who usecases.Authentication, tenantID, role string) {
 	e.t.Helper()
 	e.exec(`INSERT INTO memberships (tenant_id, user_id, role)
 		SELECT $1, user_id, $3 FROM user_identities WHERE subject = $2`, tenantID, who.Subject, role)
@@ -1365,13 +1365,13 @@ func TestMFA_VerifyReplacesTheSession(t *testing.T) {
 func TestMFA_CodesAndChallenges(t *testing.T) {
 	e := newEnv(t, options{})
 	// Each case has its own user: the verification quota is per user.
-	withFactor := func(code string) (*browser, app.Authentication, string) {
+	withFactor := func(code string) (*browser, usecases.Authentication, string) {
 		who := e.person()
 		b := e.browser()
 		b.login(who)
 		return b, who, b.enrollAndVerify(code)
 	}
-	failures := func(who app.Authentication) int {
+	failures := func(who usecases.Authentication) int {
 		return e.count(`SELECT count(*) FROM audit_log WHERE action = 'mfa.verify_failed' AND actor_user_id = $1`, e.userID(who))
 	}
 

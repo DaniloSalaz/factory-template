@@ -1,4 +1,4 @@
-package app_test
+package usecases_test
 
 import (
 	"bytes"
@@ -26,7 +26,7 @@ import (
 // member emails, and the share locks taken.
 
 type memInvitation struct {
-	app.Invitation
+	usecases.Invitation
 	tokenHash []byte
 }
 
@@ -37,8 +37,8 @@ func (s *memTenants) invitationsMap() map[string]*memInvitation {
 	return s.invitations
 }
 
-func (r memTenantRepo) TenantByID(_ context.Context, id string) (app.Tenant, bool, error) {
-	return app.Tenant{ID: id, Slug: "acme", Name: "Acme"}, true, nil
+func (r memTenantRepo) TenantByID(_ context.Context, id string) (usecases.Tenant, bool, error) {
+	return usecases.Tenant{ID: id, Slug: "acme", Name: "Acme"}, true, nil
 }
 
 func (r memTenantRepo) ShareLockTenant(_ context.Context, tenantID string) error {
@@ -53,28 +53,28 @@ func (r memTenantRepo) EmailIsMember(_ context.Context, tenantID string, email p
 	return slices.Contains(r.s.memberEmails[tenantID], strings.ToLower(email.Reveal())), nil
 }
 
-func (r memTenantRepo) PendingInvitationByEmail(_ context.Context, tenantID string, email pii.Email) (app.Invitation, bool, error) {
+func (r memTenantRepo) PendingInvitationByEmail(_ context.Context, tenantID string, email pii.Email) (usecases.Invitation, bool, error) {
 	for _, inv := range r.s.invitationsMap() {
 		if inv.TenantID == tenantID && strings.EqualFold(inv.Email.Reveal(), email.Reveal()) &&
 			inv.AcceptedAt.IsZero() && inv.RevokedAt.IsZero() {
 			return inv.Invitation, true, nil
 		}
 	}
-	return app.Invitation{}, false, nil
+	return usecases.Invitation{}, false, nil
 }
 
-func (r memTenantRepo) CreateInvitation(_ context.Context, n app.NewInvitation) (app.Invitation, error) {
+func (r memTenantRepo) CreateInvitation(_ context.Context, n usecases.NewInvitation) (usecases.Invitation, error) {
 	m := r.s.invitationsMap()
 	id := fmt.Sprintf("0190a1b2-c3d4-7e5f-8a9b-%012d", len(m)+1)
-	inv := app.Invitation{ID: id, TenantID: n.TenantID, Email: n.Email, Role: n.Role, InvitedBy: n.InvitedBy, ExpiresAt: n.ExpiresAt}
+	inv := usecases.Invitation{ID: id, TenantID: n.TenantID, Email: n.Email, Role: n.Role, InvitedBy: n.InvitedBy, ExpiresAt: n.ExpiresAt}
 	m[id] = &memInvitation{Invitation: inv, tokenHash: n.TokenHash}
 	return inv, nil
 }
 
-func (r memTenantRepo) InvitationByID(_ context.Context, tenantID, id string) (app.Invitation, bool, error) {
+func (r memTenantRepo) InvitationByID(_ context.Context, tenantID, id string) (usecases.Invitation, bool, error) {
 	inv, ok := r.s.invitationsMap()[id]
 	if !ok || inv.TenantID != tenantID {
-		return app.Invitation{}, false, nil
+		return usecases.Invitation{}, false, nil
 	}
 	return inv.Invitation, true, nil
 }
@@ -90,34 +90,34 @@ func (r memTenantRepo) RevokeInvitation(_ context.Context, id string) error {
 	return nil
 }
 
-func (r memTenantRepo) ListInvitations(_ context.Context, tenantID, after string, limit int) ([]app.Invitation, error) {
-	var out []app.Invitation
+func (r memTenantRepo) ListInvitations(_ context.Context, tenantID, after string, limit int) ([]usecases.Invitation, error) {
+	var out []usecases.Invitation
 	for _, inv := range r.s.invitationsMap() {
 		if inv.TenantID == tenantID && inv.ID > after && inv.AcceptedAt.IsZero() && inv.RevokedAt.IsZero() {
 			out = append(out, inv.Invitation)
 		}
 	}
-	slices.SortFunc(out, func(a, b app.Invitation) int { return strings.Compare(a.ID, b.ID) })
+	slices.SortFunc(out, func(a, b usecases.Invitation) int { return strings.Compare(a.ID, b.ID) })
 	return out[:min(limit, len(out))], nil
 }
 
-func (r memTenantRepo) AcceptInvitation(_ context.Context, tokenHash []byte, _ netip.Prefix) (app.AcceptedInvitation, error) {
+func (r memTenantRepo) AcceptInvitation(_ context.Context, tokenHash []byte, _ netip.Prefix) (usecases.AcceptedInvitation, error) {
 	for _, inv := range r.s.invitationsMap() {
 		if bytes.Equal(inv.tokenHash, tokenHash) {
-			return app.AcceptedInvitation{TenantID: inv.TenantID, Role: inv.Role}, nil
+			return usecases.AcceptedInvitation{TenantID: inv.TenantID, Role: inv.Role}, nil
 		}
 	}
-	return app.AcceptedInvitation{}, domain.ErrInvitationNotFound()
+	return usecases.AcceptedInvitation{}, domain.ErrInvitationNotFound()
 }
 
 // memSender records what it was asked to send, and fails if fail is set.
 type memSender struct {
 	sent     []string // email role link
-	messages []app.InvitationMessage
+	messages []usecases.InvitationMessage
 	fail     error
 }
 
-func (s *memSender) Send(_ context.Context, msg app.InvitationMessage) error {
+func (s *memSender) Send(_ context.Context, msg usecases.InvitationMessage) error {
 	s.sent = append(s.sent, msg.To.Reveal()+" "+msg.Role+" "+msg.Link.Reveal())
 	s.messages = append(s.messages, msg)
 	return s.fail
@@ -152,7 +152,7 @@ func invitationsCatalog(t *testing.T) *authz.Catalog {
 }
 
 type invFixture struct {
-	in     *app.Invitations
+	in     *usecases.Invitations
 	store  *memTenants
 	sender *memSender
 	c      *authz.Catalog
@@ -171,7 +171,7 @@ func newInvFixture(t *testing.T) *invFixture {
 	store.memberEmails = map[string][]string{tenantA: {"member@example.com"}}
 	f := &invFixture{store: store, sender: &memSender{}, c: c, logs: &bytes.Buffer{}, now: time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)}
 	auth := &fakeAuthorizer{}
-	f.in = app.NewInvitations(store, auth, app.NewMembers(store, auth, c), f.sender, app.InvitationsConfig{
+	f.in = usecases.NewInvitations(store, auth, usecases.NewMembers(store, auth, c), f.sender, usecases.InvitationsConfig{
 		FrontBaseURL:  "https://app.example.com/",
 		InviteLimiter: ratelimit.NewMemory(20, time.Hour, nil),
 		AcceptLimiter: ratelimit.NewMemory(10, 15*time.Minute, nil),
@@ -229,7 +229,7 @@ func TestInvitations_Create(t *testing.T) {
 			if !slices.Contains(f.store.calls, "share-lock "+tenantA) {
 				t.Fatalf("calls = %v", f.store.calls)
 			}
-			if len(f.store.audits) != 1 || f.store.audits[0].Action != app.AuditInvitationCreated {
+			if len(f.store.audits) != 1 || f.store.audits[0].Action != usecases.AuditInvitationCreated {
 				t.Fatalf("audits = %+v", f.store.audits)
 			}
 			for _, v := range f.store.audits[0].Metadata {

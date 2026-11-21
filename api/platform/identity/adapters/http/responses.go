@@ -73,7 +73,7 @@ func (resp loggedOut) VisitAuthLogoutAllResponse(w http.ResponseWriter) error { 
 
 // verified sets the cookie of the session that replaced the verified one.
 type verified struct {
-	rotated app.Rotated
+	rotated usecases.Rotated
 }
 
 func (resp verified) VisitVerifyTOTPResponse(w http.ResponseWriter) error {

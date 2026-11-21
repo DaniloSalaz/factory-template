@@ -127,7 +127,7 @@ func (h *Handler) RemoveMember(ctx context.Context, req identityapi.RemoveMember
 	return identityapi.RemoveMember204Response{}, nil
 }
 
-func memberView(m app.Member) (identityapi.Member, error) {
+func memberView(m usecases.Member) (identityapi.Member, error) {
 	id, err := uuid(m.UserID)
 	if err != nil {
 		return identityapi.Member{}, err

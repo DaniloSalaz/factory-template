@@ -33,7 +33,7 @@ type Module struct {
 
 // New wires adapters and use cases.
 func New(deps Deps) *Module {
-	readiness := app.NewCheckReadiness(postgres.NewChecker(deps.DB), readinessTimeout)
+	readiness := usecases.NewCheckReadiness(postgres.NewChecker(deps.DB), readinessTimeout)
 	return &Module{
 		handler: healthhttp.NewHandler(readiness, deps.Version),
 		logger:  deps.Logger,

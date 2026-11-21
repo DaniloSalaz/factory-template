@@ -20,25 +20,25 @@ var _ identityapi.StrictServerInterface = (*Handler)(nil)
 
 // Handler implements the generated strict server interface.
 type Handler struct {
-	login       *app.Login
-	sessions    *app.Sessions
-	accounts    *app.Accounts
-	mfa         *app.MFA
-	tenants     *app.Tenants
-	members     *app.Members
-	invitations *app.Invitations
+	login       *usecases.Login
+	sessions    *usecases.Sessions
+	accounts    *usecases.Accounts
+	mfa         *usecases.MFA
+	tenants     *usecases.Tenants
+	members     *usecases.Members
+	invitations *usecases.Invitations
 	logger      *slog.Logger
 }
 
 // UseCases are the use cases the handler exposes.
 type UseCases struct {
-	Login       *app.Login
-	Sessions    *app.Sessions
-	Accounts    *app.Accounts
-	MFA         *app.MFA
-	Tenants     *app.Tenants
-	Members     *app.Members
-	Invitations *app.Invitations
+	Login       *usecases.Login
+	Sessions    *usecases.Sessions
+	Accounts    *usecases.Accounts
+	MFA         *usecases.MFA
+	Tenants     *usecases.Tenants
+	Members     *usecases.Members
+	Invitations *usecases.Invitations
 }
 
 // NewHandler builds a Handler.
@@ -68,7 +68,7 @@ func (h *Handler) AuthCallback(ctx context.Context, req identityapi.AuthCallback
 	r := requestFrom(ctx)
 	state := deref(req.Params.State)
 	var cookies []*http.Cookie
-	cb := app.Callback{
+	cb := usecases.Callback{
 		State: state, Code: deref(req.Params.Code), ProviderError: deref(req.Params.Error),
 		PreviousToken: cookieValue(r, SessionCookie), UserAgent: r.UserAgent(),
 	}
@@ -92,7 +92,7 @@ func (h *Handler) AuthCallback(ctx context.Context, req identityapi.AuthCallback
 
 // AuthLogout ends the current session (design, 5.5).
 func (h *Handler) AuthLogout(ctx context.Context, _ identityapi.AuthLogoutRequestObject) (identityapi.AuthLogoutResponseObject, error) {
-	cur, ok := app.CurrentFrom(ctx)
+	cur, ok := usecases.CurrentFrom(ctx)
 	if !ok {
 		return nil, domain.ErrSessionInvalid()
 	}
@@ -105,7 +105,7 @@ func (h *Handler) AuthLogout(ctx context.Context, _ identityapi.AuthLogoutReques
 
 // AuthLogoutAll ends every session of the current user.
 func (h *Handler) AuthLogoutAll(ctx context.Context, _ identityapi.AuthLogoutAllRequestObject) (identityapi.AuthLogoutAllResponseObject, error) {
-	cur, ok := app.CurrentFrom(ctx)
+	cur, ok := usecases.CurrentFrom(ctx)
 	if !ok {
 		return nil, domain.ErrSessionInvalid()
 	}
@@ -118,7 +118,7 @@ func (h *Handler) AuthLogoutAll(ctx context.Context, _ identityapi.AuthLogoutAll
 
 // GetMe returns the current user, their memberships and their MFA (design, section 10).
 func (h *Handler) GetMe(ctx context.Context, _ identityapi.GetMeRequestObject) (identityapi.GetMeResponseObject, error) {
-	cur, ok := app.CurrentFrom(ctx)
+	cur, ok := usecases.CurrentFrom(ctx)
 	if !ok {
 		return nil, domain.ErrSessionInvalid()
 	}
@@ -165,7 +165,7 @@ func (h *Handler) GetMe(ctx context.Context, _ identityapi.GetMeRequestObject) (
 
 // EnrollTOTP enrolls a TOTP factor (design, 5.2).
 func (h *Handler) EnrollTOTP(ctx context.Context, _ identityapi.EnrollTOTPRequestObject) (identityapi.EnrollTOTPResponseObject, error) {
-	cur, ok := app.CurrentFrom(ctx)
+	cur, ok := usecases.CurrentFrom(ctx)
 	if !ok {
 		return nil, domain.ErrSessionInvalid()
 	}
@@ -190,7 +190,7 @@ func (h *Handler) EnrollTOTP(ctx context.Context, _ identityapi.EnrollTOTPReques
 
 // CreateMFAChallenge challenges one of the user's factors.
 func (h *Handler) CreateMFAChallenge(ctx context.Context, req identityapi.CreateMFAChallengeRequestObject) (identityapi.CreateMFAChallengeResponseObject, error) {
-	cur, ok := app.CurrentFrom(ctx)
+	cur, ok := usecases.CurrentFrom(ctx)
 	if !ok {
 		return nil, domain.ErrSessionInvalid()
 	}
@@ -210,7 +210,7 @@ func (h *Handler) CreateMFAChallenge(ctx context.Context, req identityapi.Create
 // VerifyTOTP answers a challenge; on success the session is replaced and the browser
 // gets the new cookie.
 func (h *Handler) VerifyTOTP(ctx context.Context, req identityapi.VerifyTOTPRequestObject) (identityapi.VerifyTOTPResponseObject, error) {
-	cur, ok := app.CurrentFrom(ctx)
+	cur, ok := usecases.CurrentFrom(ctx)
 	if !ok {
 		return nil, domain.ErrSessionInvalid()
 	}
@@ -223,7 +223,7 @@ func (h *Handler) VerifyTOTP(ctx context.Context, req identityapi.VerifyTOTPRequ
 
 // RemoveTOTP removes one of the user's factors.
 func (h *Handler) RemoveTOTP(ctx context.Context, req identityapi.RemoveTOTPRequestObject) (identityapi.RemoveTOTPResponseObject, error) {
-	cur, ok := app.CurrentFrom(ctx)
+	cur, ok := usecases.CurrentFrom(ctx)
 	if !ok {
 		return nil, domain.ErrSessionInvalid()
 	}

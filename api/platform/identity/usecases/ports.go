@@ -1,6 +1,6 @@
-// Package app holds the identity module's use cases (login, session check, logout) and
+// Package usecases holds the identity module's use cases (login, session check, logout) and
 // the ports they need. No provider or database type crosses these ports.
-package app
+package usecases
 
 import (
 	"context"

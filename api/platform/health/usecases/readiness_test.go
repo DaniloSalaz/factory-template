@@ -1,4 +1,4 @@
-package app_test
+package usecases_test
 
 import (
 	"context"
@@ -42,7 +42,7 @@ func TestCheckReadiness(t *testing.T) {
 			t.Parallel()
 
 			fake := &fakeDBChecker{err: tc.dbErr}
-			err := app.NewCheckReadiness(fake, time.Second).Execute(t.Context())
+			err := usecases.NewCheckReadiness(fake, time.Second).Execute(t.Context())
 
 			if !fake.called {
 				t.Fatal("DBChecker was not called")

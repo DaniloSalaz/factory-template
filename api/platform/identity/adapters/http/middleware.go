@@ -16,7 +16,7 @@ import (
 // security (a wiring bug) it requires one: a new route cannot forget it. It puts the
 // authctx.User and the session in the context, and user_id in the logs, the access
 // record included.
-func SessionMiddleware(sessions *app.Sessions, logger *slog.Logger) httpx.Middleware {
+func SessionMiddleware(sessions *usecases.Sessions, logger *slog.Logger) httpx.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if sec, ok := httpx.SecurityFrom(r.Context()); ok && !sec.Session {
@@ -37,7 +37,7 @@ func SessionMiddleware(sessions *app.Sessions, logger *slog.Logger) httpx.Middle
 				return
 			}
 			ctx := authctx.WithUser(r.Context(), user)
-			ctx = app.WithCurrent(ctx, cur)
+			ctx = usecases.WithCurrent(ctx, cur)
 			ctx = logx.With(ctx, slog.String("user_id", user.ID()))
 			logx.AddAccessAttrs(ctx, slog.String("user_id", user.ID()))
 			next.ServeHTTP(w, r.WithContext(ctx))

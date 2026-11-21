@@ -11,14 +11,14 @@ import (
 
 const testToken = "not-a-real-invitation-token"
 
-func testMessage(inviter, tenant string) app.InvitationMessage {
-	return app.InvitationMessage{
+func testMessage(inviter, tenant string) usecases.InvitationMessage {
+	return usecases.InvitationMessage{
 		To: pii.Email("ana@example.com"), Link: pii.Secret("https://app.example.com/invite#token=" + testToken),
 		TenantName: tenant, Role: "admin", InviterName: inviter,
 	}
 }
 
-func mustCompose(t *testing.T, msg app.InvitationMessage) content {
+func mustCompose(t *testing.T, msg usecases.InvitationMessage) content {
 	t.Helper()
 	tmpl, err := parseHTML()
 	if err != nil {

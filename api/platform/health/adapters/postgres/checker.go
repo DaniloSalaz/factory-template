@@ -9,9 +9,9 @@ import (
 	"chaskicode.dev/saas/modules/health/app"
 )
 
-var _ app.DBChecker = (*Checker)(nil)
+var _ usecases.DBChecker = (*Checker)(nil)
 
-// Checker implements app.DBChecker with a trivial query.
+// Checker implements usecases.DBChecker with a trivial query.
 type Checker struct {
 	queries healthdb.Querier
 }

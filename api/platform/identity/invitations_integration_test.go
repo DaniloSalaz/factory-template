@@ -22,7 +22,7 @@ type captureSender struct {
 	links map[string][]string // email -> links, oldest first
 }
 
-func (s *captureSender) Send(_ context.Context, msg app.InvitationMessage) error {
+func (s *captureSender) Send(_ context.Context, msg usecases.InvitationMessage) error {
 	email, link := msg.To, msg.Link
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -160,7 +160,7 @@ func TestInvitations_InviteAndAccept(t *testing.T) {
 func TestInvitations_AcceptIsRefused(t *testing.T) {
 	e := newEnv(t, options{})
 	s := e.staff()
-	invited := func(prepare func(inv invitationView, who app.Authentication)) (app.Authentication, *browser, string) {
+	invited := func(prepare func(inv invitationView, who usecases.Authentication)) (usecases.Authentication, *browser, string) {
 		who, b := e.signedIn()
 		inv := s.ob.invite(s.tenant, who.Email, "member")
 		if prepare != nil {
@@ -175,19 +175,19 @@ func TestInvitations_AcceptIsRefused(t *testing.T) {
 		wantProblem(t, other.accept(token), http.StatusForbidden, "invitation.email_mismatch")
 	})
 	t.Run("an unverified email", func(t *testing.T) {
-		_, b, token := invited(func(_ invitationView, who app.Authentication) {
+		_, b, token := invited(func(_ invitationView, who usecases.Authentication) {
 			e.exec(`UPDATE users SET email_verified = false WHERE id = $1`, e.userID(who))
 		})
 		wantProblem(t, b.accept(token), http.StatusForbidden, "invitation.email_mismatch")
 	})
 	t.Run("expired", func(t *testing.T) {
-		_, b, token := invited(func(inv invitationView, _ app.Authentication) {
+		_, b, token := invited(func(inv invitationView, _ usecases.Authentication) {
 			e.expire(inv.ID)
 		})
 		wantProblem(t, b.accept(token), http.StatusConflict, "invitation.expired")
 	})
 	t.Run("revoked", func(t *testing.T) {
-		_, b, token := invited(func(inv invitationView, _ app.Authentication) {
+		_, b, token := invited(func(inv invitationView, _ usecases.Authentication) {
 			if res := s.ob.tenantJSON(s.tenant, http.MethodDelete, "/invitations/"+inv.ID, nil); res.status != http.StatusNoContent {
 				t.Fatalf("revoke: %d %s", res.status, res.body)
 			}

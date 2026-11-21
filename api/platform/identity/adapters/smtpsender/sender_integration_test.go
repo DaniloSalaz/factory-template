@@ -137,8 +137,8 @@ func smtpConfig(m mailpit, mode config.SMTPTLS) config.SMTP {
 	}
 }
 
-func message() app.InvitationMessage {
-	return app.InvitationMessage{
+func message() usecases.InvitationMessage {
+	return usecases.InvitationMessage{
 		To: pii.Email("ana@example.test"), Link: pii.Secret("https://app.example.test/invite#token=" + token),
 		TenantName: `Acme <script>alert("x")</script>`, Role: "admin", InviterName: `Bea <img src=x onerror=alert(1)>`,
 	}

@@ -31,7 +31,7 @@ func TestSend_LogsTheLinkWithTheEmailMasked(t *testing.T) {
 		t.Fatal(err)
 	}
 	const link = "http://localhost:5173/invite#token=abc"
-	msg := app.InvitationMessage{
+	msg := usecases.InvitationMessage{
 		To: pii.Email("ana@example.com"), Link: pii.Secret(link), TenantName: "Acme", Role: "admin", InviterName: "Bea",
 	}
 	if err := s.Send(t.Context(), msg); err != nil {

@@ -23,28 +23,28 @@ import (
 	"chaskicode.dev/saas/platform/pii"
 )
 
-// Store implements app.Store.
+// Store implements usecases.Store.
 type Store struct {
 	db *db.DB
 }
 
-var _ app.Store = (*Store)(nil)
+var _ usecases.Store = (*Store)(nil)
 
 // NewStore builds a Store over a database that connects as app_runtime.
 func NewStore(database *db.DB) *Store {
 	return &Store{db: database}
 }
 
-// Anon implements app.Store with db.WithAnonTx.
-func (s *Store) Anon(ctx context.Context, fn func(context.Context, app.Repo) error) error {
+// Anon implements usecases.Store with db.WithAnonTx.
+func (s *Store) Anon(ctx context.Context, fn func(context.Context, usecases.Repo) error) error {
 	err := s.db.WithAnonTx(ctx, func(ctx context.Context, q db.Querier) error {
 		return fn(ctx, repo{q: identitydb.New(q)})
 	})
 	return db.MapError(err)
 }
 
-// AsUser implements app.Store with db.WithUserTx.
-func (s *Store) AsUser(ctx context.Context, userID string, fn func(context.Context, app.Repo) error) error {
+// AsUser implements usecases.Store with db.WithUserTx.
+func (s *Store) AsUser(ctx context.Context, userID string, fn func(context.Context, usecases.Repo) error) error {
 	ctx, err := asUser(ctx, userID)
 	if err != nil {
 		return err
@@ -55,8 +55,8 @@ func (s *Store) AsUser(ctx context.Context, userID string, fn func(context.Conte
 	return db.MapError(err)
 }
 
-// InTenant implements app.Store with db.WithTenantTx.
-func (s *Store) InTenant(ctx context.Context, p authctx.Principal, fn func(context.Context, app.Repo) error) error {
+// InTenant implements usecases.Store with db.WithTenantTx.
+func (s *Store) InTenant(ctx context.Context, p authctx.Principal, fn func(context.Context, usecases.Repo) error) error {
 	err := s.db.WithTenantTx(inTenant(ctx, p), func(ctx context.Context, q db.Querier) error {
 		return fn(ctx, repo{q: identitydb.New(q)})
 	})
@@ -88,26 +88,26 @@ type repo struct {
 	q *identitydb.Queries
 }
 
-func (r repo) UserByIdentity(ctx context.Context, provider, subject string) (app.User, bool, error) {
+func (r repo) UserByIdentity(ctx context.Context, provider, subject string) (usecases.User, bool, error) {
 	row, err := r.q.UserByIdentity(ctx, identitydb.UserByIdentityParams{Provider: provider, Subject: subject})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return app.User{}, false, nil
+		return usecases.User{}, false, nil
 	}
 	if err != nil {
-		return app.User{}, false, fmt.Errorf("user by identity: %w", err)
+		return usecases.User{}, false, fmt.Errorf("user by identity: %w", err)
 	}
-	return app.User{ID: row.ID.String(), Email: pii.Email(row.Email), Disabled: row.Disabled}, true, nil
+	return usecases.User{ID: row.ID.String(), Email: pii.Email(row.Email), Disabled: row.Disabled}, true, nil
 }
 
-func (r repo) UserByEmail(ctx context.Context, email pii.Email) (app.User, bool, error) {
+func (r repo) UserByEmail(ctx context.Context, email pii.Email) (usecases.User, bool, error) {
 	row, err := r.q.UserByEmail(ctx, email.Reveal())
 	if errors.Is(err, pgx.ErrNoRows) {
-		return app.User{}, false, nil
+		return usecases.User{}, false, nil
 	}
 	if err != nil {
-		return app.User{}, false, fmt.Errorf("user by email: %w", err)
+		return usecases.User{}, false, fmt.Errorf("user by email: %w", err)
 	}
-	return app.User{ID: row.ID.String(), Email: pii.Email(row.Email), Disabled: row.Disabled}, true, nil
+	return usecases.User{ID: row.ID.String(), Email: pii.Email(row.Email), Disabled: row.Disabled}, true, nil
 }
 
 func (r repo) CreateUser(ctx context.Context, email pii.Email, emailVerified bool, displayName string) (string, error) {
@@ -157,7 +157,7 @@ func (r repo) SetLastLogin(ctx context.Context, userID string) error {
 	return nil
 }
 
-func (r repo) CreateSession(ctx context.Context, s app.NewSession) (string, error) {
+func (r repo) CreateSession(ctx context.Context, s usecases.NewSession) (string, error) {
 	uid, err := parseUUID(s.UserID)
 	if err != nil {
 		return "", err
@@ -174,15 +174,15 @@ func (r repo) CreateSession(ctx context.Context, s app.NewSession) (string, erro
 	return id.String(), nil
 }
 
-func (r repo) SessionByHash(ctx context.Context, tokenHash []byte) (app.Session, bool, error) {
+func (r repo) SessionByHash(ctx context.Context, tokenHash []byte) (usecases.Session, bool, error) {
 	row, err := r.q.SessionByHash(ctx, tokenHash)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return app.Session{}, false, nil
+		return usecases.Session{}, false, nil
 	}
 	if err != nil {
-		return app.Session{}, false, fmt.Errorf("session by hash: %w", err)
+		return usecases.Session{}, false, fmt.Errorf("session by hash: %w", err)
 	}
-	return app.Session{
+	return usecases.Session{
 		ID: row.ID.String(), UserID: row.UserID.String(),
 		MFAAuthTime: row.MfaAuthTime.Time, ProviderSessionID: row.ProviderSessionID.String,
 		State: domain.SessionState{
@@ -233,7 +233,7 @@ func (r repo) RevokeUserSessions(ctx context.Context, userID string) (int64, err
 	return n, nil
 }
 
-func (r repo) RecordAudit(ctx context.Context, e app.AuditEvent) error {
+func (r repo) RecordAudit(ctx context.Context, e usecases.AuditEvent) error {
 	b, err := auditMetadata(e)
 	if err != nil {
 		return err
@@ -255,7 +255,7 @@ func (r repo) RolesInUse(ctx context.Context) ([]string, error) {
 	return roles, nil
 }
 
-func (r repo) RecordTenantAudit(ctx context.Context, tenantID string, e app.AuditEvent) error {
+func (r repo) RecordTenantAudit(ctx context.Context, tenantID string, e usecases.AuditEvent) error {
 	tid, err := parseUUID(tenantID)
 	if err != nil {
 		return err
@@ -273,29 +273,29 @@ func (r repo) RecordTenantAudit(ctx context.Context, tenantID string, e app.Audi
 	return nil
 }
 
-func (r repo) UserByID(ctx context.Context, id string) (app.Profile, bool, error) {
+func (r repo) UserByID(ctx context.Context, id string) (usecases.Profile, bool, error) {
 	uid, err := parseUUID(id)
 	if err != nil {
-		return app.Profile{}, false, err
+		return usecases.Profile{}, false, err
 	}
 	row, err := r.q.UserByID(ctx, uid)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return app.Profile{}, false, nil
+		return usecases.Profile{}, false, nil
 	}
 	if err != nil {
-		return app.Profile{}, false, fmt.Errorf("user by id: %w", err)
+		return usecases.Profile{}, false, fmt.Errorf("user by id: %w", err)
 	}
-	return app.Profile{ID: row.ID.String(), Email: pii.Email(row.Email), DisplayName: row.DisplayName}, true, nil
+	return usecases.Profile{ID: row.ID.String(), Email: pii.Email(row.Email), DisplayName: row.DisplayName}, true, nil
 }
 
-func (r repo) MembershipsForUser(ctx context.Context) ([]app.TenantMembership, error) {
+func (r repo) MembershipsForUser(ctx context.Context) ([]usecases.TenantMembership, error) {
 	rows, err := r.q.MembershipsForUser(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("memberships for user: %w", err)
 	}
-	out := make([]app.TenantMembership, 0, len(rows))
+	out := make([]usecases.TenantMembership, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, app.TenantMembership{
+		out = append(out, usecases.TenantMembership{
 			TenantID: row.TenantID.String(), TenantSlug: row.TenantSlug, TenantName: row.TenantName,
 			TenantStatus: row.TenantStatus, Role: row.Role,
 		})
@@ -303,19 +303,19 @@ func (r repo) MembershipsForUser(ctx context.Context) ([]app.TenantMembership, e
 	return out, nil
 }
 
-func (r repo) TenantByID(ctx context.Context, id string) (app.Tenant, bool, error) {
+func (r repo) TenantByID(ctx context.Context, id string) (usecases.Tenant, bool, error) {
 	tid, err := parseUUID(id)
 	if err != nil {
-		return app.Tenant{}, false, err
+		return usecases.Tenant{}, false, err
 	}
 	row, err := r.q.TenantByID(ctx, tid)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return app.Tenant{}, false, nil
+		return usecases.Tenant{}, false, nil
 	}
 	if err != nil {
-		return app.Tenant{}, false, fmt.Errorf("tenant by id: %w", err)
+		return usecases.Tenant{}, false, fmt.Errorf("tenant by id: %w", err)
 	}
-	return app.Tenant{ID: row.ID.String(), Slug: row.Slug, Name: row.Name}, true, nil
+	return usecases.Tenant{ID: row.ID.String(), Slug: row.Slug, Name: row.Name}, true, nil
 }
 
 func (r repo) IdentitySubject(ctx context.Context, userID, provider string) (string, bool, error) {
@@ -333,14 +333,14 @@ func (r repo) IdentitySubject(ctx context.Context, userID, provider string) (str
 	return subject, true, nil
 }
 
-func (r repo) MFAFactors(ctx context.Context) ([]app.MFAFactor, error) {
+func (r repo) MFAFactors(ctx context.Context) ([]usecases.MFAFactor, error) {
 	rows, err := r.q.MFAFactorsForUser(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("mfa factors: %w", err)
 	}
-	out := make([]app.MFAFactor, 0, len(rows))
+	out := make([]usecases.MFAFactor, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, app.MFAFactor{
+		out = append(out, usecases.MFAFactor{
 			ID: row.ID.String(), Provider: row.Provider, ProviderFactorID: row.ProviderFactorID,
 			VerifiedAt: row.VerifiedAt.Time, CreatedAt: row.CreatedAt.Time,
 		})
@@ -348,56 +348,56 @@ func (r repo) MFAFactors(ctx context.Context) ([]app.MFAFactor, error) {
 	return out, nil
 }
 
-func (r repo) RegisterMFAFactor(ctx context.Context, tokenHash []byte, provider, providerFactorID, providerChallengeID string) (app.Challenge, error) {
+func (r repo) RegisterMFAFactor(ctx context.Context, tokenHash []byte, provider, providerFactorID, providerChallengeID string) (usecases.Challenge, error) {
 	row, err := r.q.RegisterMFAFactor(ctx, identitydb.RegisterMFAFactorParams{
 		TokenHash: tokenHash, Provider: provider, ProviderFactorID: providerFactorID, ProviderChallengeID: providerChallengeID,
 	})
 	if err != nil {
-		return app.Challenge{}, fmt.Errorf("register mfa factor: %w", err)
+		return usecases.Challenge{}, fmt.Errorf("register mfa factor: %w", err)
 	}
-	return app.Challenge{ID: row.ChallengeID.String(), FactorID: row.FactorID.String(), ExpiresAt: row.ExpiresAt.Time}, nil
+	return usecases.Challenge{ID: row.ChallengeID.String(), FactorID: row.FactorID.String(), ExpiresAt: row.ExpiresAt.Time}, nil
 }
 
-func (r repo) CreateMFAChallenge(ctx context.Context, tokenHash []byte, factorID, providerChallengeID string) (app.Challenge, error) {
+func (r repo) CreateMFAChallenge(ctx context.Context, tokenHash []byte, factorID, providerChallengeID string) (usecases.Challenge, error) {
 	fid, err := parseUUID(factorID)
 	if err != nil {
-		return app.Challenge{}, err
+		return usecases.Challenge{}, err
 	}
 	row, err := r.q.CreateMFAChallenge(ctx, identitydb.CreateMFAChallengeParams{
 		TokenHash: tokenHash, FactorID: fid, ProviderChallengeID: providerChallengeID,
 	})
 	if err != nil {
-		return app.Challenge{}, fmt.Errorf("create mfa challenge: %w", err)
+		return usecases.Challenge{}, fmt.Errorf("create mfa challenge: %w", err)
 	}
-	return app.Challenge{ID: row.ChallengeID.String(), FactorID: factorID, ExpiresAt: row.ExpiresAt.Time}, nil
+	return usecases.Challenge{ID: row.ChallengeID.String(), FactorID: factorID, ExpiresAt: row.ExpiresAt.Time}, nil
 }
 
-func (r repo) ConsumeMFAChallenge(ctx context.Context, tokenHash []byte, challengeID string) (app.ConsumedChallenge, error) {
+func (r repo) ConsumeMFAChallenge(ctx context.Context, tokenHash []byte, challengeID string) (usecases.ConsumedChallenge, error) {
 	cid, err := parseUUID(challengeID)
 	if err != nil {
-		return app.ConsumedChallenge{}, err
+		return usecases.ConsumedChallenge{}, err
 	}
 	row, err := r.q.ConsumeMFAChallenge(ctx, identitydb.ConsumeMFAChallengeParams{TokenHash: tokenHash, ChallengeID: cid})
 	if err != nil {
-		return app.ConsumedChallenge{}, fmt.Errorf("consume mfa challenge: %w", err)
+		return usecases.ConsumedChallenge{}, fmt.Errorf("consume mfa challenge: %w", err)
 	}
-	return app.ConsumedChallenge{
+	return usecases.ConsumedChallenge{
 		ProviderChallengeID: row.ProviderChallengeID, FactorID: row.FactorID.String(), FactorVerified: row.FactorVerified,
 	}, nil
 }
 
-func (r repo) MarkSessionMFA(ctx context.Context, tokenHash []byte, challengeID string, codeHash, newTokenHash []byte) (app.MarkedSession, error) {
+func (r repo) MarkSessionMFA(ctx context.Context, tokenHash []byte, challengeID string, codeHash, newTokenHash []byte) (usecases.MarkedSession, error) {
 	cid, err := parseUUID(challengeID)
 	if err != nil {
-		return app.MarkedSession{}, err
+		return usecases.MarkedSession{}, err
 	}
 	row, err := r.q.MarkSessionMFA(ctx, identitydb.MarkSessionMFAParams{
 		TokenHash: tokenHash, ChallengeID: cid, CodeHash: codeHash, NewTokenHash: newTokenHash,
 	})
 	if err != nil {
-		return app.MarkedSession{}, fmt.Errorf("mark session mfa: %w", err)
+		return usecases.MarkedSession{}, fmt.Errorf("mark session mfa: %w", err)
 	}
-	return app.MarkedSession{
+	return usecases.MarkedSession{
 		SessionID: row.SessionID.String(), MFAAuthTime: row.MfaAuthTime.Time, AbsoluteExpiresAt: row.AbsoluteExpiresAt.Time,
 		FactorID: row.FactorID.String(), FirstVerification: row.FirstVerification,
 	}, nil
@@ -418,24 +418,24 @@ func (r repo) RemoveMFAFactor(ctx context.Context, factorID string) (string, err
 // tenantActive is the tenants.status of a tenant that may be used.
 const tenantActive = "active"
 
-func (r repo) Membership(ctx context.Context, tenantID string) (app.Membership, bool, error) {
+func (r repo) Membership(ctx context.Context, tenantID string) (usecases.Membership, bool, error) {
 	tid, err := parseUUID(tenantID)
 	if err != nil {
-		return app.Membership{}, false, err
+		return usecases.Membership{}, false, err
 	}
 	row, err := r.q.AuthMembership(ctx, tid)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return app.Membership{}, false, nil
+		return usecases.Membership{}, false, nil
 	}
 	if err != nil {
-		return app.Membership{}, false, fmt.Errorf("auth membership: %w", err)
+		return usecases.Membership{}, false, fmt.Errorf("auth membership: %w", err)
 	}
-	return app.Membership{
+	return usecases.Membership{
 		Role: row.Role, TenantActive: row.TenantStatus == tenantActive, UserDisabled: row.UserDisabled,
 	}, true, nil
 }
 
-func auditMetadata(e app.AuditEvent) ([]byte, error) {
+func auditMetadata(e usecases.AuditEvent) ([]byte, error) {
 	meta := e.Metadata
 	if meta == nil {
 		meta = map[string]string{}
@@ -450,11 +450,11 @@ func auditMetadata(e app.AuditEvent) ([]byte, error) {
 // uniqueViolation is SQLSTATE unique_violation.
 const uniqueViolation = "23505"
 
-// alreadyExists turns a unique violation into app.ErrAlreadyExists, keeping the cause.
+// alreadyExists turns a unique violation into usecases.ErrAlreadyExists, keeping the cause.
 func alreadyExists(err error) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
-		e, _ := apperr.As(app.ErrAlreadyExists())
+		e, _ := apperr.As(usecases.ErrAlreadyExists())
 		return apperr.Wrap(err, e.Kind, e.Code, e.Message)
 	}
 	return err

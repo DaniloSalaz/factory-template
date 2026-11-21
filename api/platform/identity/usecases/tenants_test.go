@@ -1,4 +1,4 @@
-package app_test
+package usecases_test
 
 import (
 	"context"
@@ -18,13 +18,13 @@ import (
 	"chaskicode.dev/saas/platform/ratelimit"
 )
 
-// memTenants is a fake app.TenantStore: the members of each tenant, by user id, and
+// memTenants is a fake usecases.TenantStore: the members of each tenant, by user id, and
 // what the use cases asked the database to do.
 type memTenants struct {
-	members map[string]map[string]app.Member // tenant -> user -> member
+	members map[string]map[string]usecases.Member // tenant -> user -> member
 	names   map[string]string
 	calls   []string
-	audits  []app.AuditEvent
+	audits  []usecases.AuditEvent
 	// offerable is what the last ChangeMemberRole was told the new role may offer.
 	offerable []string
 	// The invitation side (invitations_test.go).
@@ -36,23 +36,23 @@ type memTenants struct {
 }
 
 func newMemTenants() *memTenants {
-	return &memTenants{members: map[string]map[string]app.Member{}, names: map[string]string{}}
+	return &memTenants{members: map[string]map[string]usecases.Member{}, names: map[string]string{}}
 }
 
 func (s *memTenants) add(tenant, userID, role string) {
 	if s.members[tenant] == nil {
-		s.members[tenant] = map[string]app.Member{}
+		s.members[tenant] = map[string]usecases.Member{}
 	}
-	s.members[tenant][userID] = app.Member{
+	s.members[tenant][userID] = usecases.Member{
 		MembershipID: fmt.Sprintf("0190a1b2-c3d4-7e5f-8a9b-%012d", len(s.members[tenant])+1), UserID: userID, Role: role,
 	}
 }
 
-func (s *memTenants) AsUser(ctx context.Context, _ string, fn func(context.Context, app.TenantRepo) error) error {
+func (s *memTenants) AsUser(ctx context.Context, _ string, fn func(context.Context, usecases.TenantRepo) error) error {
 	return fn(ctx, memTenantRepo{s: s})
 }
 
-func (s *memTenants) InTenant(ctx context.Context, p authctx.Principal, fn func(context.Context, app.TenantRepo) error) error {
+func (s *memTenants) InTenant(ctx context.Context, p authctx.Principal, fn func(context.Context, usecases.TenantRepo) error) error {
 	return fn(ctx, memTenantRepo{s: s, tenant: p.TenantID(), actor: p.UserID()})
 }
 
@@ -67,29 +67,29 @@ func (r memTenantRepo) CreateTenant(_ context.Context, name, slug string, maxTen
 	return tenantB, r.s.fail
 }
 
-func (r memTenantRepo) RenameTenant(_ context.Context, tenantID, name string) (string, app.Tenant, error) {
+func (r memTenantRepo) RenameTenant(_ context.Context, tenantID, name string) (string, usecases.Tenant, error) {
 	previous := r.s.names[tenantID]
 	r.s.names[tenantID] = name
-	return previous, app.Tenant{ID: tenantID, Slug: "acme", Name: name}, nil
+	return previous, usecases.Tenant{ID: tenantID, Slug: "acme", Name: name}, nil
 }
 
-func (r memTenantRepo) RecordTenantAudit(_ context.Context, _ string, e app.AuditEvent) error {
+func (r memTenantRepo) RecordTenantAudit(_ context.Context, _ string, e usecases.AuditEvent) error {
 	r.s.audits = append(r.s.audits, e)
 	return nil
 }
 
-func (r memTenantRepo) ListMembers(_ context.Context, tenantID, after string, limit int) ([]app.Member, error) {
-	var out []app.Member
+func (r memTenantRepo) ListMembers(_ context.Context, tenantID, after string, limit int) ([]usecases.Member, error) {
+	var out []usecases.Member
 	for _, m := range r.s.members[tenantID] {
 		if m.MembershipID > after {
 			out = append(out, m)
 		}
 	}
-	slices.SortFunc(out, func(a, b app.Member) int { return strings.Compare(a.MembershipID, b.MembershipID) })
+	slices.SortFunc(out, func(a, b usecases.Member) int { return strings.Compare(a.MembershipID, b.MembershipID) })
 	return out[:min(limit, len(out))], nil
 }
 
-func (r memTenantRepo) MemberByUser(_ context.Context, tenantID, userID string) (app.Member, bool, error) {
+func (r memTenantRepo) MemberByUser(_ context.Context, tenantID, userID string) (usecases.Member, bool, error) {
 	m, ok := r.s.members[tenantID][userID]
 	return m, ok, nil
 }
@@ -161,7 +161,7 @@ func actingAs(t *testing.T, c *authz.Catalog, userID, role string) context.Conte
 }
 
 // membersFixture: tenantA has an owner, an admin and a member; tenantB has stranger.
-func membersFixture(t *testing.T) (*app.Members, *memTenants, *fakeAuthorizer, *authz.Catalog) {
+func membersFixture(t *testing.T) (*usecases.Members, *memTenants, *fakeAuthorizer, *authz.Catalog) {
 	t.Helper()
 	c := membersCatalog(t)
 	store := newMemTenants()
@@ -170,7 +170,7 @@ func membersFixture(t *testing.T) (*app.Members, *memTenants, *fakeAuthorizer, *
 	store.add(tenantA, member2, "member")
 	store.add(tenantB, stranger, "owner")
 	authorizer := &fakeAuthorizer{}
-	return app.NewMembers(store, authorizer, c), store, authorizer, c
+	return usecases.NewMembers(store, authorizer, c), store, authorizer, c
 }
 
 func TestMembers_ChangeRole(t *testing.T) {
@@ -316,7 +316,7 @@ func TestTenants_Create(t *testing.T) {
 	t.Parallel()
 
 	store := newMemTenants()
-	tenants := app.NewTenants(store, &fakeAuthorizer{}, 5, ratelimit.NewMemory(5, time.Hour, nil))
+	tenants := usecases.NewTenants(store, &fakeAuthorizer{}, 5, ratelimit.NewMemory(5, time.Hour, nil))
 	u := user(t, time.Time{})
 
 	got, err := tenants.Create(t.Context(), u, "  Acme  ", "acme")
@@ -356,7 +356,7 @@ func TestTenants_Rename(t *testing.T) {
 	c := membersCatalog(t)
 	store := newMemTenants()
 	store.names[tenantA] = "Old"
-	tenants := app.NewTenants(store, &fakeAuthorizer{}, 5, ratelimit.NewMemory(5, time.Hour, nil))
+	tenants := usecases.NewTenants(store, &fakeAuthorizer{}, 5, ratelimit.NewMemory(5, time.Hour, nil))
 
 	if _, err := tenants.Rename(actingAs(t, c, member2, "member"), "New"); !errors.Is(err, authz.ErrDenied()) {
 		t.Fatalf("member renames = %v, want %v", err, authz.ErrDenied())
@@ -373,7 +373,7 @@ func TestTenants_Rename(t *testing.T) {
 		t.Fatalf("audits = %+v, want one", store.audits)
 	}
 	e := store.audits[0]
-	if e.Action != app.AuditTenantUpdated || e.TargetID != tenantA || e.Metadata["old_name"] != "Old" || e.Metadata["new_name"] != "New" {
+	if e.Action != usecases.AuditTenantUpdated || e.TargetID != tenantA || e.Metadata["old_name"] != "Old" || e.Metadata["new_name"] != "New" {
 		t.Fatalf("audit = %+v", e)
 	}
 }
@@ -397,7 +397,7 @@ func TestMembers_ChangeRoleNamesTheOfferableRoles(t *testing.T) {
 	store := newMemTenants()
 	store.add(tenantA, ownerID, "owner")
 	store.add(tenantA, adminID, "member")
-	members := app.NewMembers(store, &fakeAuthorizer{}, c)
+	members := usecases.NewMembers(store, &fakeAuthorizer{}, c)
 	ctx := actingAs(t, c, ownerID, "owner")
 
 	for role, want := range map[string][]string{
@@ -433,22 +433,22 @@ func TestMembers_Roles(t *testing.T) {
 		t.Fatal(err)
 	}
 	// name, mfa_required, can_assign, can_offer, in the order of the response.
-	view := func(name string, mfa, assign, offer bool) app.RoleView {
-		return app.RoleView{Name: name, MFARequired: mfa, CanAssign: assign, CanOffer: offer}
+	view := func(name string, mfa, assign, offer bool) usecases.RoleView {
+		return usecases.RoleView{Name: name, MFARequired: mfa, CanAssign: assign, CanOffer: offer}
 	}
 	tests := []struct {
 		role string
-		want []app.RoleView
+		want []usecases.RoleView
 	}{
-		{"owner", []app.RoleView{view("owner", true, true, true), view("admin", false, true, true), view("member", false, true, true)}},
-		{"admin", []app.RoleView{view("owner", true, false, false), view("admin", false, true, true), view("member", false, true, true)}},
-		{"member", []app.RoleView{view("owner", true, false, false), view("admin", false, false, false), view("member", false, false, false)}},
+		{"owner", []usecases.RoleView{view("owner", true, true, true), view("admin", false, true, true), view("member", false, true, true)}},
+		{"admin", []usecases.RoleView{view("owner", true, false, false), view("admin", false, true, true), view("member", false, true, true)}},
+		{"member", []usecases.RoleView{view("owner", true, false, false), view("admin", false, false, false), view("member", false, false, false)}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.role, func(t *testing.T) {
 			t.Parallel()
 			authorizer := &fakeAuthorizer{}
-			got, err := app.NewMembers(newMemTenants(), authorizer, c).Roles(actingAs(t, c, ownerID, tc.role))
+			got, err := usecases.NewMembers(newMemTenants(), authorizer, c).Roles(actingAs(t, c, ownerID, tc.role))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -470,7 +470,7 @@ func TestMembers_Roles(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = app.NewMembers(newMemTenants(), &fakeAuthorizer{}, noRead).Roles(actingAs(t, noRead, ownerID, "client"))
+		_, err = usecases.NewMembers(newMemTenants(), &fakeAuthorizer{}, noRead).Roles(actingAs(t, noRead, ownerID, "client"))
 		if !errors.Is(err, authz.ErrDenied()) {
 			t.Fatalf("Roles = %v, want %v", err, authz.ErrDenied())
 		}

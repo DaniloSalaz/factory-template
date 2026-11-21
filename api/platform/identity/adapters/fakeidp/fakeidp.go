@@ -37,12 +37,12 @@ type Provider struct {
 
 type pending struct {
 	state string
-	authn app.Authentication
+	authn usecases.Authentication
 }
 
 var (
-	_ app.IdentityProvider = (*Provider)(nil)
-	_ app.MFAProvider      = (*Provider)(nil)
+	_ usecases.IdentityProvider = (*Provider)(nil)
+	_ usecases.MFAProvider      = (*Provider)(nil)
 )
 
 // New returns an empty fake provider.
@@ -94,22 +94,22 @@ func (p *Provider) id(prefix string) string {
 	return fmt.Sprintf("%s_%d_%s", prefix, p.nextID, hex.EncodeToString(b))
 }
 
-// EnrollTOTP implements app.MFAProvider. The new factor accepts "000000" until SetCode.
-func (p *Provider) EnrollTOTP(_ context.Context, subject string) (app.TOTPEnrollment, error) {
+// EnrollTOTP implements usecases.MFAProvider. The new factor accepts "000000" until SetCode.
+func (p *Provider) EnrollTOTP(_ context.Context, subject string) (usecases.TOTPEnrollment, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.failing() {
-		return app.TOTPEnrollment{}, errUnavailable()
+		return usecases.TOTPEnrollment{}, errUnavailable()
 	}
 	f, c := p.id("auth_factor"), p.id("auth_challenge")
 	p.factors[f], p.factorCode[f], p.mfaChallenges[c] = subject, "000000", f
-	return app.TOTPEnrollment{
+	return usecases.TOTPEnrollment{
 		FactorID: f, ChallengeID: c, QRCode: "data:image/png;base64,QR", URI: "otpauth://totp/fake?secret=FAKE",
 		Secret: "FAKESECRET",
 	}, nil
 }
 
-// Challenge implements app.MFAProvider.
+// Challenge implements usecases.MFAProvider.
 func (p *Provider) Challenge(_ context.Context, providerFactorID string) (string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -124,7 +124,7 @@ func (p *Provider) Challenge(_ context.Context, providerFactorID string) (string
 	return c, nil
 }
 
-// Verify implements app.MFAProvider.
+// Verify implements usecases.MFAProvider.
 func (p *Provider) Verify(_ context.Context, providerChallengeID, code string) (bool, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -139,7 +139,7 @@ func (p *Provider) Verify(_ context.Context, providerChallengeID, code string) (
 	return exists && p.factorCode[f] == code, nil
 }
 
-// DeleteFactor implements app.MFAProvider.
+// DeleteFactor implements usecases.MFAProvider.
 func (p *Provider) DeleteFactor(_ context.Context, providerFactorID string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -150,10 +150,10 @@ func (p *Provider) DeleteFactor(_ context.Context, providerFactorID string) erro
 	return nil
 }
 
-// Name implements app.IdentityProvider.
+// Name implements usecases.IdentityProvider.
 func (*Provider) Name() string { return "fake" }
 
-// AuthorizationURL implements app.IdentityProvider. The URL carries the state, the
+// AuthorizationURL implements usecases.IdentityProvider. The URL carries the state, the
 // challenge and max_age=0, like the real one.
 func (p *Provider) AuthorizationURL(state, codeChallenge string) (string, error) {
 	p.mu.Lock()
@@ -165,25 +165,25 @@ func (p *Provider) AuthorizationURL(state, codeChallenge string) (string, error)
 
 // Authenticate simulates the user authenticating for state: it returns the code the
 // provider would send to the callback.
-func (p *Provider) Authenticate(state, code string, authn app.Authentication) {
+func (p *Provider) Authenticate(state, code string, authn usecases.Authentication) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.codes[code] = pending{state: state, authn: authn}
 }
 
-// ExchangeCode implements app.IdentityProvider. Codes are single-use.
-func (p *Provider) ExchangeCode(_ context.Context, code, codeVerifier string) (app.Authentication, error) {
+// ExchangeCode implements usecases.IdentityProvider. Codes are single-use.
+func (p *Provider) ExchangeCode(_ context.Context, code, codeVerifier string) (usecases.Authentication, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	pend, ok := p.codes[code]
 	delete(p.codes, code)
 	if !ok || p.challenges[pend.state] != domain.CodeChallenge(codeVerifier) {
-		return app.Authentication{}, apperr.BadRequest("auth.code_invalid", "The authorization code is invalid or expired.")
+		return usecases.Authentication{}, apperr.BadRequest("auth.code_invalid", "The authorization code is invalid or expired.")
 	}
 	return pend.authn, nil
 }
 
-// LogoutURL implements app.IdentityProvider.
+// LogoutURL implements usecases.IdentityProvider.
 func (*Provider) LogoutURL(providerSessionID string) (string, error) {
 	return "https://idp.test/logout?" + url.Values{"session_id": {providerSessionID}}.Encode(), nil
 }

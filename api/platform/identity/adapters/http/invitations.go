@@ -96,7 +96,7 @@ func (h *Handler) AcceptInvitation(ctx context.Context, req identityapi.AcceptIn
 	return identityapi.AcceptInvitation200JSONResponse{TenantId: tenantID, Role: accepted.Role}, nil
 }
 
-func invitationView(inv app.Invitation, now time.Time) (identityapi.Invitation, error) {
+func invitationView(inv usecases.Invitation, now time.Time) (identityapi.Invitation, error) {
 	id, err := uuid(inv.ID)
 	if err != nil {
 		return identityapi.Invitation{}, err
