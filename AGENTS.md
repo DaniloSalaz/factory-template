@@ -7,7 +7,7 @@ Plantilla base para SaaS: monolito modular en Go + frontend React. Desarrollador
 - Contrato: OpenAPI 3.1 en `api-spec/openapi.yaml` → oapi-codegen (Go, strict server) y orval (TS).
 - Frontend: React + TypeScript + Vite, Biome.
 - Datos: PostgreSQL 18 (`compose.yaml`). Colas: River (aún no). Secretos: SOPS + age.
-- Observabilidad: OpenTelemetry (OTLP/HTTP; `otelhttp`, `otelpgx`) y Sentry (API y front), en `api/platform/telemetry` y `web/src/platform/telemetry`; en local, `grafana/otel-lgtm` (`docs/runbooks/observability.md`).
+- Observabilidad: OpenTelemetry (OTLP/HTTP; `otelhttp`, `otelpgx`) y Sentry (API y front), en `api/platform/kit/telemetry` y `web/src/platform/telemetry`; en local, `grafana/otel-lgtm` (`docs/runbooks/observability.md`).
 - Email: SMTP genérico con `wneessen/go-mail` (Mailpit en desarrollo). Imagen: `ghcr.io/<owner>/factory-template-api`, publicada por `.github/workflows/release.yml`.
 - Herramientas y tareas: `mise.toml` (no Makefile ni Taskfile).
 
@@ -35,11 +35,11 @@ Las variables de entorno de desarrollo vienen de `[env]` en `mise.toml`; `.env` 
 ## Estructura
 ```
 api/*.go                  composition root: main.go, migrate.go, roles.go, version.go (único sitio que cablea todo)
-api/platform/             config, db, httpx, logx, pii, apperr, telemetry (transversal, sin negocio)
-api/modules/<m>/
+api/platform/kit/         config, db, httpx, logx, pii, apperr, telemetry… (transversal, sin negocio)
+api/platform/<m>/         módulos de plataforma (identity, health)
   module.go               API pública del módulo: New(Deps) + Register(mux)
   domain/                 entidades y reglas; NO importa infraestructura (depguard lo impide)
-  app/                    casos de uso + puertos (interfaces) que necesitan
+  usecases/               casos de uso + puertos (interfaces) que necesitan
   adapters/http/          implementa la interfaz strict generada desde OpenAPI
   adapters/postgres/      implementa los puertos con sqlc
   queries/                SQL para sqlc
@@ -50,19 +50,19 @@ web/src/gen/              cliente TS generado (orval) y seguridad por ruta (scri
 web/src/platform/         front de la plantilla: shell, auth, tenant, MFA, miembros, invitaciones, errores, fetcher, ui (shadcn)
 web/src/app/              lo propio de cada app: rutas bajo /t/$tenantId, registry.ts, theme.css, brand/
 ```
-Ejemplo vivo: `api/modules/health`.
+Ejemplo vivo: `api/platform/health`.
 
 ## Reglas
 - Tipado estricto en Go y TS. Nada de `any` en TS ni `interface{}` sin motivo en Go.
 - Errores siempre envueltos con contexto: `fmt.Errorf("hacer x: %w", err)`.
 - Sin variables globales ni `init()`; dependencias por constructor (`NewX(deps)`).
 - Un módulo no importa el interior de otro módulo (ni su código en `gen/`); solo su `module.go`. Lo comprueba `mise run arch`.
-- `platform` no importa `modules`; `platform/apperr` y `platform/authctx` solo importan la stdlib; el dominio solo importa la stdlib y `platform/apperr` (depguard).
+- `platform/kit` no importa ningún módulo (`platform/<m>`, `app/`); `platform/kit/apperr` y `platform/kit/authctx` solo importan la stdlib; el dominio solo importa la stdlib y `platform/kit/apperr` (depguard).
 - El código generado (`api/gen/`, `web/src/gen/`) no se edita: cambia el contrato o la query y ejecuta `mise run generate`.
 - Un GET nunca modifica datos: SameSite=Lax envía la cookie en navegaciones GET entre sitios y la protección CSRF por Origin no lo cubriría.
-- Los permisos se comprueban en el caso de uso con `Authorizer.Require` (`platform/authz`), en cualquier punto, también dentro de su transacción: la denegación se audita en una transacción propia que sobrevive al rollback. Nunca en `adapters/http` (depguard, `[authz-in-use-cases]`). Los roles y sus permisos son el catálogo de `api/roles.go`.
+- Los permisos se comprueban en el caso de uso con `Authorizer.Require` (`platform/kit/authz`), en cualquier punto, también dentro de su transacción: la denegación se audita en una transacción propia que sobrevive al rollback. Nunca en `adapters/http` (depguard, `[authz-in-use-cases]`). Los roles y sus permisos son el catálogo de `api/roles.go`.
 - Errores de negocio con `apperr` (`NotFound`, `Validation`, `Wrap`…). Los handlers nunca escriben errores a mano: usan `httpx.WriteProblem` (RFC 9457).
-- `os.Getenv` (y cualquier lectura del entorno) solo en `platform/config`; el resto recibe `config.Config` (forbidigo).
+- `os.Getenv` (y cualquier lectura del entorno) solo en `platform/kit/config`; el resto recibe `config.Config` (forbidigo).
 - Datos personales o secretos en logs, siempre con los tipos de `pii` (`Email`, `Phone`, `Secret`); el request ID se lee y escribe solo con `logx`.
 - Los tipos de `pii` se serializan enmascarados: no van en argumentos de trabajos de cola, columnas `jsonb` ni respuestas de la API. En esas fronteras usa `Reveal()`.
 - Un `*apperr.Error` no se modifica después de crearlo.
@@ -72,15 +72,15 @@ Ejemplo vivo: `api/modules/health`.
 - Las membresías no se escriben directamente: `app_runtime` solo tiene `SELECT` sobre `memberships`. Se crean con `create_tenant` y `accept_invitation`, y su rol cambia o se borran solo con `change_member_role`, `remove_member` y `leave_tenant`, que bloquean el tenant y nunca lo dejan sin owner (ADR 0003). La jerarquía (quién gestiona a quién) se decide en `domain` con la inclusión de permisos del catálogo, nunca comparando nombres de rol; la BD solo comprueba que los roles en los que se basó Go no cambiaron.
 - Orden de bloqueo en la BD: fila del tenant → invitaciones → membresías. Quien escribe invitaciones bloquea antes el tenant (`FOR KEY SHARE`) y relee el rol del actor; las funciones de miembros lo bloquean `FOR UPDATE`. Otro orden puede interbloquearse con una degradación (`40P01`).
 - El token de una invitación (y su hash) no va en ningún log, respuesta ni auditoría; solo el adaptador de desarrollo de `InvitationSender` escribe el enlace, y no arranca fuera de desarrollo. El envío se hace después del commit y su fallo solo se registra (el remedio es reenviar).
-- Datos de un tenant, solo dentro de `db.WithTenantTx`; los flujos sin tenant usan `WithUserTx` o `WithAnonTx`. Ningún fichero Go fuera de `platform/db` llama a `set_config` ni nombra las variables de RLS (`mise run arch`). Los errores `TN0xx` de las funciones de la BD se traducen con `db.MapError`.
+- Datos de un tenant, solo dentro de `db.WithTenantTx`; los flujos sin tenant usan `WithUserTx` o `WithAnonTx`. Ningún fichero Go fuera de `platform/kit/db` llama a `set_config` ni nombra las variables de RLS (`mise run arch`). Los errores `TN0xx` de las funciones de la BD se traducen con `db.MapError`.
 - Base de datos: la API conecta como `app_runtime` (RLS siempre); las migraciones, como `app_owner`. Toda tabla con `tenant_id` lleva RLS forzado, `tenant_isolation` y alcance declarado (diseño 7.3); los permisos se conceden explícitamente en la migración que crea la tabla (`docs/runbooks/database.md`).
-- Los permisos de `app_runtime` (de tabla, de columna y de ejecución) están fijados en `api/platform/db/schematest/testdata/runtime_privileges.golden`; nunca un `UPDATE` sin columnas. Cambiar ese fichero es una decisión de seguridad: se edita a mano y el PR justifica qué permiso cambia y por qué el diseño lo necesita.
+- Los permisos de `app_runtime` (de tabla, de columna y de ejecución) están fijados en `api/platform/kit/db/schematest/testdata/runtime_privileges.golden`; nunca un `UPDATE` sin columnas. Cambiar ese fichero es una decisión de seguridad: se edita a mano y el PR justifica qué permiso cambia y por qué el diseño lo necesita.
 - Una migración fusionada en main es inmutable; los cambios posteriores van en una migración nueva.
 - MFA (ADR 0002): opcional, exigida solo por los roles del catálogo que lo dicen. Una sesión solo tiene MFA por `sessions.mfa_auth_time`, que fija únicamente `mark_session_mfa` tras un `valid: true` del proveedor (y rota el token). Nunca se deduce del login ni de que el usuario tenga un factor.
 - Fuera de development (`staging`, `production`): todas las URL y orígenes del navegador y del proveedor de identidad son `https`, y el SMTP es obligatorio; config lo valida al arrancar. Una opción solo para desarrollo (como `SMTP_TLS_SKIP_VERIFY`) se rechaza fuera de él.
 - Email: nunca un texto escrito por usuarios (nombre del tenant, de una persona) en una cabecera (asunto, From); en el cuerpo, sin caracteres de control, recortado y escapado (`html/template`). El token de una invitación solo en el enlace. Los errores de envío no llevan destinatarios.
 - Las migraciones (`api/migrations`) van dentro del binario; el despliegue ejecuta `api migrate` antes de cambiar de versión. La versión del binario (`-X main.buildVersion`) sale en los logs y en `/healthz`.
-- Telemetría (ADR 0004): en trazas, métricas y errores solo salen los atributos de su lista (`allowedKeys` en `platform/telemetry/filter.go`); nunca añadas uno fuera de ella (ni `user_id`, emails, IPs, argumentos SQL, cuerpos, cabeceras, query strings o tokens). Añadir uno exige ampliar la lista y la tabla del ADR con su porqué. El nombre de un span HTTP es el patrón de `ServeMux`, nunca la ruta real; las llamadas a servicios externos van con `telemetry.ClientSpan`, sin URL ni cuerpo; los errores 5xx llegan a Sentry por `httpx.WriteProblem`, nunca con `sentry` directamente.
+- Telemetría (ADR 0004): en trazas, métricas y errores solo salen los atributos de su lista (`allowedKeys` en `platform/kit/telemetry/filter.go`); nunca añadas uno fuera de ella (ni `user_id`, emails, IPs, argumentos SQL, cuerpos, cabeceras, query strings o tokens). Añadir uno exige ampliar la lista y la tabla del ADR con su porqué. El nombre de un span HTTP es el patrón de `ServeMux`, nunca la ruta real; las llamadas a servicios externos van con `telemetry.ClientSpan`, sin URL ni cuerpo; los errores 5xx llegan a Sentry por `httpx.WriteProblem`, nunca con `sentry` directamente.
 - Usuario de sistema reservado: `00000000-0000-7000-8000-000000000001` (deshabilitado, sin login). Úsalo solo para trabajos de sistema.
 - Cada cambio va con su test (unitario con fakes de puertos; integración con Testcontainers).
 - Comentarios solo para explicar el porqué, no el qué.
@@ -106,4 +106,4 @@ Ejemplo vivo: `api/modules/health`.
 ## Añadir un endpoint
 1. Defínelo en `api-spec/openapi.yaml` con el `tag` del módulo. Los cuerpos JSON llevan `additionalProperties: false`: así un campo desconocido da `400 unknown_field` (`httpx.KnownBodyFields`) en vez de ignorarse. Por defecto exige sesión y `X-Tenant-ID`; si no necesita tenant, `security: [{session: []}]`, y si es público, `security: []`. Los middlewares lo leen de `api/gen/routes` (nunca de una lista de rutas a mano).
 2. `mise run generate` e implementa el método en `adapters/http`.
-3. Lógica en `app/`, puertos en `app/`, implementación en `adapters/`.
+3. Lógica en `usecases/`, puertos en `usecases/`, implementación en `adapters/`.

@@ -34,7 +34,7 @@ El script es idempotente y recibe las contraseñas como variables de psql. Crea:
   y la imagen lo ejecuta **solo cuando el volumen está vacío**. Con un volumen anterior a
   los roles, recréalo con `docker compose down -v && mise run up && mise run migrate`, o
   ejecútalo a mano con `mise run db:bootstrap`.
-- **Tests**: `api/platform/db/dbtest` arranca Postgres 18 con el mismo
+- **Tests**: `api/platform/kit/db/dbtest` arranca Postgres 18 con el mismo
   `initdb.sh` y el mismo `bootstrap.sql`, y migra como `app_owner`.
 - **Otros entornos**: un superusuario lo ejecuta una vez, y otra vez cada vez que cambie el script:
 
@@ -53,12 +53,12 @@ su migración dice quién la usa y cómo. En la misma migración que crea la tab
 
 1. Si tiene `tenant_id`: `ENABLE` y `FORCE ROW LEVEL SECURITY`, la política
    `tenant_isolation` y su alcance declarado (diseño, sección 7.3). El test de esquema
-   (`api/platform/db/schematest`) falla si falta algo. Si es una tabla de acceso
+   (`api/platform/kit/db/schematest`) falla si falta algo. Si es una tabla de acceso
    o una tabla hija, sigue los patrones de `docs/patterns.md`.
 2. `GRANT` a `app_runtime` solo de los privilegios que la aplicación necesita (por ejemplo,
    sin `DELETE` en tablas de solo inserción). `UPDATE` siempre por columnas
    (`GRANT UPDATE (col, …)`), nunca de toda la tabla. Añade los permisos nuevos a
-   `api/platform/db/schematest/testdata/runtime_privileges.golden`, a mano, y
+   `api/platform/kit/db/schematest/testdata/runtime_privileges.golden`, a mano, y
    justifícalos en el PR: es una decisión de seguridad, y el test falla mostrando el diff
    hasta que el fichero coincide.
 3. `GRANT` a `app_admin` si los comandos de administración la tocan.

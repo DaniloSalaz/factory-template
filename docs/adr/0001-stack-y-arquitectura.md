@@ -8,8 +8,8 @@ Desarrollador único que quiere lanzar varios SaaS desde una plantilla común, c
 estricto, poco mantenimiento operativo y un contrato HTTP explícito entre back y front.
 
 ## Decisión
-- **Monolito modular** en Go. Cada módulo (`api/modules/<m>`) tiene `module.go`
-  (API pública), `domain/`, `app/` (casos de uso + puertos), `adapters/http`,
+- **Monolito modular** en Go. Cada módulo (`api/platform/<m>`) tiene `module.go`
+  (API pública), `domain/`, `usecases/` (casos de uso + puertos), `adapters/http`,
   `adapters/postgres` y `queries/`. El dominio no depende de infraestructura y los módulos
   no importan el interior de otros. La regla del dominio la vigila depguard.
 - **HTTP**: `net/http` con el ServeMux de la stdlib; servidor strict generado por
