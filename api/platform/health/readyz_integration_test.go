@@ -13,6 +13,7 @@ import (
 	"chaskicode.dev/saas/platform/health"
 	"chaskicode.dev/saas/platform/kit/db/dbtest"
 	"chaskicode.dev/saas/platform/kit/httpx"
+	"chaskicode.dev/saas/platform/migrations"
 )
 
 func TestReadyz_Integration(t *testing.T) {
@@ -22,7 +23,7 @@ func TestReadyz_Integration(t *testing.T) {
 	ctx := t.Context()
 
 	// Bootstrapped and migrated like a real environment; the app connects as app_runtime.
-	db := dbtest.Start(t)
+	db := dbtest.Start(t, migrations.Set())
 	ctr := db.Container
 	dsn := db.RuntimeURL
 

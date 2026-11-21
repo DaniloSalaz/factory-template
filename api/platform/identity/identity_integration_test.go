@@ -43,6 +43,7 @@ import (
 	"chaskicode.dev/saas/platform/kit/pii"
 	"chaskicode.dev/saas/platform/kit/ratelimit"
 	"chaskicode.dev/saas/platform/kit/telemetry"
+	"chaskicode.dev/saas/platform/migrations"
 )
 
 // Integration tests of the login, the session middleware and logout, over HTTPS (the
@@ -64,7 +65,7 @@ func TestMain(m *testing.M) {
 		os.Exit(m.Run())
 	}
 	ctx := context.Background()
-	database, err := dbtest.New(ctx)
+	database, err := dbtest.New(ctx, migrations.Set())
 	if err != nil {
 		if database != nil && database.Container != nil {
 			_ = testcontainers.TerminateContainer(database.Container)

@@ -8,6 +8,7 @@ import (
 
 	"github.com/testcontainers/testcontainers-go"
 
+	platformdb "chaskicode.dev/saas/platform/kit/db"
 	"chaskicode.dev/saas/platform/kit/db/dbtest"
 )
 
@@ -18,7 +19,10 @@ var testDB *dbtest.DB
 
 func TestMain(m *testing.M) {
 	ctx := context.Background()
-	db, err := dbtest.New(ctx, "testdata/migrations")
+	db, err := dbtest.New(ctx,
+		dbtest.PlatformFromSource(),
+		platformdb.MigrationSet{Name: "testdata", FS: os.DirFS("testdata/migrations"), Table: "goose_testdata_1_version"},
+	)
 	if err != nil {
 		if db != nil && db.Container != nil {
 			_ = testcontainers.TerminateContainer(db.Container)

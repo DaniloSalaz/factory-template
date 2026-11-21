@@ -1,11 +1,13 @@
 // Package dbtest starts a disposable Postgres 18 for integration tests, bootstrapped and
 // migrated exactly like a real environment: infra/db/initdb.sh and bootstrap.sql run as
-// init scripts, then the migrations run as app_owner. Only tests import it.
+// init scripts, then the migration sets the caller passes run as app_owner, through the
+// same db.Migrate as `api migrate`. It imports no migrations itself: platform tests pass
+// the platform's, the tests in package main the platform's and the app's. Only tests
+// import it.
 package dbtest
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"net/url"
@@ -14,12 +16,9 @@ import (
 	"runtime"
 	"testing"
 
-	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" database/sql driver used by goose
-	"github.com/pressly/goose/v3"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
-	"chaskicode.dev/saas/migrations"
 	platformdb "chaskicode.dev/saas/platform/kit/db"
 )
 
@@ -42,11 +41,11 @@ type DB struct {
 	AdminURL   string // app_admin: administration commands
 }
 
-// Start runs a database for the duration of t. See New for extraMigrations.
-func Start(t testing.TB, extraMigrations ...string) *DB {
+// Start runs a database for the duration of t, migrated with sets (see New).
+func Start(t testing.TB, sets ...platformdb.MigrationSet) *DB {
 	t.Helper()
 
-	db, err := New(t.Context(), extraMigrations...)
+	db, err := New(t.Context(), sets...)
 	if db != nil {
 		testcontainers.CleanupContainer(t, db.Container)
 	}
@@ -59,10 +58,13 @@ func Start(t testing.TB, extraMigrations ...string) *DB {
 // New runs a database until the returned container is terminated. TestMain uses it to
 // share one database between the tests of a package.
 //
-// extraMigrations are directories of test-only migrations (example tables, say), applied
-// as app_owner after migrations/ in the order given. Each one keeps its own goose
-// version table, so its numbering is independent of the real migrations.
-func New(ctx context.Context, extraMigrations ...string) (*DB, error) {
+// sets are applied as app_owner in the order given, each with its own goose version
+// table, so test-only migrations (example tables, say) go after the real ones without
+// sharing their numbering.
+func New(ctx context.Context, sets ...platformdb.MigrationSet) (*DB, error) {
+	if len(sets) == 0 {
+		return nil, errors.New("dbtest: no migration set; pass at least the platform's")
+	}
 	root, err := repoRoot()
 	if err != nil {
 		return nil, err
@@ -105,34 +107,28 @@ func New(ctx context.Context, extraMigrations ...string) (*DB, error) {
 		return db, err
 	}
 
-	// The migrations the binary embeds, applied the way `api migrate` applies them.
-	if _, err := platformdb.Migrate(ctx, db.OwnerURL, migrations.FS()); err != nil {
-		return db, err
-	}
-	for i, dir := range extraMigrations {
-		table := fmt.Sprintf("goose_testdata_%d_version", i+1)
-		if err := migrate(ctx, db.OwnerURL, dir, goose.WithTableName(table)); err != nil {
-			return db, fmt.Errorf("test migrations %s: %w", dir, err)
-		}
+	if _, err := platformdb.Migrate(ctx, db.OwnerURL, sets); err != nil {
+		return db, fmt.Errorf("migrate test database: %w", err)
 	}
 	return db, nil
 }
 
-func migrate(ctx context.Context, ownerURL, dir string, opts ...goose.ProviderOption) error {
-	sqlDB, err := sql.Open("pgx", ownerURL)
+// PlatformFromSource is the platform's migration set read from api/platform/migrations
+// on disk: the same name, version table and files as migrations.Set(), which tests in
+// platform/kit cannot import ([platform-no-modules]). A test in platform/migrations
+// keeps the two identical.
+func PlatformFromSource() platformdb.MigrationSet {
+	root, err := repoRoot()
 	if err != nil {
-		return fmt.Errorf("open migrations connection: %w", err)
+		// Only when the runtime cannot locate this file. The directory is then wrong and
+		// Migrate fails: the set has no migrations and does not allow being empty.
+		root = "."
 	}
-	defer func() { _ = sqlDB.Close() }()
-
-	provider, err := goose.NewProvider(goose.DialectPostgres, sqlDB, os.DirFS(dir), opts...)
-	if err != nil {
-		return fmt.Errorf("goose provider: %w", err)
+	return platformdb.MigrationSet{
+		Name:  "platform",
+		FS:    os.DirFS(filepath.Join(root, "api", "platform", "migrations")),
+		Table: "goose_db_version",
 	}
-	if _, err := provider.Up(ctx); err != nil {
-		return fmt.Errorf("apply migrations: %w", err)
-	}
-	return nil
 }
 
 func withUser(rawURL, user, password string) (string, error) {
