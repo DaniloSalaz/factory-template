@@ -1,11 +1,6 @@
 # AGENTS.md — platform/kit/db
 
-Internos de las transacciones, la RLS y las migraciones. Se suman a los del `AGENTS.md` de la raíz y de `platform/kit/`. Runbook: `docs/platform/runbooks/database.md`.
-
-## Transacciones y RLS
-- `db.Independent` solo para escrituras que deben sobrevivir al rollback de quien llama (hoy, la auditoría de `authz.denied`).
-- Ningún fichero Go fuera de `platform/kit/db` (y de los tests de esquema de `api/tests/db`) llama a `set_config` ni nombra las variables de RLS (`[rls-vars-only-in-db]`, `mise run arch`).
-- Los errores `TN0xx` de las funciones de la BD se traducen con `db.MapError`.
+Internos de las migraciones y de los tests de este paquete. Se suman a los del `AGENTS.md` de la raíz (que recoge `db.Independent`, `set_config` / `[rls-vars-only-in-db]` y `db.MapError`, porque afectan también al código de fuera) y de `platform/kit/`. Runbook: `docs/platform/runbooks/database.md`.
 
 ## Migraciones en el binario
 - Las migraciones (`api/platform/migrations` y `api/app/migrations`) van dentro del binario; el despliegue ejecuta `api migrate` (plataforma primero, app después) antes de cambiar de versión.

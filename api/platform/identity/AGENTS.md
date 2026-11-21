@@ -1,6 +1,6 @@
 # AGENTS.md — identity
 
-Reglas internas del módulo `identity` (sesiones, tenants, miembros, invitaciones, MFA, email). Se suman a las del `AGENTS.md` de la raíz. Diseño: `docs/platform/designs/auth-y-tenancy.md`; ADR 0002 y 0003 en `docs/platform/adr/`.
+Reglas internas del módulo `identity` (sesiones, tenants, miembros, invitaciones, MFA, email). Se suman a las del `AGENTS.md` de la raíz, que recoge las de email porque también valen para un módulo de app que envíe correo. Diseño: `docs/platform/designs/auth-y-tenancy.md`; ADR 0002 y 0003 en `docs/platform/adr/`.
 
 ## Membresías
 - Las membresías no se escriben directamente: `app_runtime` solo tiene `SELECT` sobre `memberships`. Se crean con `create_tenant` y `accept_invitation`, y su rol cambia o se borran solo con `change_member_role`, `remove_member` y `leave_tenant`, que bloquean el tenant y nunca lo dejan sin owner (ADR 0003).
@@ -14,10 +14,6 @@ Reglas internas del módulo `identity` (sesiones, tenants, miembros, invitacione
 ## MFA (ADR 0002)
 - Opcional, exigida solo por los roles del catálogo que lo dicen.
 - Una sesión solo tiene MFA por `sessions.mfa_auth_time`, que fija únicamente `mark_session_mfa` tras un `valid: true` del proveedor (y rota el token). Nunca se deduce del login ni de que el usuario tenga un factor.
-
-## Email
-- Nunca un texto escrito por usuarios (nombre del tenant, de una persona) en una cabecera (asunto, From); en el cuerpo, sin caracteres de control, recortado y escapado (`html/template`).
-- El token de una invitación solo en el enlace. Los errores de envío no llevan destinatarios.
 
 ## Tests
 - Los `*_integration_test.go` de la raíz del módulo y de `adapters/smtpsender/` se quedan aquí porque importan el interior del módulo (`adapters/fakeidp`, `usecases`, `domain`); fuera, en `api/tests/`, romperían `[module-boundaries]`.
