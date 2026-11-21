@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"chaskicode.dev/saas/app"
 	"chaskicode.dev/saas/gen/routes"
 	"chaskicode.dev/saas/platform/health"
 	"chaskicode.dev/saas/platform/identity"
@@ -105,7 +106,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}()
 
 	// An invalid catalog stops the start-up before anything else (design, section 8).
-	catalog, err := roleCatalog()
+	catalog, err := app.Roles()
 	if err != nil {
 		return err
 	}

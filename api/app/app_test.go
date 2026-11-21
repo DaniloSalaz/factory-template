@@ -1,12 +1,12 @@
-package main
+package app
 
 import "testing"
 
 // The example catalog must stay valid: the API refuses to start otherwise.
-func TestRoleCatalog(t *testing.T) {
+func TestRoles(t *testing.T) {
 	t.Parallel()
 
-	c, err := roleCatalog()
+	c, err := Roles()
 	if err != nil {
 		t.Fatal(err)
 	}

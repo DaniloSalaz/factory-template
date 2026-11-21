@@ -1,4 +1,6 @@
-package main
+// Package app is where an app hooks into the platform (docs/platform/estructura.md): its
+// role catalog and its modules. package main is its only importer.
+package app
 
 import (
 	"fmt"
@@ -12,10 +14,11 @@ import (
 // new login (design, section 6).
 const ownerMFAMaxAge = 12 * time.Hour
 
-// roleCatalog is the app's role catalog (design, section 8). Each app replaces this
-// example with its own roles and permissions; owner is reserved by the platform and
-// must keep its name and every permission. The API does not start if it is invalid.
-func roleCatalog() (*authz.Catalog, error) {
+// Roles is the app's role catalog (design, section 8). Each app replaces this example
+// with its own roles and permissions; owner is reserved by the platform and must keep
+// its name and every permission (authz.NewCatalog checks it). The API does not start if
+// it is invalid.
+func Roles() (*authz.Catalog, error) {
 	members := []authctx.Permission{authz.PermMembersRead, authz.PermMembersInvite, authz.PermMembersManage}
 	c, err := authz.NewCatalog(
 		authz.Role{
