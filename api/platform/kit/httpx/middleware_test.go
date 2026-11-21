@@ -14,9 +14,9 @@ import (
 	"strings"
 	"testing"
 
-	"chaskicode.dev/saas/platform/config"
-	"chaskicode.dev/saas/platform/httpx"
-	"chaskicode.dev/saas/platform/logx"
+	"chaskicode.dev/saas/platform/kit/config"
+	"chaskicode.dev/saas/platform/kit/httpx"
+	"chaskicode.dev/saas/platform/kit/logx"
 )
 
 func TestChain_FirstIsOutermost(t *testing.T) {

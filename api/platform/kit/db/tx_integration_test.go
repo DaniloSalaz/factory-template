@@ -12,10 +12,10 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"chaskicode.dev/saas/platform/apperr"
-	"chaskicode.dev/saas/platform/authctx"
-	"chaskicode.dev/saas/platform/db"
-	"chaskicode.dev/saas/platform/db/schematest"
+	"chaskicode.dev/saas/platform/kit/apperr"
+	"chaskicode.dev/saas/platform/kit/authctx"
+	"chaskicode.dev/saas/platform/kit/db"
+	"chaskicode.dev/saas/platform/kit/db/schematest"
 )
 
 // Integration tests of the three transactions, run as app_runtime against the real

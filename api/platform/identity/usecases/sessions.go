@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	"chaskicode.dev/saas/modules/identity/domain"
-	"chaskicode.dev/saas/platform/apperr"
+	"chaskicode.dev/saas/platform/identity/domain"
+	"chaskicode.dev/saas/platform/kit/apperr"
 )
 
 // Sessions checks the session of each request (design, 5.4.1) and ends sessions (5.5).

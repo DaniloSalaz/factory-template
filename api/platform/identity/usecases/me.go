@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"chaskicode.dev/saas/modules/identity/domain"
-	"chaskicode.dev/saas/platform/authctx"
-	"chaskicode.dev/saas/platform/authz"
+	"chaskicode.dev/saas/platform/identity/domain"
+	"chaskicode.dev/saas/platform/kit/authctx"
+	"chaskicode.dev/saas/platform/kit/authz"
 )
 
 // Accounts answers what a user may know about their own account (design, section 10).

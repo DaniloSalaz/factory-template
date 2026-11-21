@@ -20,7 +20,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/testcontainers/testcontainers-go"
 
-	"chaskicode.dev/saas/platform/db/dbtest"
+	"chaskicode.dev/saas/platform/kit/db/dbtest"
 )
 
 // testDB is shared by every test in the package: starting Postgres once keeps the suite

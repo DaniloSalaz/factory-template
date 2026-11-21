@@ -14,9 +14,9 @@ import (
 	"net/url"
 	"sync"
 
-	"chaskicode.dev/saas/modules/identity/app"
-	"chaskicode.dev/saas/modules/identity/domain"
-	"chaskicode.dev/saas/platform/apperr"
+	"chaskicode.dev/saas/platform/identity/domain"
+	"chaskicode.dev/saas/platform/identity/usecases"
+	"chaskicode.dev/saas/platform/kit/apperr"
 )
 
 // AuthorizeBase is the fake provider's authorization endpoint.

@@ -7,10 +7,10 @@ import (
 	"net/netip"
 	"time"
 
-	"chaskicode.dev/saas/modules/identity/domain"
-	"chaskicode.dev/saas/platform/apperr"
-	"chaskicode.dev/saas/platform/authctx"
-	"chaskicode.dev/saas/platform/pii"
+	"chaskicode.dev/saas/platform/identity/domain"
+	"chaskicode.dev/saas/platform/kit/apperr"
+	"chaskicode.dev/saas/platform/kit/authctx"
+	"chaskicode.dev/saas/platform/kit/pii"
 )
 
 // IdentityProvider is the external login service (WorkOS AuthKit today).

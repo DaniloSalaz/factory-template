@@ -1,4 +1,4 @@
-// Package authz stands in for the real platform/authz.
+// Package authz stands in for the real platform/kit/authz.
 package authz
 
 // Perm is a permission.

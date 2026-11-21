@@ -4,13 +4,13 @@ import (
 	"log/slog"
 	"net/http"
 
-	"chaskicode.dev/saas/modules/identity/app"
-	"chaskicode.dev/saas/modules/identity/domain"
-	"chaskicode.dev/saas/platform/apperr"
-	"chaskicode.dev/saas/platform/authctx"
-	"chaskicode.dev/saas/platform/httpx"
-	"chaskicode.dev/saas/platform/logx"
-	"chaskicode.dev/saas/platform/telemetry"
+	"chaskicode.dev/saas/platform/identity/domain"
+	"chaskicode.dev/saas/platform/identity/usecases"
+	"chaskicode.dev/saas/platform/kit/apperr"
+	"chaskicode.dev/saas/platform/kit/authctx"
+	"chaskicode.dev/saas/platform/kit/httpx"
+	"chaskicode.dev/saas/platform/kit/logx"
+	"chaskicode.dev/saas/platform/kit/telemetry"
 )
 
 // TenantHeader names the tenant a request acts in (design, section 2).

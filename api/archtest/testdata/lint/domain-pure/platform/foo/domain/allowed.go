@@ -4,7 +4,7 @@ package domain
 import (
 	"strings"
 
-	"chaskicode.dev/saas/platform/apperr"
+	"chaskicode.dev/saas/platform/kit/apperr"
 )
 
 // Allowed uses stdlib and apperr only.

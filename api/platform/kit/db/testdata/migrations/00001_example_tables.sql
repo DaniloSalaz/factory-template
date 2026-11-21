@@ -1,5 +1,5 @@
 -- +goose Up
--- Example business tables for the tests of platform/db only: never in migrations/, so
+-- Example business tables for the tests of platform/kit/db only: never in migrations/, so
 -- no environment has them and runtime_privileges.golden does not list them. They follow
 -- the patterns of design section 7.3 that every app copies:
 --   notes           a row with an owner (own_scope on owner_user_id);

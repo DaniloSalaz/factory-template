@@ -11,10 +11,10 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	"chaskicode.dev/saas/platform/authctx"
-	"chaskicode.dev/saas/platform/db"
-	"chaskicode.dev/saas/platform/db/dbtest"
-	"chaskicode.dev/saas/platform/telemetry"
+	"chaskicode.dev/saas/platform/kit/authctx"
+	"chaskicode.dev/saas/platform/kit/db"
+	"chaskicode.dev/saas/platform/kit/db/dbtest"
+	"chaskicode.dev/saas/platform/kit/telemetry"
 )
 
 // Each query is a span named by db.QueryName, with the SQL and its placeholders and

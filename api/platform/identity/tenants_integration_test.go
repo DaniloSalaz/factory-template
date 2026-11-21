@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"chaskicode.dev/saas/modules/identity/app"
+	"chaskicode.dev/saas/platform/identity/usecases"
 )
 
 // Tenants and members over HTTP (design 5.5 and 5.7, migration 00005), with the real

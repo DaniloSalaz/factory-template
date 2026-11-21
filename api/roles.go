@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"chaskicode.dev/saas/platform/authctx"
-	"chaskicode.dev/saas/platform/authz"
+	"chaskicode.dev/saas/platform/kit/authctx"
+	"chaskicode.dev/saas/platform/kit/authz"
 )
 
 // ownerMFAMaxAge is how old an owner's MFA may be before acting in a tenant needs a

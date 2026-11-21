@@ -10,9 +10,9 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	"chaskicode.dev/saas/platform/config"
-	"chaskicode.dev/saas/platform/logx"
-	"chaskicode.dev/saas/platform/pii"
+	"chaskicode.dev/saas/platform/kit/config"
+	"chaskicode.dev/saas/platform/kit/logx"
+	"chaskicode.dev/saas/platform/kit/pii"
 )
 
 func jsonLogger(level slog.Level) (*slog.Logger, *bytes.Buffer) {

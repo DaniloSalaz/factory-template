@@ -8,7 +8,7 @@ import (
 	"github.com/getsentry/sentry-go"
 	"go.opentelemetry.io/otel/trace"
 
-	"chaskicode.dev/saas/platform/authctx"
+	"chaskicode.dev/saas/platform/kit/authctx"
 )
 
 // newSentry builds a Sentry hub of its own (not the SDK's global one) for the reports

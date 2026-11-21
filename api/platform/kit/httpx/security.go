@@ -6,8 +6,8 @@ import (
 	"maps"
 	"net/http"
 
-	"chaskicode.dev/saas/platform/logx"
-	"chaskicode.dev/saas/platform/telemetry"
+	"chaskicode.dev/saas/platform/kit/logx"
+	"chaskicode.dev/saas/platform/kit/telemetry"
 )
 
 // Security is what a route requires before its handler runs: a session, and a tenant

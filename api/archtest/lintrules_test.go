@@ -33,35 +33,40 @@ func TestLintRules(t *testing.T) {
 		{
 			fixture: "env-only-in-config",
 			want: []string{
-				"platform/httpx/port.go", "modules/foo/foo.go",
+				"platform/kit/httpx/port.go", "platform/foo/foo.go",
 				"[env-only-in-config]", "add the variable to config.Config",
 			},
-			allowed: []string{"platform/config/"},
+			allowed: []string{"platform/kit/config/"},
 		},
 		{
 			fixture: "platform-no-modules",
-			want:    []string{"platform/httpx/httpx.go", "[platform-no-modules]", "move the code into"},
+			want: []string{
+				"platform/kit/httpx/httpx.go", "platform/kit/httpx/app.go", "[platform-no-modules]", "move the code into",
+			},
+			allowed: []string{"platform/kit/httpx/kit.go"},
 		},
 		{
 			fixture: "apperr-stdlib-only",
-			want:    []string{"platform/apperr/apperr.go", "platform/logx", "[apperr-stdlib-only]", "only the standard library"},
+			want:    []string{"platform/kit/apperr/apperr.go", "platform/kit/logx", "[apperr-stdlib-only]", "only the standard library"},
 		},
 		{
 			fixture: "authctx-stdlib-only",
-			want:    []string{"platform/authctx/authctx.go", "platform/logx", "[authctx-stdlib-only]", "only the standard library"},
+			want:    []string{"platform/kit/authctx/authctx.go", "platform/kit/logx", "[authctx-stdlib-only]", "only the standard library"},
 		},
 		{
 			fixture: "authz-in-use-cases",
 			want: []string{
-				"adapters/http/handler.go", "platform/authz", "[authz-in-use-cases]", "Authorizer.Require",
+				"platform/foo/adapters/http/handler.go", "app/modules/bar/adapters/http/handler.go",
+				"platform/kit/authz", "[authz-in-use-cases]", "Authorizer.Require",
 			},
-			allowed: []string{"app/usecase.go"},
+			allowed: []string{"usecases/usecase.go"},
 		},
 		{
 			fixture: "domain-pure",
 			want: []string{
 				"domain/transport.go", "'net/http'", "transport belongs in adapters/http",
-				"domain/platform.go", "platform/logx", "[domain-pure]", "behind a port",
+				"platform/foo/domain/platform.go", "app/modules/bar/domain/platform.go",
+				"platform/kit/logx", "[domain-pure]", "behind a port",
 			},
 			allowed: []string{"domain/allowed.go"},
 		},

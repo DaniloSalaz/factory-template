@@ -7,8 +7,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"chaskicode.dev/saas/platform/apperr"
-	"chaskicode.dev/saas/platform/db"
+	"chaskicode.dev/saas/platform/kit/apperr"
+	"chaskicode.dev/saas/platform/kit/db"
 )
 
 func TestMapError(t *testing.T) {

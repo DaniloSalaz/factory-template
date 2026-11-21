@@ -3,7 +3,7 @@ package db_test
 import (
 	"testing"
 
-	"chaskicode.dev/saas/platform/db"
+	"chaskicode.dev/saas/platform/kit/db"
 )
 
 func TestQueryName(t *testing.T) {

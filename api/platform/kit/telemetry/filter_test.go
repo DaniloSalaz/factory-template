@@ -15,7 +15,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 
-	"chaskicode.dev/saas/platform/telemetry"
+	"chaskicode.dev/saas/platform/kit/telemetry"
 )
 
 // Values that ADR 0004 forbids; none may appear in what leaves the process.

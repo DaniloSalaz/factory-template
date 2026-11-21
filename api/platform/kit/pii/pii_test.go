@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"chaskicode.dev/saas/platform/pii"
+	"chaskicode.dev/saas/platform/kit/pii"
 )
 
 // renderings returns every way a value commonly ends up in output.

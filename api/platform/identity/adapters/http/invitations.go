@@ -5,9 +5,9 @@ import (
 	"time"
 
 	identityapi "chaskicode.dev/saas/gen/openapi/identity"
-	"chaskicode.dev/saas/modules/identity/app"
-	"chaskicode.dev/saas/modules/identity/domain"
-	"chaskicode.dev/saas/platform/authctx"
+	"chaskicode.dev/saas/platform/identity/domain"
+	"chaskicode.dev/saas/platform/identity/usecases"
+	"chaskicode.dev/saas/platform/kit/authctx"
 )
 
 // Invitations (design, 5.6). Permissions are checked in the use case. No response

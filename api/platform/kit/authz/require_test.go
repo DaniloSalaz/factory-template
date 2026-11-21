@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"chaskicode.dev/saas/platform/apperr"
-	"chaskicode.dev/saas/platform/authctx"
-	"chaskicode.dev/saas/platform/authz"
+	"chaskicode.dev/saas/platform/kit/apperr"
+	"chaskicode.dev/saas/platform/kit/authctx"
+	"chaskicode.dev/saas/platform/kit/authz"
 )
 
 type denial struct {

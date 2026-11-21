@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"chaskicode.dev/saas/platform/config"
+	"chaskicode.dev/saas/platform/kit/config"
 )
 
 func testHTTPConfig(shutdown time.Duration) config.HTTP {

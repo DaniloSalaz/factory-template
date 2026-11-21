@@ -12,8 +12,8 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	"chaskicode.dev/saas/platform/httpx"
-	"chaskicode.dev/saas/platform/telemetry"
+	"chaskicode.dev/saas/platform/kit/httpx"
+	"chaskicode.dev/saas/platform/kit/telemetry"
 )
 
 const memberID = "0190a1b2-0000-7000-8000-00000000aaaa"

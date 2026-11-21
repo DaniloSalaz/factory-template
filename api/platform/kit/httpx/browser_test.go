@@ -12,9 +12,9 @@ import (
 	"strings"
 	"testing"
 
-	"chaskicode.dev/saas/platform/clientip"
-	"chaskicode.dev/saas/platform/httpx"
-	"chaskicode.dev/saas/platform/ratelimit"
+	"chaskicode.dev/saas/platform/kit/clientip"
+	"chaskicode.dev/saas/platform/kit/httpx"
+	"chaskicode.dev/saas/platform/kit/ratelimit"
 )
 
 var allowedOrigins = []string{"https://app.example.com"}

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"chaskicode.dev/saas/modules/identity/domain"
-	"chaskicode.dev/saas/platform/apperr"
-	"chaskicode.dev/saas/platform/telemetry"
+	"chaskicode.dev/saas/platform/identity/domain"
+	"chaskicode.dev/saas/platform/kit/apperr"
+	"chaskicode.dev/saas/platform/kit/telemetry"
 )
 
 // LoginConfig configures the login use cases.

@@ -13,13 +13,13 @@ import (
 	"testing"
 	"time"
 
-	"chaskicode.dev/saas/modules/identity/app"
-	"chaskicode.dev/saas/modules/identity/domain"
-	"chaskicode.dev/saas/platform/apperr"
-	"chaskicode.dev/saas/platform/authctx"
-	"chaskicode.dev/saas/platform/authz"
-	"chaskicode.dev/saas/platform/pii"
-	"chaskicode.dev/saas/platform/ratelimit"
+	"chaskicode.dev/saas/platform/identity/domain"
+	"chaskicode.dev/saas/platform/identity/usecases"
+	"chaskicode.dev/saas/platform/kit/apperr"
+	"chaskicode.dev/saas/platform/kit/authctx"
+	"chaskicode.dev/saas/platform/kit/authz"
+	"chaskicode.dev/saas/platform/kit/pii"
+	"chaskicode.dev/saas/platform/kit/ratelimit"
 )
 
 // The invitation side of memTenants: invitations by id with their token hashes, the

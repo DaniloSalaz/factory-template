@@ -4,11 +4,11 @@ import (
 	"log/slog"
 	"net/http"
 
-	"chaskicode.dev/saas/modules/identity/app"
-	"chaskicode.dev/saas/platform/apperr"
-	"chaskicode.dev/saas/platform/authctx"
-	"chaskicode.dev/saas/platform/httpx"
-	"chaskicode.dev/saas/platform/logx"
+	"chaskicode.dev/saas/platform/identity/usecases"
+	"chaskicode.dev/saas/platform/kit/apperr"
+	"chaskicode.dev/saas/platform/kit/authctx"
+	"chaskicode.dev/saas/platform/kit/httpx"
+	"chaskicode.dev/saas/platform/kit/logx"
 )
 
 // SessionMiddleware requires a valid session (design, 5.4.1) unless the route's security,

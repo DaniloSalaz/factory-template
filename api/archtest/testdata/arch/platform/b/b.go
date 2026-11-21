@@ -2,6 +2,6 @@
 package b
 
 import (
-	_ "chaskicode.dev/saas/modules/a"
-	_ "chaskicode.dev/saas/modules/a/domain"
+	_ "chaskicode.dev/saas/platform/a"
+	_ "chaskicode.dev/saas/platform/a/domain"
 )

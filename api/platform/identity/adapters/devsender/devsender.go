@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"chaskicode.dev/saas/modules/identity/app"
-	"chaskicode.dev/saas/platform/config"
+	"chaskicode.dev/saas/platform/identity/usecases"
+	"chaskicode.dev/saas/platform/kit/config"
 )
 
 // LogMessage is the message of the log record that carries the link.

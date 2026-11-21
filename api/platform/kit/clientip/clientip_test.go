@@ -5,7 +5,7 @@ import (
 	"net/netip"
 	"testing"
 
-	"chaskicode.dev/saas/platform/clientip"
+	"chaskicode.dev/saas/platform/kit/clientip"
 )
 
 func TestResolver_Addr(t *testing.T) {

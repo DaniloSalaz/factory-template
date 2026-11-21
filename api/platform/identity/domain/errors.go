@@ -1,12 +1,12 @@
 // Package domain holds the identity module's rules: return_to validation, login intents,
 // session tokens and their validity, and how MFA is established. It imports only the
-// standard library and platform/apperr.
+// standard library and platform/kit/apperr.
 package domain
 
 import (
 	"time"
 
-	"chaskicode.dev/saas/platform/apperr"
+	"chaskicode.dev/saas/platform/kit/apperr"
 )
 
 // Every session failure is the same 401, so a client cannot tell a revoked session from

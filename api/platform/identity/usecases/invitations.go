@@ -6,13 +6,13 @@ import (
 	"log/slog"
 	"time"
 
-	"chaskicode.dev/saas/modules/identity/domain"
-	"chaskicode.dev/saas/platform/apperr"
-	"chaskicode.dev/saas/platform/authctx"
-	"chaskicode.dev/saas/platform/authz"
-	"chaskicode.dev/saas/platform/pii"
-	"chaskicode.dev/saas/platform/ratelimit"
-	"chaskicode.dev/saas/platform/telemetry"
+	"chaskicode.dev/saas/platform/identity/domain"
+	"chaskicode.dev/saas/platform/kit/apperr"
+	"chaskicode.dev/saas/platform/kit/authctx"
+	"chaskicode.dev/saas/platform/kit/authz"
+	"chaskicode.dev/saas/platform/kit/pii"
+	"chaskicode.dev/saas/platform/kit/ratelimit"
+	"chaskicode.dev/saas/platform/kit/telemetry"
 )
 
 // Invitations creates, lists, resends, revokes and accepts invitations (design, 5.6).

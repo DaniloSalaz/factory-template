@@ -1,8 +1,8 @@
 // Package domain holds the health module's business concepts. It may import only the
-// standard library and platform/apperr.
+// standard library and platform/kit/apperr.
 package domain
 
-import "chaskicode.dev/saas/platform/apperr"
+import "chaskicode.dev/saas/platform/kit/apperr"
 
 // CodeDatabaseUnavailable identifies a readiness failure caused by the database.
 const CodeDatabaseUnavailable = "health.db_unavailable"

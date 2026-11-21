@@ -5,8 +5,8 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"chaskicode.dev/saas/modules/identity/app"
-	"chaskicode.dev/saas/platform/pii"
+	"chaskicode.dev/saas/platform/identity/usecases"
+	"chaskicode.dev/saas/platform/kit/pii"
 )
 
 const testToken = "not-a-real-invitation-token"

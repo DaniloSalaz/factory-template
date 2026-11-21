@@ -2,7 +2,7 @@ package schematest
 
 // The rules of the design for tables with tenant_id (section 7.3), outside the _test
 // files so that other packages' tests can hold their own tables to them: the example
-// tables of platform/db live only in that package's test database.
+// tables of platform/kit/db live only in that package's test database.
 
 import (
 	"context"

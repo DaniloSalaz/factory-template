@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"time"
 
-	"chaskicode.dev/saas/platform/apperr"
-	"chaskicode.dev/saas/platform/authctx"
-	"chaskicode.dev/saas/platform/db"
-	"chaskicode.dev/saas/platform/telemetry"
+	"chaskicode.dev/saas/platform/kit/apperr"
+	"chaskicode.dev/saas/platform/kit/authctx"
+	"chaskicode.dev/saas/platform/kit/db"
+	"chaskicode.dev/saas/platform/kit/telemetry"
 )
 
 // auditTimeout bounds the denial's audit, which also runs if the request is cancelled.

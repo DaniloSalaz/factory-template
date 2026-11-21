@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	healthapi "chaskicode.dev/saas/gen/openapi/health"
-	"chaskicode.dev/saas/modules/health/app"
+	"chaskicode.dev/saas/platform/health/usecases"
 )
 
 var _ healthapi.StrictServerInterface = (*Handler)(nil)

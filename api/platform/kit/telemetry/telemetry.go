@@ -21,7 +21,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"chaskicode.dev/saas/platform/config"
+	"chaskicode.dev/saas/platform/kit/config"
 )
 
 // ServiceName is the service.name of the API's telemetry.

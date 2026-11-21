@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"chaskicode.dev/saas/modules/identity/app"
-	"chaskicode.dev/saas/platform/pii"
+	"chaskicode.dev/saas/platform/identity/usecases"
+	"chaskicode.dev/saas/platform/kit/pii"
 )
 
 // Invitations over HTTP (design 5.6 and 11, migration 00006), with the real middlewares

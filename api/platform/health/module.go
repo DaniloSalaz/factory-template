@@ -8,10 +8,10 @@ import (
 
 	healthapi "chaskicode.dev/saas/gen/openapi/health"
 	healthdb "chaskicode.dev/saas/gen/sqlc/health"
-	healthhttp "chaskicode.dev/saas/modules/health/adapters/http"
-	"chaskicode.dev/saas/modules/health/adapters/postgres"
-	"chaskicode.dev/saas/modules/health/app"
-	"chaskicode.dev/saas/platform/httpx"
+	healthhttp "chaskicode.dev/saas/platform/health/adapters/http"
+	"chaskicode.dev/saas/platform/health/adapters/postgres"
+	"chaskicode.dev/saas/platform/health/usecases"
+	"chaskicode.dev/saas/platform/kit/httpx"
 )
 
 // readinessTimeout keeps /readyz under typical orchestrator probe timeouts.

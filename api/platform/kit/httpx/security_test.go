@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"chaskicode.dev/saas/platform/httpx"
+	"chaskicode.dev/saas/platform/kit/httpx"
 )
 
 func TestRouteSecurity(t *testing.T) {

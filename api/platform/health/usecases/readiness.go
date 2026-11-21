@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"chaskicode.dev/saas/modules/health/domain"
+	"chaskicode.dev/saas/platform/health/domain"
 )
 
 // CheckReadiness decides whether the service is ready to receive traffic.

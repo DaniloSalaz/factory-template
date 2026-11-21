@@ -8,7 +8,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"chaskicode.dev/saas/modules/identity/app"
+	"chaskicode.dev/saas/platform/identity/usecases"
 )
 
 // Subject is fixed: the tenant's and the inviter's names are written by users, and in a

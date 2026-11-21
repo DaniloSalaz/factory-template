@@ -21,10 +21,10 @@ import (
 
 	sdk "github.com/workos/workos-go/v7"
 
-	"chaskicode.dev/saas/modules/identity/app"
-	"chaskicode.dev/saas/platform/apperr"
-	"chaskicode.dev/saas/platform/pii"
-	"chaskicode.dev/saas/platform/telemetry"
+	"chaskicode.dev/saas/platform/identity/usecases"
+	"chaskicode.dev/saas/platform/kit/apperr"
+	"chaskicode.dev/saas/platform/kit/pii"
+	"chaskicode.dev/saas/platform/kit/telemetry"
 )
 
 // ProviderName is stored in user_identities.provider.

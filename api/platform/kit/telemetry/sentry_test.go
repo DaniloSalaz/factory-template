@@ -14,11 +14,11 @@ import (
 
 	"github.com/getsentry/sentry-go"
 
-	"chaskicode.dev/saas/platform/apperr"
-	"chaskicode.dev/saas/platform/config"
-	"chaskicode.dev/saas/platform/httpx"
-	"chaskicode.dev/saas/platform/pii"
-	"chaskicode.dev/saas/platform/telemetry"
+	"chaskicode.dev/saas/platform/kit/apperr"
+	"chaskicode.dev/saas/platform/kit/config"
+	"chaskicode.dev/saas/platform/kit/httpx"
+	"chaskicode.dev/saas/platform/kit/pii"
+	"chaskicode.dev/saas/platform/kit/telemetry"
 )
 
 // fakeTransport keeps the events instead of sending them.

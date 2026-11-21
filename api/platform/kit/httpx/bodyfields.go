@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"slices"
 
-	"chaskicode.dev/saas/platform/apperr"
+	"chaskicode.dev/saas/platform/kit/apperr"
 )
 
 // KnownBodyFields rejects, with 400 unknown_field, a JSON object body with a member that

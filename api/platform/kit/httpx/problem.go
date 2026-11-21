@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"time"
 
-	"chaskicode.dev/saas/platform/apperr"
-	"chaskicode.dev/saas/platform/logx"
+	"chaskicode.dev/saas/platform/kit/apperr"
+	"chaskicode.dev/saas/platform/kit/logx"
 )
 
 // ProblemContentType is the media type defined by RFC 9457.

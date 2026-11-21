@@ -17,7 +17,7 @@ import (
 
 	"github.com/caarlos0/env/v11"
 
-	"chaskicode.dev/saas/platform/pii"
+	"chaskicode.dev/saas/platform/kit/pii"
 )
 
 // Environment is the deployment environment the process runs in.

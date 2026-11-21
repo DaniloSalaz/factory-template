@@ -8,7 +8,7 @@ import (
 
 	"github.com/testcontainers/testcontainers-go"
 
-	"chaskicode.dev/saas/platform/db/dbtest"
+	"chaskicode.dev/saas/platform/kit/db/dbtest"
 )
 
 // testDB is shared by the package's integration tests: the real migrations plus the

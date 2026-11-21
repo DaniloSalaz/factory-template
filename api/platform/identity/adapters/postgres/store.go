@@ -1,5 +1,5 @@
 // Package postgres implements the identity module's Store with sqlc, inside the
-// transactions of platform/db.
+// transactions of platform/kit/db.
 package postgres
 
 import (
@@ -15,12 +15,12 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	identitydb "chaskicode.dev/saas/gen/sqlc/identity"
-	"chaskicode.dev/saas/modules/identity/app"
-	"chaskicode.dev/saas/modules/identity/domain"
-	"chaskicode.dev/saas/platform/apperr"
-	"chaskicode.dev/saas/platform/authctx"
-	"chaskicode.dev/saas/platform/db"
-	"chaskicode.dev/saas/platform/pii"
+	"chaskicode.dev/saas/platform/identity/domain"
+	"chaskicode.dev/saas/platform/identity/usecases"
+	"chaskicode.dev/saas/platform/kit/apperr"
+	"chaskicode.dev/saas/platform/kit/authctx"
+	"chaskicode.dev/saas/platform/kit/db"
+	"chaskicode.dev/saas/platform/kit/pii"
 )
 
 // Store implements usecases.Store.
