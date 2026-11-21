@@ -2,7 +2,7 @@ version: "2"
 sql:
   - engine: postgresql
     schema: migrations
-    queries: modules/health/queries
+    queries: platform/health/queries
     gen:
       go:
         package: healthdb
@@ -14,7 +14,7 @@ sql:
         omit_unused_structs: true
   - engine: postgresql
     schema: migrations
-    queries: modules/identity/queries
+    queries: platform/identity/queries
     gen:
       go:
         package: identitydb

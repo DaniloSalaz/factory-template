@@ -39,48 +39,59 @@ linters:
       forbid:
         - pattern: ^os\.(Getenv|LookupEnv|Environ)$
           msg: >-
-            [env-only-in-config] the environment is read only in platform/config:
+            [env-only-in-config] the environment is read only in platform/kit/config:
             add the variable to config.Config (env tag + Validate) and pass the value in
             through a constructor
     depguard:
       rules:
         # In strict mode depguard only prints the list name for imports missing from
         # `allow`, so these names carry the explanation.
-        "[platform-no-modules] platform must not import modules: move the code into the module, or define an interface in platform that the module implements":
-          files: ["**/platform/**"]
+        "[platform-no-modules] platform/kit must not import any module (platform/<x>, app/): move the code into the module, or define an interface in kit that the module implements":
+          files: ["**/platform/kit/**"]
+          # In lax mode the longest match wins: kit may import kit, nothing else below
+          # platform/ (identity, health, any future platform module) and nothing in app/.
+          list-mode: lax
+          allow:
+            - chaskicode.dev/saas/platform/kit
           deny:
-            - pkg: chaskicode.dev/saas/modules
+            - pkg: chaskicode.dev/saas/platform
               desc: >-
-                [platform-no-modules] platform is shared infrastructure: move the code into
-                the module, or define an interface in platform that the module implements
-        "[apperr-stdlib-only] platform/apperr may import only the standard library: keep it dependency-free so every domain package can use it":
-          files: ["**/platform/apperr/**"]
+                [platform-no-modules] platform/kit is shared infrastructure without business:
+                move the code into the module, or define an interface in kit that the module
+                implements
+            - pkg: chaskicode.dev/saas/app
+              desc: >-
+                [platform-no-modules] platform/kit is shared infrastructure without business:
+                move the code into the module, or define an interface in kit that the module
+                implements
+        "[apperr-stdlib-only] platform/kit/apperr may import only the standard library: keep it dependency-free so every domain package can use it":
+          files: ["**/platform/kit/apperr/**"]
           list-mode: strict
           allow:
             - $gostd
             # Its own external test package (apperr_test) imports it.
-            - chaskicode.dev/saas/platform/apperr
-        "[authctx-stdlib-only] platform/authctx may import only the standard library: platform/db and every module read it, so it must not pull dependencies into them":
-          files: ["**/platform/authctx/**"]
+            - chaskicode.dev/saas/platform/kit/apperr
+        "[authctx-stdlib-only] platform/kit/authctx may import only the standard library: platform/kit/db and every module read it, so it must not pull dependencies into them":
+          files: ["**/platform/kit/authctx/**"]
           list-mode: strict
           allow:
             - $gostd
             # Its own external test package (authctx_test) imports it.
-            - chaskicode.dev/saas/platform/authctx
-        "[authz-in-use-cases] adapters/http must not import platform/authz: check permissions in the use case (app/) with Require, never in the handler":
-          files: ["**/modules/*/adapters/http/**"]
+            - chaskicode.dev/saas/platform/kit/authctx
+        "[authz-in-use-cases] adapters/http must not import platform/kit/authz: check permissions in the use case (usecases/) with Require, never in the handler":
+          files: ["**/platform/*/adapters/http/**", "**/app/modules/*/adapters/http/**"]
           deny:
-            - pkg: chaskicode.dev/saas/platform/authz
+            - pkg: chaskicode.dev/saas/platform/kit/authz
               desc: >-
-                [authz-in-use-cases] permissions are checked in the use case (app/) with
+                [authz-in-use-cases] permissions are checked in the use case (usecases/) with
                 Authorizer.Require, so every transport gets the same check; the handler
                 only calls the use case
-        "[domain-pure] domain packages may import only the standard library and platform/apperr: move infrastructure to adapters/ behind a port (interface) declared in app/":
-          files: ["**/modules/*/domain/**"]
+        "[domain-pure] domain packages may import only the standard library and platform/kit/apperr: move infrastructure to adapters/ behind a port (interface) declared in usecases/":
+          files: ["**/platform/*/domain/**", "**/app/modules/*/domain/**"]
           list-mode: strict
           allow:
             - $gostd
-            - chaskicode.dev/saas/platform/apperr
+            - chaskicode.dev/saas/platform/kit/apperr
           deny:
             - pkg: net/http
               desc: >-
@@ -89,7 +100,7 @@ linters:
             - pkg: database/sql
               desc: >-
                 [domain-pure] persistence belongs in adapters/postgres behind a port
-                declared in app/
+                declared in usecases/
     sloglint:
       kv-only: false
       attr-only: true
@@ -105,7 +116,7 @@ linters:
       - path: _test\.go
         linters: [gochecknoglobals, wrapcheck, gosec]
       # The one package allowed to read the environment, tests included.
-      - path: platform/config/
+      - path: platform/kit/config/
         linters: [forbidigo]
 
 formatters:

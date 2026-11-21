@@ -2,8 +2,8 @@
 package main
 
 import (
-	_ "chaskicode.dev/saas/modules/a"
-	_ "chaskicode.dev/saas/modules/b"
+	_ "chaskicode.dev/saas/platform/a"
+	_ "chaskicode.dev/saas/platform/b"
 )
 
 func main() {}

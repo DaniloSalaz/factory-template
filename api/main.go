@@ -12,15 +12,15 @@ import (
 	"time"
 
 	"chaskicode.dev/saas/gen/routes"
-	"chaskicode.dev/saas/modules/health"
-	"chaskicode.dev/saas/modules/identity"
-	"chaskicode.dev/saas/platform/clientip"
-	"chaskicode.dev/saas/platform/config"
-	"chaskicode.dev/saas/platform/db"
-	"chaskicode.dev/saas/platform/httpx"
-	"chaskicode.dev/saas/platform/logx"
-	"chaskicode.dev/saas/platform/ratelimit"
-	"chaskicode.dev/saas/platform/telemetry"
+	"chaskicode.dev/saas/platform/health"
+	"chaskicode.dev/saas/platform/identity"
+	"chaskicode.dev/saas/platform/kit/clientip"
+	"chaskicode.dev/saas/platform/kit/config"
+	"chaskicode.dev/saas/platform/kit/db"
+	"chaskicode.dev/saas/platform/kit/httpx"
+	"chaskicode.dev/saas/platform/kit/logx"
+	"chaskicode.dev/saas/platform/kit/ratelimit"
+	"chaskicode.dev/saas/platform/kit/telemetry"
 )
 
 // Requests per client IP and minute to /auth/login and /auth/callback together: a login

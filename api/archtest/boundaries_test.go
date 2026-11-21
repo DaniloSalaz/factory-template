@@ -63,13 +63,30 @@ func runGo(t *testing.T, dir string, args ...string) ([]byte, error) {
 	return out, nil
 }
 
-// privateOwner reports which module owns path when path is private to that module: the
-// interior of modules/<x> (anything below its root package) or its generated
-// code under gen/openapi/<x> and gen/sqlc/<x>.
-func privateOwner(modPath, path string) (string, bool) {
-	if rest, ok := strings.CutPrefix(path, modPath+"/modules/"); ok {
+// splitModule reports whether path belongs to a module, which one, and whether it is the
+// module's interior (anything below its root package). Modules are the children of
+// platform/ (except kit, the shared pieces without business) and of app/modules/.
+func splitModule(modPath, path string) (name string, interior, ok bool) {
+	for _, root := range []string{"/platform/", "/app/modules/"} {
+		rest, found := strings.CutPrefix(path, modPath+root)
+		if !found {
+			continue
+		}
 		name, sub, _ := strings.Cut(rest, "/")
-		return name, sub != ""
+		if root == "/platform/" && name == "kit" {
+			return "", false, false
+		}
+		return name, sub != "", true
+	}
+	return "", false, false
+}
+
+// privateOwner reports which module owns path when path is private to that module: the
+// interior of platform/<x> (x != kit) or app/modules/<x>, or its generated code under
+// gen/openapi/<x> and gen/sqlc/<x>.
+func privateOwner(modPath, path string) (string, bool) {
+	if name, interior, ok := splitModule(modPath, path); ok {
+		return name, interior
 	}
 	for _, gen := range []string{"/gen/openapi/", "/gen/sqlc/"} {
 		if rest, ok := strings.CutPrefix(path, modPath+gen); ok {
@@ -80,13 +97,9 @@ func privateOwner(modPath, path string) (string, bool) {
 	return "", false
 }
 
-// moduleOf returns the module a package belongs to, or "" outside modules.
+// moduleOf returns the module a package belongs to, or "" outside every module.
 func moduleOf(modPath, path string) string {
-	rest, ok := strings.CutPrefix(path, modPath+"/modules/")
-	if !ok {
-		return ""
-	}
-	name, _, _ := strings.Cut(rest, "/")
+	name, _, _ := splitModule(modPath, path)
 	return name
 }
 
@@ -104,7 +117,7 @@ func boundaryViolations(modPath string, pkgs []goPackage) []string {
 			}
 			out = append(out, fmt.Sprintf(
 				"[module-boundaries] %s imports %s, which is private to module %q: "+
-					"outside modules/%s import only its root package (module.go) and "+
+					"outside module %s import only its root package (module.go) and "+
 					"expose what you need there", p.ImportPath, imp, owner, owner))
 		}
 	}
@@ -136,14 +149,18 @@ func TestModuleBoundaries_DetectsViolations(t *testing.T) {
 		imported string
 		want     bool
 	}{
-		{"another module's domain", "modules/b", "modules/a/domain", true},
-		{"another module's generated code", "modules/b/app", "gen/sqlc/a", true},
-		{"platform into a module's interior", "platform/httpx", "modules/a/app", true},
-		{"test files are checked too", "modules/b_test", "modules/a/adapters/postgres", true},
-		{"another module's root package", "modules/b", "modules/a", false},
-		{"own interior", "modules/a/app", "modules/a/domain", false},
-		{"own generated code", "modules/a/adapters/postgres", "gen/sqlc/a", false},
-		{"composition root uses module roots", "", "modules/a", false},
+		{"another module's domain", "platform/b", "platform/a/domain", true},
+		{"another module's generated code", "platform/b/usecases", "gen/sqlc/a", true},
+		{"kit into a module's interior", "platform/kit/httpx", "platform/a/usecases", true},
+		{"test files are checked too", "platform/b_test", "platform/a/adapters/postgres", true},
+		{"app module into a platform module's interior", "app/modules/c", "platform/a/domain", true},
+		{"platform module into an app module's interior", "platform/a/usecases", "app/modules/c/adapters/x", true},
+		{"another module's root package", "platform/b", "platform/a", false},
+		{"app module uses a platform module's root", "app/modules/c", "platform/a", false},
+		{"own interior", "platform/a/usecases", "platform/a/domain", false},
+		{"app module's own interior", "app/modules/c", "app/modules/c/adapters/x", false},
+		{"own generated code", "platform/a/adapters/postgres", "gen/sqlc/a", false},
+		{"composition root uses module roots", "", "platform/a", false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -157,7 +174,7 @@ func TestModuleBoundaries_DetectsViolations(t *testing.T) {
 			}
 		})
 	}
-	if len(got) != 4 {
-		t.Fatalf("got %d violations, want 4:\n%s", len(got), strings.Join(got, "\n"))
+	if len(got) != 6 {
+		t.Fatalf("got %d violations, want 6:\n%s", len(got), strings.Join(got, "\n"))
 	}
 }

@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"chaskicode.dev/saas/migrations"
-	"chaskicode.dev/saas/platform/db/dbtest"
+	"chaskicode.dev/saas/platform/kit/db/dbtest"
 )
 
 // `api migrate` exits 0 when everything is applied and non-zero on any failure, without

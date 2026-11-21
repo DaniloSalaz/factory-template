@@ -6,9 +6,9 @@ import (
 	"os"
 
 	"chaskicode.dev/saas/migrations"
-	"chaskicode.dev/saas/platform/config"
-	"chaskicode.dev/saas/platform/db"
-	"chaskicode.dev/saas/platform/logx"
+	"chaskicode.dev/saas/platform/kit/config"
+	"chaskicode.dev/saas/platform/kit/db"
+	"chaskicode.dev/saas/platform/kit/logx"
 )
 
 // migrateCommand applies the migrations embedded in this binary with
