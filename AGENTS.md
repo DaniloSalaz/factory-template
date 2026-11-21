@@ -34,7 +34,7 @@ Las variables de entorno de desarrollo vienen de `[env]` en `mise.toml`; `.env` 
 
 ## Estructura
 ```
-api/*.go                  composition root: main.go, migrate.go, roles.go, version.go (único sitio que cablea todo)
+api/*.go                  composition root: main.go, migrate.go, version.go (único sitio que cablea todo; una app nunca lo edita)
 api/platform/kit/         config, db, httpx, logx, pii, apperr, telemetry… (transversal, sin negocio)
 api/platform/<m>/         módulos de plataforma (identity, health)
   module.go               API pública del módulo: New(Deps) + Register(mux)
@@ -43,6 +43,8 @@ api/platform/<m>/         módulos de plataforma (identity, health)
   adapters/http/          implementa la interfaz strict generada desde OpenAPI
   adapters/postgres/      implementa los puertos con sqlc
   queries/                SQL para sqlc
+api/app/app.go            único enganche de la app: app.Roles (catálogo de roles) y app.Modules (sus módulos)
+api/app/modules/<m>/      módulos de la app, con la misma forma que platform/<m>
 api/gen/                  código generado (openapi/<m>, sqlc/<m>, routes)
 api-spec/openapi.yaml     contrato HTTP
 api/migrations/           migraciones goose (NNNNN_nombre.sql), embebidas en el binario (`api migrate`); nuevas con `goose -dir api/migrations create <nombre> sql`
@@ -57,10 +59,11 @@ Ejemplo vivo: `api/platform/health`.
 - Errores siempre envueltos con contexto: `fmt.Errorf("hacer x: %w", err)`.
 - Sin variables globales ni `init()`; dependencias por constructor (`NewX(deps)`).
 - Un módulo no importa el interior de otro módulo (ni su código en `gen/`); solo su `module.go`. Lo comprueba `mise run arch`.
-- `platform/kit` no importa ningún módulo (`platform/<m>`, `app/`); `platform/kit/apperr` y `platform/kit/authctx` solo importan la stdlib; el dominio solo importa la stdlib y `platform/kit/apperr` (depguard).
+- `platform/kit` no importa ningún módulo de plataforma (`platform/<m>`, depguard `[platform-no-modules]`); `platform/kit/apperr` y `platform/kit/authctx` solo importan la stdlib; el dominio solo importa la stdlib y `platform/kit/apperr` (depguard).
+- Nada bajo `api/platform/` importa `api/app` ni nada debajo, y solo `package main` (`api/`) importa `app` (`[platform-imports-app]`, `mise run arch`; en el front, la regla del mismo nombre). `app/` importa solo `platform/kit/*` y el `module.go` de un módulo de plataforma; un módulo de app, además, su propio interior y el `module.go` de otros módulos de app (`[module-boundaries]`).
 - El código generado (`api/gen/`, `web/src/gen/`) no se edita: cambia el contrato o la query y ejecuta `mise run generate`.
 - Un GET nunca modifica datos: SameSite=Lax envía la cookie en navegaciones GET entre sitios y la protección CSRF por Origin no lo cubriría.
-- Los permisos se comprueban en el caso de uso con `Authorizer.Require` (`platform/kit/authz`), en cualquier punto, también dentro de su transacción: la denegación se audita en una transacción propia que sobrevive al rollback. Nunca en `adapters/http` (depguard, `[authz-in-use-cases]`). Los roles y sus permisos son el catálogo de `api/roles.go`.
+- Los permisos se comprueban en el caso de uso con `Authorizer.Require` (`platform/kit/authz`), en cualquier punto, también dentro de su transacción: la denegación se audita en una transacción propia que sobrevive al rollback. Nunca en `adapters/http` (depguard, `[authz-in-use-cases]`). Los roles y sus permisos son el catálogo de `app.Roles` (`api/app/app.go`); la validación del owner la hace `authz.NewCatalog` y la app no puede saltársela.
 - Errores de negocio con `apperr` (`NotFound`, `Validation`, `Wrap`…). Los handlers nunca escriben errores a mano: usan `httpx.WriteProblem` (RFC 9457).
 - `os.Getenv` (y cualquier lectura del entorno) solo en `platform/kit/config`; el resto recibe `config.Config` (forbidigo).
 - Datos personales o secretos en logs, siempre con los tipos de `pii` (`Email`, `Phone`, `Secret`); el request ID se lee y escribe solo con `logx`.
@@ -107,3 +110,9 @@ Ejemplo vivo: `api/platform/health`.
 1. Defínelo en `api-spec/openapi.yaml` con el `tag` del módulo. Los cuerpos JSON llevan `additionalProperties: false`: así un campo desconocido da `400 unknown_field` (`httpx.KnownBodyFields`) en vez de ignorarse. Por defecto exige sesión y `X-Tenant-ID`; si no necesita tenant, `security: [{session: []}]`, y si es público, `security: []`. Los middlewares lo leen de `api/gen/routes` (nunca de una lista de rutas a mano).
 2. `mise run generate` e implementa el método en `adapters/http`.
 3. Lógica en `usecases/`, puertos en `usecases/`, implementación en `adapters/`.
+
+## Añadir un módulo de app
+1. Carpeta `api/app/modules/<m>/` con la forma de `api/platform/health`: `module.go` (`New(Deps) (*Module, error)` + `Register(mux)`), `domain/`, `usecases/`, `adapters/`, `queries/`. Sus `Deps` salen de `app.Deps` (`DB`, `Logger`, `Authorizer`, `Telemetry`).
+2. Regístralo en `app.Modules` (`api/app/app.go`), en el orden en que debe montarse. `main.go` no cambia.
+3. Si necesita permisos nuevos, añádelos a los roles de `app.Roles`.
+4. Sus endpoints, como en "Añadir un endpoint", con el `tag` del módulo.

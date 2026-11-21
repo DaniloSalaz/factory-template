@@ -89,11 +89,12 @@ añadas filtros de rutas al `on:` de `ci.yml`.
 | Regla | Dónde se comprueba | Fixture que demuestra que funciona |
 |---|---|---|
 | `[env-only-in-config]`: `os.Getenv/LookupEnv/Environ` solo en `platform/kit/config` | forbidigo | `api/archtest/testdata/lint/env-only-in-config` |
-| `[platform-no-modules]`: `platform/kit` no importa ningún módulo (`platform/<x>` fuera de `kit`, ni `app/`) | depguard | `…/testdata/lint/platform-no-modules` |
+| `[platform-no-modules]`: `platform/kit` no importa ningún módulo de plataforma (`platform/<x>` fuera de `kit`) | depguard | `…/testdata/lint/platform-no-modules` |
 | `[apperr-stdlib-only]`: `apperr` solo importa la stdlib | depguard | `…/testdata/lint/apperr-stdlib-only` |
 | `[domain-pure]`: `domain` solo importa la stdlib y `platform/kit/apperr` | depguard | `…/testdata/lint/domain-pure` |
 | `[module-boundaries]`: un módulo es `platform/<x>` (salvo `kit`) o `app/modules/<x>`; fuera de él solo se importa su paquete raíz; `gen/openapi/<x>` y `gen/sqlc/<x>` son privados de `<x>` | `api/archtest/boundaries_test.go` | `…/testdata/arch` |
-| `[platform-imports-app]`: `web/src/platform` no importa `web/src/app` salvo en `platform/app-registry.ts` | `web/src/platform/architecture.test.ts` (Vitest, `mise run web:test`) | El propio test, con cada forma de importar |
+| `[platform-imports-app]` (back): nada bajo `api/platform/` importa `api/app` ni nada debajo; solo `package main` importa `app` | `api/archtest/appimports_test.go` | `…/testdata/arch` |
+| `[platform-imports-app]` (front): `web/src/platform` no importa `web/src/app` salvo en `platform/app-registry.ts` | `web/src/platform/architecture.test.ts` (Vitest, `mise run web:test`) | El propio test, con cada forma de importar |
 
 Los fixtures son mini-módulos con el mismo module path que `api/`, para que las reglas les
 apliquen. `TestLintRules` ejecuta golangci-lint con `api/.golangci.yml` sobre cada uno y comprueba
