@@ -14,15 +14,26 @@ import (
 	"testing"
 )
 
-// goPackage is the subset of `go list -json` output the rule needs.
+// goPackage is the subset of `go list -json` output the rules need.
 type goPackage struct {
 	ImportPath   string
 	Imports      []string
 	TestImports  []string
 	XTestImports []string
+	Error        *struct{ Err string }
 }
 
-// listPackages runs `go list -json ./...` in dir and returns its module path and packages.
+// allImports is every import of p, its tests' included, sorted and without duplicates.
+func (p goPackage) allImports() []string {
+	imports := slices.Concat(p.Imports, p.TestImports, p.XTestImports)
+	slices.Sort(imports)
+	return slices.Compact(imports)
+}
+
+// listPackages runs `go list -e -json ./...` in dir and returns its module path and
+// packages. With -e an import cycle (the usual result of a forbidden import, such as
+// platform/kit/db importing app) still lists every package, so the rules can name the
+// import that caused it; the package errors are reported apart, and fail the test.
 func listPackages(t *testing.T, dir string) (string, []goPackage) {
 	t.Helper()
 
@@ -30,7 +41,7 @@ func listPackages(t *testing.T, dir string) (string, []goPackage) {
 	if err != nil {
 		t.Fatalf("go list -m in %s: %v", dir, err)
 	}
-	out, err := runGo(t, dir, "list", "-json", "./...")
+	out, err := runGo(t, dir, "list", "-e", "-json", "./...")
 	if err != nil {
 		t.Fatalf("go list -json in %s: %v", dir, err)
 	}
@@ -43,6 +54,9 @@ func listPackages(t *testing.T, dir string) (string, []goPackage) {
 			break
 		} else if err != nil {
 			t.Fatalf("decode go list output: %v", err)
+		}
+		if p.Error != nil {
+			t.Errorf("package %s: %s", p.ImportPath, p.Error.Err)
 		}
 		pkgs = append(pkgs, p)
 	}
@@ -108,9 +122,7 @@ func boundaryViolations(modPath string, pkgs []goPackage) []string {
 	var out []string
 	for _, p := range pkgs {
 		importer := moduleOf(modPath, p.ImportPath)
-		imports := slices.Concat(p.Imports, p.TestImports, p.XTestImports)
-		slices.Sort(imports)
-		for _, imp := range slices.Compact(imports) {
+		for _, imp := range p.allImports() {
 			owner, private := privateOwner(modPath, imp)
 			if !private || owner == importer {
 				continue
@@ -155,8 +167,13 @@ func TestModuleBoundaries_DetectsViolations(t *testing.T) {
 		{"test files are checked too", "platform/b_test", "platform/a/adapters/postgres", true},
 		{"app module into a platform module's interior", "app/modules/c", "platform/a/domain", true},
 		{"platform module into an app module's interior", "platform/a/usecases", "app/modules/c/adapters/x", true},
+		{"app hook into a platform module's interior", "app", "platform/a/usecases", true},
 		{"another module's root package", "platform/b", "platform/a", false},
 		{"app module uses a platform module's root", "app/modules/c", "platform/a", false},
+		{"app hook uses a platform module's root", "app", "platform/a", false},
+		{"app hook uses kit", "app", "platform/kit/authz", false},
+		{"app hook uses an app module's root", "app", "app/modules/c", false},
+		{"platform module uses an app module's root (boundaries allow it)", "platform/b", "app/modules/c", false},
 		{"own interior", "platform/a/usecases", "platform/a/domain", false},
 		{"app module's own interior", "app/modules/c", "app/modules/c/adapters/x", false},
 		{"own generated code", "platform/a/adapters/postgres", "gen/sqlc/a", false},
@@ -174,7 +191,7 @@ func TestModuleBoundaries_DetectsViolations(t *testing.T) {
 			}
 		})
 	}
-	if len(got) != 6 {
-		t.Fatalf("got %d violations, want 6:\n%s", len(got), strings.Join(got, "\n"))
+	if len(got) != 7 {
+		t.Fatalf("got %d violations, want 7:\n%s", len(got), strings.Join(got, "\n"))
 	}
 }

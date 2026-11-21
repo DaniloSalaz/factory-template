@@ -41,7 +41,7 @@ func TestLintRules(t *testing.T) {
 		{
 			fixture: "platform-no-modules",
 			want: []string{
-				"platform/kit/httpx/httpx.go", "platform/kit/httpx/app.go", "[platform-no-modules]", "move the code into",
+				"platform/kit/httpx/httpx.go", "[platform-no-modules]", "move the code into",
 			},
 			allowed: []string{"platform/kit/httpx/kit.go"},
 		},

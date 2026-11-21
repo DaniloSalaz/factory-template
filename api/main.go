@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"chaskicode.dev/saas/app"
 	"chaskicode.dev/saas/gen/routes"
 	"chaskicode.dev/saas/platform/health"
 	"chaskicode.dev/saas/platform/identity"
@@ -105,7 +106,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}()
 
 	// An invalid catalog stops the start-up before anything else (design, section 8).
-	catalog, err := roleCatalog()
+	catalog, err := app.Roles()
 	if err != nil {
 		return err
 	}
@@ -125,8 +126,9 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		return fmt.Errorf("invitation sender: %w", err)
 	}
 
+	database := db.New(pool)
 	idm, err := identity.New(identity.Deps{
-		DB: db.New(pool), Logger: logger, Web: cfg.Web, Auth: cfg.Auth, WorkOS: cfg.WorkOS,
+		DB: database, Logger: logger, Web: cfg.Web, Auth: cfg.Auth, WorkOS: cfg.WorkOS,
 		RateLimiter:           ratelimit.NewMemory(authRateLimit, authRateWindow, nil),
 		MFARateLimiter:        ratelimit.NewMemory(mfaRateLimit, mfaRateWindow, nil),
 		Catalog:               catalog,
@@ -142,9 +144,21 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 	idm.CheckRolesInUse(ctx)
 
+	appModules, err := app.Modules(app.Deps{
+		DB: database, Logger: logger, Authorizer: idm.Authorizer(), Telemetry: tel,
+	})
+	if err != nil {
+		return fmt.Errorf("wire app modules: %w", err)
+	}
+
 	mux := http.NewServeMux()
 	health.New(health.Deps{DB: pool, Logger: logger, Version: version()}).Register(mux)
 	idm.Register(mux)
+	// The platform's routes first: an app module that tried to take one of them makes
+	// ServeMux panic at start-up instead of silently replacing it.
+	for _, m := range appModules {
+		m.Register(mux)
+	}
 
 	// Telemetry is outermost, so its span covers the whole request (ADR 0004; the probes
 	// get none).
