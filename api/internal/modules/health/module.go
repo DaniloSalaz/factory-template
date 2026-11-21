@@ -21,6 +21,8 @@ const readinessTimeout = 2 * time.Second
 type Deps struct {
 	DB     healthdb.DBTX
 	Logger *slog.Logger
+	// Version is the running build, which /healthz reports.
+	Version string
 }
 
 // Module wires the health module.
@@ -33,7 +35,7 @@ type Module struct {
 func New(deps Deps) *Module {
 	readiness := app.NewCheckReadiness(postgres.NewChecker(deps.DB), readinessTimeout)
 	return &Module{
-		handler: healthhttp.NewHandler(readiness),
+		handler: healthhttp.NewHandler(readiness, deps.Version),
 		logger:  deps.Logger,
 	}
 }

@@ -33,7 +33,7 @@ func TestReadyz_Integration(t *testing.T) {
 	t.Cleanup(pool.Close)
 
 	mux := http.NewServeMux()
-	health.New(health.Deps{DB: pool, Logger: slog.New(slog.DiscardHandler)}).Register(mux)
+	health.New(health.Deps{DB: pool, Logger: slog.New(slog.DiscardHandler), Version: "0123abc"}).Register(mux)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
@@ -47,6 +47,18 @@ func TestReadyz_Integration(t *testing.T) {
 	if err := ctr.Stop(ctx, nil); err != nil {
 		t.Fatalf("stop postgres: %v", err)
 	}
+
+	// Liveness checks nothing: with the database down it still answers, with the build.
+	t.Run("healthz reports the version, whatever the database", func(t *testing.T) {
+		res := get(t, srv.URL+"/healthz")
+		var body struct{ Status, Version string }
+		if err := json.Unmarshal(res.body, &body); err != nil || res.status != http.StatusOK {
+			t.Fatalf("healthz: %d %s", res.status, res.body)
+		}
+		if body.Status != "ok" || body.Version != "0123abc" {
+			t.Fatalf("healthz = %+v", body)
+		}
+	})
 
 	t.Run("503 problem when the database is down", func(t *testing.T) {
 		res := get(t, srv.URL+"/readyz")

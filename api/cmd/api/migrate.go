@@ -21,7 +21,7 @@ func migrateCommand(ctx context.Context) int {
 		slog.New(slog.NewJSONHandler(os.Stderr, nil)).ErrorContext(ctx, "load config", slog.Any("error", err))
 		return 1
 	}
-	logger := logx.New(os.Stdout, cfg.Log).With(slog.String("env", string(cfg.Env)))
+	logger := logx.New(os.Stdout, cfg.Log).With(slog.String("env", string(cfg.Env)), slog.String("version", version()))
 
 	applied, err := db.Migrate(ctx, cfg.URL.Reveal(), migrations.FS())
 	if len(applied) > 0 {

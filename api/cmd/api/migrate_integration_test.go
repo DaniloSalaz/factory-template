@@ -16,11 +16,7 @@ func TestMigrateCommand(t *testing.T) {
 		t.Skip("integration test: needs Docker")
 	}
 	ctx := t.Context()
-	pg, err := dbtest.New(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = pg.Container.Terminate(ctx) })
+	pg := dbtest.Start(t)
 
 	embedded, err := fs.Glob(migrations.FS(), "*.sql")
 	if err != nil || len(embedded) == 0 {

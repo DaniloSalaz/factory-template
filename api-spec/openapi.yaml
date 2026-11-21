@@ -28,7 +28,7 @@ paths:
   /healthz:
     get:
       operationId: getHealthz
-      summary: Liveness probe
+      summary: Liveness probe, with the version of the running build
       tags: [health]
       security: []
       responses:
@@ -37,7 +37,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Status"
+                $ref: "#/components/schemas/Liveness"
         "500":
           $ref: "#/components/responses/InternalError"
   /readyz:
@@ -1142,6 +1142,19 @@ components:
         status:
           type: string
           enum: [ok]
+    Liveness:
+      type: object
+      additionalProperties: false
+      required: [status, version]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        version:
+          description: >-
+            The build: the git commit the image was built from, or "dev" for a local build
+            without that information.
+          type: string
     Problem:
       description: RFC 9457 problem details with this API's extension members.
       type: object

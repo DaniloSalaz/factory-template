@@ -72,7 +72,7 @@ func main() {
 		stop()
 		os.Exit(1)
 	}
-	logger := logx.New(os.Stdout, cfg.Log).With(slog.String("env", string(cfg.Env)))
+	logger := logx.New(os.Stdout, cfg.Log).With(slog.String("env", string(cfg.Env)), slog.String("version", version()))
 
 	if err := run(ctx, cfg, logger); err != nil {
 		logger.ErrorContext(ctx, "api stopped with error", slog.Any("error", err))
@@ -122,7 +122,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	idm.CheckRolesInUse(ctx)
 
 	mux := http.NewServeMux()
-	health.New(health.Deps{DB: pool, Logger: logger}).Register(mux)
+	health.New(health.Deps{DB: pool, Logger: logger, Version: version()}).Register(mux)
 	idm.Register(mux)
 
 	handler := httpx.Chain(httpx.WithRouteFallback(mux, logger),
