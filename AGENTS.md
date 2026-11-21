@@ -7,6 +7,7 @@ Plantilla base para SaaS: monolito modular en Go + frontend React. Desarrollador
 - Contrato: OpenAPI 3.1 en `api-spec/openapi.yaml` → oapi-codegen (Go, strict server) y orval (TS).
 - Frontend: React + TypeScript + Vite, Biome.
 - Datos: PostgreSQL 18 (`compose.yaml`). Colas: River (aún no). Secretos: SOPS + age.
+- Observabilidad: OpenTelemetry (OTLP/HTTP; `otelhttp`, `otelpgx`) y Sentry (API y front), en `api/internal/platform/telemetry` y `web/src/platform/telemetry`; en local, `grafana/otel-lgtm` (`docs/runbooks/observability.md`).
 - Email: SMTP genérico con `wneessen/go-mail` (Mailpit en desarrollo). Imagen: `ghcr.io/<owner>/factory-template-api`, publicada por `.github/workflows/release.yml`.
 - Herramientas y tareas: `mise.toml` (no Makefile ni Taskfile).
 
@@ -14,7 +15,8 @@ Plantilla base para SaaS: monolito modular en Go + frontend React. Desarrollador
 | Tarea | Qué hace |
 |---|---|
 | `hooks:install` | Instala el hook de pre-commit (rechaza commits en `main`); una vez por clon |
-| `up` / `down` | Arranca / para Postgres y Mailpit locales |
+| `up` / `down` | Arranca / para Postgres, Mailpit y LGTM locales |
+| `obs` | Abre Grafana local (LGTM) en el dashboard de la API |
 | `mail` | Abre Mailpit (`http://localhost:8025`), donde llegan las invitaciones en desarrollo |
 | `migrate` | Aplica las migraciones de `api/migrations/` como `app_owner` con `api migrate` (el mismo subcomando que usa el despliegue) |
 | `generate` | sqlc + oapi-codegen + orval (+ la seguridad por ruta del front) |
@@ -33,7 +35,7 @@ Las variables de entorno de desarrollo vienen de `[env]` en `mise.toml`; `.env` 
 ## Estructura
 ```
 api/cmd/api/              composition root (único sitio que cablea todo)
-api/internal/platform/    config, db, httpx, logx, pii, apperr (transversal, sin negocio)
+api/internal/platform/    config, db, httpx, logx, pii, apperr, telemetry (transversal, sin negocio)
 api/internal/modules/<m>/
   module.go               API pública del módulo: New(Deps) + Register(mux)
   domain/                 entidades y reglas; NO importa infraestructura (depguard lo impide)
@@ -78,6 +80,7 @@ Ejemplo vivo: `api/internal/modules/health`.
 - Fuera de development (`staging`, `production`): todas las URL y orígenes del navegador y del proveedor de identidad son `https`, y el SMTP es obligatorio; config lo valida al arrancar. Una opción solo para desarrollo (como `SMTP_TLS_SKIP_VERIFY`) se rechaza fuera de él.
 - Email: nunca un texto escrito por usuarios (nombre del tenant, de una persona) en una cabecera (asunto, From); en el cuerpo, sin caracteres de control, recortado y escapado (`html/template`). El token de una invitación solo en el enlace. Los errores de envío no llevan destinatarios.
 - Las migraciones (`api/migrations`) van dentro del binario; el despliegue ejecuta `api migrate` antes de cambiar de versión. La versión del binario (`-X main.buildVersion`) sale en los logs y en `/healthz`.
+- Telemetría (ADR 0004): en trazas, métricas y errores solo salen los atributos de su lista (`allowedKeys` en `platform/telemetry/filter.go`); nunca añadas uno fuera de ella (ni `user_id`, emails, IPs, argumentos SQL, cuerpos, cabeceras, query strings o tokens). Añadir uno exige ampliar la lista y la tabla del ADR con su porqué. El nombre de un span HTTP es el patrón de `ServeMux`, nunca la ruta real; las llamadas a servicios externos van con `telemetry.ClientSpan`, sin URL ni cuerpo; los errores 5xx llegan a Sentry por `httpx.WriteProblem`, nunca con `sentry` directamente.
 - Usuario de sistema reservado: `00000000-0000-7000-8000-000000000001` (deshabilitado, sin login). Úsalo solo para trabajos de sistema.
 - Cada cambio va con su test (unitario con fakes de puertos; integración con Testcontainers).
 - Comentarios solo para explicar el porqué, no el qué.

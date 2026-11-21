@@ -457,6 +457,8 @@ Ya no existe ninguna función que devuelva datos de **otro** miembro.
 
 El email del invitado no va en `metadata`. Los eventos de miembros (`membership.*`) llevan `target_type = 'user'` y el `user_id` del afectado en `target_id`, el actor en `actor_user_id`, y el rol (o los dos roles) y el id de la membresía en `metadata`; los escriben las propias funciones de la BD. `tenant.updated` guarda el nombre del tenant, que puede ser el de una persona (un despacho a su nombre). Retención configurable.
 
+**Telemetría.** Trazas, métricas y errores siguen el ADR 0004: solo atributos de su lista; nunca `user_id`, emails, IPs, argumentos SQL, cuerpos, cabeceras, query strings ni tokens. `auth.tenant_forbidden` se cuenta sin `tenant_id`, por el mismo motivo que no se audita (5.4.2). Detalle en `docs/runbooks/observability.md`.
+
 ## 10. API
 
 **URL base.** El backend no lleva prefijo `/api`: sus rutas son las de la tabla. El cliente generado (orval) antepone una URL base configurable, `VITE_API_BASE_URL`: `/api` en desarrollo, donde el proxy de Vite quita el prefijo y reenvía a la API, y `https://api.chaskicode.com` en producción, con `credentials: "include"` (mismo sitio que el front, CORS de la sección 6). `/auth/*` también se sirve por el proxy **sin prefijo**, porque AuthKit vuelve a `WORKOS_REDIRECT_URI` (`http://localhost:5173/auth/callback` en desarrollo) y la cookie debe quedar en el origen del front.

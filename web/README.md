@@ -81,6 +81,12 @@ npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.yaml
   `sessionStorage` (pase lo que pase) y va a `POST /invitations/accept`. `index.html` pone
   `Referrer-Policy: no-referrer` para toda la app; en producción lo pone también el
   hosting como cabecera (`docs/runbooks/deploy.md`).
+- **Errores a Sentry** (`platform/telemetry/sentry.ts`, ADR 0004): solo con
+  `VITE_SENTRY_DSN`, iniciado en `src/router.ts` después de capturar el token de
+  `/invite`. Sin Session Replay, sin tracing ni `traceparent` hacia la API, y `beforeSend`
+  quita usuario, cabeceras, cookies, cuerpo, query string, fragmento y migas. Un error de
+  render o de ruta muestra la pantalla genérica (`PlatformErrorBoundary`,
+  `RouteErrorScreen`), nunca el error.
 - **Listas por cursor** (miembros, invitaciones): `useCursorPages` con la clave generada de
   la operación, para que la caché siga separada por tenant y se invalide con ella.
 - **El tenant vive en la URL** (`/t/$tenantId/…`, diseño 10.1): nada de tenant en estado

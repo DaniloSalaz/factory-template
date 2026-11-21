@@ -23,5 +23,7 @@ navegador (TanStack Router).
   `FRONTEND_ORIGIN`, `FRONT_BASE_URL`, `WORKOS_REDIRECT_URI` o algún origen de
   `ALLOWED_ORIGINS` no es `https`, ni sin SMTP (`docs/runbooks/email.md`).
 - Solo por Cloudflare Tunnel, con `TRUSTED_CLIENT_IP_HEADER` (diseño, sección 3).
+- Telemetría opcional: `OTEL_EXPORTER_OTLP_*` (con las cabeceras de credenciales en
+  secretos) y `SENTRY_DSN`; sin ellas, la API no envía nada (`docs/runbooks/observability.md`).
 - `ALLOWED_ORIGINS` con el origen exacto del front: CORS expone `Retry-After` y
   `X-Request-ID` para que el front, en otro origen, pueda leerlas.
