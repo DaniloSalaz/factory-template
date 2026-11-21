@@ -204,7 +204,7 @@ run = "npx playwright install chromium && npm run e2e"
 
 [tasks."docker:build"]
 description = "Build the API image locally (not published)"
-run = "docker build -t factory-template-api:ci api"
+run = "docker build --build-arg VERSION=$(git rev-parse HEAD) -t factory-template-api:ci api"
 
 [tasks."docker:scan"]
 description = "Scan the API image; fail on HIGH or CRITICAL"
