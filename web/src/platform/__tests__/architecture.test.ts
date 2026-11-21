@@ -36,9 +36,6 @@ function appImports(file: string, code: string): string[] {
 }
 
 function filesUnder(dir: string): string[] {
-  if (!existsSync(join(src, dir))) {
-    return [];
-  }
   return readdirSync(join(src, dir), { withFileTypes: true, recursive: true })
     .filter((e) => e.isFile() && /\.(ts|tsx|css)$/.test(e.name))
     .map((e) => relative(src, join(e.parentPath, e.name)));
@@ -46,9 +43,13 @@ function filesUnder(dir: string): string[] {
 
 describe("[platform-imports-app]", () => {
   it("platform imports src/app only in app-registry.ts", () => {
-    const offenders = filesUnder("platform")
-      .filter((f) => f !== self)
-      .flatMap((f) => appImports(f, readFileSync(join(src, f), "utf8")).map((s) => `${f}: ${s}`));
+    const files = filesUnder("platform").filter((f) => f !== self);
+    // An empty list would pass without looking at anything (src resolved wrong, say after
+    // moving this test again).
+    expect(files.length, "no file under src/platform: is src right?").toBeGreaterThan(0);
+    const offenders = files.flatMap((f) =>
+      appImports(f, readFileSync(join(src, f), "utf8")).map((s) => `${f}: ${s}`),
+    );
     expect(
       offenders,
       "src/platform must not import src/app; register what the shell needs in src/app/registry.ts",
@@ -98,7 +99,13 @@ function crossFeatureImports(file: string, code: string): string[] {
 
 describe("[feature-boundaries]", () => {
   it("a feature of src/app/features imports no other feature", () => {
-    const offenders = filesUnder("app/features").flatMap((f) =>
+    // src/app always exists (registry.ts is its hook), so a missing src/app/features means
+    // the app has no feature yet, never that src resolved wrong.
+    expect(existsSync(join(src, "app/registry.ts")), "no src/app/registry.ts: is src right?").toBe(
+      true,
+    );
+    const featureFiles = existsSync(join(src, "app/features")) ? filesUnder("app/features") : [];
+    const offenders = featureFiles.flatMap((f) =>
       crossFeatureImports(f, readFileSync(join(src, f), "utf8")).map((s) => `${f}: ${s}`),
     );
     expect(
