@@ -472,6 +472,7 @@ El email del invitado no va en `metadata`. Los eventos de miembros (`membership.
 | `POST /tenants` | Sí | No | — | Crea un tenant, con el creador como owner |
 | `POST /invitations/accept` | Sí | No | — | Acepta una invitación |
 | `GET /tenant/members` | Sí | Sí | `members:read` | Miembros del tenant, por cursor |
+| `GET /tenant/roles` | Sí | Sí | `members:read` | Roles del catálogo, con `mfa_required` y, para quien pregunta, `can_assign` (5.7.2: tiene `members:manage` y el rol está incluido en el suyo; `owner`, solo un owner) y `can_offer` (5.6.1). Los calcula `domain` con las mismas funciones que cambiar el rol e invitar; es solo para que el front ofrezca lo que la API aceptaría |
 | `DELETE /tenant/members/me` | Sí | Sí | — | Abandonar el tenant |
 | `PATCH /tenant/members/{userId}` | Sí | Sí | `members:manage` | Cambiar el rol |
 | `DELETE /tenant/members/{userId}` | Sí | Sí | `members:manage` | Quitar a un miembro |

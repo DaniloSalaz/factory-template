@@ -178,6 +178,19 @@ export interface MemberPage {
   next_cursor: string | null;
 }
 
+export interface TenantRole {
+  name: string;
+  mfa_required: boolean;
+  /** The caller may give this role to a member they manage. */
+  can_assign: boolean;
+  /** The caller may offer this role in an invitation. */
+  can_offer: boolean;
+}
+
+export interface TenantRoleList {
+  items: TenantRole[];
+}
+
 export interface MemberRoleChange {
   /** A role of the app's catalog. */
   role: string;
@@ -2029,6 +2042,120 @@ export const useRemoveMember = <TError = ErrorType<BadRequestResponse | Unauthor
       > => {
       return useMutation(getRemoveMemberMutationOptions(options), queryClient);
     }
+
+export const getListTenantRolesUrl = () => {
+
+
+
+
+  return `/tenant/roles`
+}
+
+/**
+ * Needs members:read. Every role of the catalog, the ones with the most permissions first, with whether it requires MFA and whether the caller could give it to a member (can_assign: the caller holds members:manage and the role is included in theirs; owner only by an owner) or offer it in an invitation (can_offer: the same with members:invite). The API applies the same rules on each change; this is so the front end only offers what it would accept.
+ * @summary The roles of the app's catalog, as the caller may use them
+ */
+export const listTenantRoles = async ( options?: Parameters<typeof apiFetch>[1]): Promise<TenantRoleList> => {
+
+  return apiFetch<TenantRoleList>(getListTenantRolesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTenantRolesQueryKey = () => {
+    return [
+    `/tenant/roles`
+    ] as const;
+    }
+
+
+export const getListTenantRolesQueryOptions = <TData = Awaited<ReturnType<typeof listTenantRoles>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenantRoles>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTenantRolesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTenantRoles>>> = ({ signal }) => listTenantRoles({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTenantRoles>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListTenantRolesQueryResult = NonNullable<Awaited<ReturnType<typeof listTenantRoles>>>
+export type ListTenantRolesQueryError = ErrorType<UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>
+
+
+/**
+ * Needs members:read. Every role of the catalog, the ones with the most permissions first, with whether it requires MFA and whether the caller could give it to a member (can_assign: the caller holds members:manage and the role is included in theirs; owner only by an owner) or offer it in an invitation (can_offer: the same with members:invite). The API applies the same rules on each change; this is so the front end only offers what it would accept.
+ * @summary The roles of the app's catalog, as the caller may use them
+ */
+export function useListTenantRoles<TData = Awaited<ReturnType<typeof listTenantRoles>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenantRoles>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTenantRoles>>,
+          TError,
+          Awaited<ReturnType<typeof listTenantRoles>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * Needs members:read. Every role of the catalog, the ones with the most permissions first, with whether it requires MFA and whether the caller could give it to a member (can_assign: the caller holds members:manage and the role is included in theirs; owner only by an owner) or offer it in an invitation (can_offer: the same with members:invite). The API applies the same rules on each change; this is so the front end only offers what it would accept.
+ * @summary The roles of the app's catalog, as the caller may use them
+ */
+export function useListTenantRoles<TData = Awaited<ReturnType<typeof listTenantRoles>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenantRoles>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listTenantRoles>>,
+          TError,
+          Awaited<ReturnType<typeof listTenantRoles>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * Needs members:read. Every role of the catalog, the ones with the most permissions first, with whether it requires MFA and whether the caller could give it to a member (can_assign: the caller holds members:manage and the role is included in theirs; owner only by an owner) or offer it in an invitation (can_offer: the same with members:invite). The API applies the same rules on each change; this is so the front end only offers what it would accept.
+ * @summary The roles of the app's catalog, as the caller may use them
+ */
+export function useListTenantRoles<TData = Awaited<ReturnType<typeof listTenantRoles>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenantRoles>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * Needs members:read. Every role of the catalog, the ones with the most permissions first, with whether it requires MFA and whether the caller could give it to a member (can_assign: the caller holds members:manage and the role is included in theirs; owner only by an owner) or offer it in an invitation (can_offer: the same with members:invite). The API applies the same rules on each change; this is so the front end only offers what it would accept.
+ * @summary The roles of the app's catalog, as the caller may use them
+ */
+export function useListTenantRoles<TData = Awaited<ReturnType<typeof listTenantRoles>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listTenantRoles>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListTenantRolesQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListInvitationsUrl = (params?: ListInvitationsParams,) => {
   const normalizedParams = new URLSearchParams();

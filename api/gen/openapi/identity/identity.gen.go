@@ -299,6 +299,22 @@ type TenantCreate struct {
 	Slug string `json:"slug"`
 }
 
+// TenantRole defines model for TenantRole.
+type TenantRole struct {
+	// CanAssign The caller may give this role to a member they manage.
+	CanAssign bool `json:"can_assign"`
+
+	// CanOffer The caller may offer this role in an invitation.
+	CanOffer    bool   `json:"can_offer"`
+	MfaRequired bool   `json:"mfa_required"`
+	Name        string `json:"name"`
+}
+
+// TenantRoleList defines model for TenantRoleList.
+type TenantRoleList struct {
+	Items []TenantRole `json:"items"`
+}
+
 // TenantUpdate defines model for TenantUpdate.
 type TenantUpdate struct {
 	// Name 1 to 100 characters, not only spaces; leading and trailing spaces are trimmed.
@@ -445,6 +461,9 @@ type ServerInterface interface {
 	// ChangeMemberRole Change a member's role
 	// (PATCH /tenant/members/{userId})
 	ChangeMemberRole(w http.ResponseWriter, r *http.Request, userId openapi_types.UUID)
+	// ListTenantRoles The roles of the app's catalog, as the caller may use them
+	// (GET /tenant/roles)
+	ListTenantRoles(w http.ResponseWriter, r *http.Request)
 	// CreateTenant Create a tenant, with the caller as its owner
 	// (POST /tenants)
 	CreateTenant(w http.ResponseWriter, r *http.Request)
@@ -940,6 +959,20 @@ func (siw *ServerInterfaceWrapper) ChangeMemberRole(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// ListTenantRoles operation middleware
+func (siw *ServerInterfaceWrapper) ListTenantRoles(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTenantRoles(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // CreateTenant operation middleware
 func (siw *ServerInterfaceWrapper) CreateTenant(w http.ResponseWriter, r *http.Request) {
 
@@ -1090,6 +1123,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/tenant/members/me", wrapper.LeaveTenant)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/tenant/members/{userId}", wrapper.RemoveMember)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/tenant/members/{userId}", wrapper.ChangeMemberRole)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/tenant/roles", wrapper.ListTenantRoles)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/invitations", wrapper.ListInvitations)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/invitations", wrapper.CreateInvitation)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/invitations/accept", wrapper.AcceptInvitation)
@@ -3235,6 +3269,75 @@ func (response ChangeMemberRole500ApplicationProblemPlusJSONResponse) VisitChang
 	return err
 }
 
+type ListTenantRolesRequestObject struct {
+}
+
+type ListTenantRolesResponseObject interface {
+	VisitListTenantRolesResponse(w http.ResponseWriter) error
+}
+
+type ListTenantRoles200JSONResponse TenantRoleList
+
+func (response ListTenantRoles200JSONResponse) VisitListTenantRolesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTenantRoles401ApplicationProblemPlusJSONResponse struct {
+	UnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response ListTenantRoles401ApplicationProblemPlusJSONResponse) VisitListTenantRolesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTenantRoles403ApplicationProblemPlusJSONResponse struct {
+	ForbiddenApplicationProblemPlusJSONResponse
+}
+
+func (response ListTenantRoles403ApplicationProblemPlusJSONResponse) VisitListTenantRolesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTenantRoles500ApplicationProblemPlusJSONResponse struct {
+	InternalErrorApplicationProblemPlusJSONResponse
+}
+
+func (response ListTenantRoles500ApplicationProblemPlusJSONResponse) VisitListTenantRolesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateTenantRequestObject struct {
 	Body *CreateTenantJSONRequestBody
 }
@@ -3415,6 +3518,9 @@ type StrictServerInterface interface {
 	// ChangeMemberRole Change a member's role
 	// (PATCH /tenant/members/{userId})
 	ChangeMemberRole(ctx context.Context, request ChangeMemberRoleRequestObject) (ChangeMemberRoleResponseObject, error)
+	// ListTenantRoles The roles of the app's catalog, as the caller may use them
+	// (GET /tenant/roles)
+	ListTenantRoles(ctx context.Context, request ListTenantRolesRequestObject) (ListTenantRolesResponseObject, error)
 	// CreateTenant Create a tenant, with the caller as its owner
 	// (POST /tenants)
 	CreateTenant(ctx context.Context, request CreateTenantRequestObject) (CreateTenantResponseObject, error)
@@ -3992,6 +4098,30 @@ func (sh *strictHandler) ChangeMemberRole(w http.ResponseWriter, r *http.Request
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ChangeMemberRoleResponseObject); ok {
 		if err := validResponse.VisitChangeMemberRoleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListTenantRoles operation middleware
+func (sh *strictHandler) ListTenantRoles(w http.ResponseWriter, r *http.Request) {
+	var request ListTenantRolesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListTenantRoles(ctx, request.(ListTenantRolesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListTenantRoles")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListTenantRolesResponseObject); ok {
+		if err := validResponse.VisitListTenantRolesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

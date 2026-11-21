@@ -80,6 +80,21 @@ func (h *Handler) ListMembers(ctx context.Context, req identityapi.ListMembersRe
 	return out, nil
 }
 
+// ListTenantRoles returns the catalog's roles, judged for the caller.
+func (h *Handler) ListTenantRoles(ctx context.Context, _ identityapi.ListTenantRolesRequestObject) (identityapi.ListTenantRolesResponseObject, error) {
+	roles, err := h.members.Roles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := identityapi.ListTenantRoles200JSONResponse{Items: make([]identityapi.TenantRole, 0, len(roles))}
+	for _, r := range roles {
+		out.Items = append(out.Items, identityapi.TenantRole{
+			Name: r.Name, MfaRequired: r.MFARequired, CanAssign: r.CanAssign, CanOffer: r.CanOffer,
+		})
+	}
+	return out, nil
+}
+
 // LeaveTenant removes the caller from the tenant of X-Tenant-ID.
 func (h *Handler) LeaveTenant(ctx context.Context, _ identityapi.LeaveTenantRequestObject) (identityapi.LeaveTenantResponseObject, error) {
 	if err := h.members.Leave(ctx); err != nil {

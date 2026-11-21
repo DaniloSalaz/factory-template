@@ -252,6 +252,44 @@ func (m *Members) manage(ctx context.Context, userID string, fn func(context.Con
 	})
 }
 
+// RoleView is a role of the catalog as the principal sees it: whether it requires MFA,
+// and whether the principal could give it to a member (CanAssign) or offer it in an
+// invitation (CanOffer).
+type RoleView struct {
+	Name        string
+	MFARequired bool
+	CanAssign   bool
+	CanOffer    bool
+}
+
+// Roles returns every role of the catalog (members:read), the roles with the most
+// permissions first, judged for the principal with the same rules as ChangeRole and
+// inviting, so the front end only offers what the API would accept.
+func (m *Members) Roles(ctx context.Context) ([]RoleView, error) {
+	p, ok := authctx.PrincipalFrom(ctx)
+	if !ok {
+		return nil, domain.ErrTenantForbidden()
+	}
+	if err := m.authz.Require(ctx, authz.PermMembersRead); err != nil {
+		return nil, fmt.Errorf("list roles: %w", err)
+	}
+	actor := m.role(p.Role())
+	names := m.catalog.Names()
+	slices.SortStableFunc(names, func(a, b string) int {
+		return len(m.catalog.Permissions(b)) - len(m.catalog.Permissions(a))
+	})
+	out := make([]RoleView, 0, len(names))
+	for _, name := range names {
+		r, _ := m.catalog.Role(name)
+		role := m.role(name)
+		out = append(out, RoleView{
+			Name: name, MFARequired: r.RequiresMFA,
+			CanAssign: domain.CanAssign(actor, role), CanOffer: domain.CanOffer(actor, role),
+		})
+	}
+	return out, nil
+}
+
 // offerable returns the roles of the catalog that a member with role may offer.
 func (m *Members) offerable(role string) []string {
 	r := m.role(role)
@@ -273,7 +311,8 @@ func (m *Members) role(name string) domain.Role {
 	perms := m.catalog.Permissions(name)
 	out := domain.Role{
 		Name: name, Known: known, Owner: known && name == authz.RoleOwner,
-		CanInvite: slices.Contains(perms, authz.PermMembersInvite), Permissions: make([]string, len(perms)),
+		CanInvite: slices.Contains(perms, authz.PermMembersInvite), CanManage: slices.Contains(perms, authz.PermMembersManage),
+		Permissions: make([]string, len(perms)),
 	}
 	for i, p := range perms {
 		out.Permissions[i] = string(p)
