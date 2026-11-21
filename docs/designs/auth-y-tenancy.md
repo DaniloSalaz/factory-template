@@ -44,6 +44,8 @@ RLS protege contra **omisiones** del código. No protege contra una aplicación 
 - Front y API de producción comparten sitio: `app.x.com` y `api.x.com`.
 - Las previsualizaciones van en **otro dominio registrable** (`x-preview.com`), con su propia API y base de datos.
 - `ALLOWED_ORIGINS` de producción: lista cerrada, sin comodines.
+- Fuera de desarrollo, la API no arranca si `FRONTEND_ORIGIN`, `FRONT_BASE_URL`, `WORKOS_REDIRECT_URI` o cualquier origen de `ALLOWED_ORIGINS` no es `https` (paso S1), ni sin SMTP (5.6.7). `APP_ENV` solo admite `development`, `staging` y `production`.
+- Las migraciones van dentro del binario: el despliegue ejecuta `api migrate` (con `MIGRATIONS_DATABASE_URL`, `app_owner`) antes de arrancar la versión nueva (`docs/runbooks/release.md`).
 - Elimina los registros DNS de `x.com` que apunten a servicios que ya no uses.
 - La API solo es accesible por Cloudflare Tunnel, en staging y en producción; la IP del cliente se toma de `CF-Connecting-IP` (`TRUSTED_CLIENT_IP_HEADER`, que lo tiene por defecto en esos dos entornos), nunca de `X-Forwarded-For`.
 - Las extensiones de Postgres (`citext`, `pgcrypto`, `pg_trgm`) se instalan en un esquema propio, `extensions`.
@@ -190,10 +192,12 @@ Todas las respuestas llevan `Cache-Control: no-store`.
    - comprueba que el usuario no es ya miembro;
    - crea la membresía y marca la invitación como aceptada.
 6. La misma función registra `invitation.accepted` y `membership.created`: sin `app.tenant_id`, `record_audit` no admite eventos del tenant (`TN031`).
-7. **Entrega del enlace** (puerto `InvitationSender` del módulo `identity`, `Send(ctx, email, enlace, tenant, rol)`). El enlace es `FRONT_BASE_URL/invite#token=…`; `FRONT_BASE_URL` es por defecto `FRONTEND_ORIGIN` y se valida al arrancar.
+7. **Entrega del enlace** (puerto `InvitationSender` del módulo `identity`, `Send(ctx, InvitationMessage)`: destinatario, enlace, tenant, rol y quién invita, el miembro que crea o reenvía esa invitación, por su nombre o, si no tiene, por su email). El enlace es `FRONT_BASE_URL/invite#token=…`; `FRONT_BASE_URL` es por defecto `FRONTEND_ORIGIN` y se valida al arrancar.
    - Se llama **después de confirmar la transacción**: crear y reenviar. Si falla, se registra en el log como `Error`, sin el enlace, y la invitación queda creada: el remedio es reenviarla. No hay reintentos (no hay cola todavía).
-   - **Hoy solo existe el adaptador de desarrollo**, que escribe el enlace completo en el log (`invitation link (development only)`, con el email enmascarado). La API no arranca con él fuera de desarrollo. **El email real llega con el despliegue**, como otro adaptador del mismo puerto.
-   - Salvo en esa línea del adaptador de desarrollo, el token y su hash no aparecen en ningún log, respuesta ni evento de auditoría.
+   - **Adaptador SMTP** (`adapters/smtpsender`, paso S1): un relay SMTP genérico, sin SDK de ningún proveedor (librería `github.com/wneessen/go-mail`). **Obligatorio fuera de desarrollo**: sin `SMTP_HOST`, usuario y contraseña, la API no arranca. TLS siempre, implícito o STARTTLS que debe salir bien (`SMTP_TLS`), con el certificado verificado; no hay modo en claro. Timeouts de conexión y de cada orden (`SMTP_TIMEOUT`). Configuración y DNS en `docs/runbooks/email.md`.
+   - **El email**, en español, texto y HTML: quién invita, el tenant, el rol y el enlace. El nombre del tenant y el de quien invita los escriben usuarios: van sin caracteres de control ni de formato (sin saltos de línea ni marcas bidi), recortados a 80 caracteres y escapados en el HTML, y **nunca en el asunto**, que es fijo ("Tienes una invitación"), para que nadie use nuestro dominio para phishing.
+   - **Adaptador de desarrollo**: sin `SMTP_HOST`, escribe el enlace completo en el log (`invitation link (development only)`, con el email enmascarado). La API no arranca con él fuera de desarrollo. En desarrollo, `mise.toml` envía a Mailpit (`compose.yaml`) por STARTTLS; `SMTP_TLS_SKIP_VERIFY` (su certificado es autofirmado) solo se admite en desarrollo.
+   - El token solo va en el enlace (fragmento). Salvo en esa línea del adaptador de desarrollo, el token y su hash no aparecen en ningún log, error, métrica, respuesta ni evento de auditoría; los errores de envío SMTP pierden los destinatarios y las respuestas del servidor, que pueden repetirlos.
 
 Caso límite aceptado: si un despliegue cambia los permisos de un rol, las invitaciones ya emitidas por ese rol no se revisan. Caducan en 7 días como máximo.
 
@@ -568,8 +572,8 @@ Vincular identidades desde la sesión, borrado de un tenant (será un comando de
 2. **Transacciones y contexto**: `platform/authctx`, `WithTenantTx`, `WithUserTx`, `WithAnonTx`, y tests de aislamiento, pool y alcance `own` con tablas de ejemplo (incluida una tabla de acceso).
 3. **Login y sesiones**: adaptador de WorkOS, intentos, `/auth/*`, CSRF, CORS, IP de confianza y límite de peticiones.
 4. **Principal y permisos**: middlewares de sesión y tenant, MFA por rol verificada por la app (5.2), `authz`, catálogo de roles con su validación al arrancar, y `/me`.
-5. **Tenants, invitaciones, miembros y auditoría**, con la revocación automática y el evento `identity.member_removed`. Se hace en tres partes: 5a, tenants y miembros (hecho, ADR 0003); 5b, invitaciones (hecho: 5.6 y 5.7.5; queda la revocación al deshabilitar, paso 7, y el email real, con el despliegue); 5c, consulta de la auditoría.
+5. **Tenants, invitaciones, miembros y auditoría**, con la revocación automática y el evento `identity.member_removed`. Se hace en tres partes: 5a, tenants y miembros (hecho, ADR 0003); 5b, invitaciones (hecho: 5.6 y 5.7.5; queda la revocación al deshabilitar, paso 7; el email real llegó con S1); 5c, consulta de la auditoría.
 6. **Trabajos**: workers de usuario y de sistema.
 7. **Administración**: deshabilitar y borrar usuario.
-8. **Front** (hecho, 10.1 y `web/README.md`): 8a, base, login, tenant y MFA; 8b, miembros, invitaciones, `/invite`, renombrar el tenant, `GET /tenant/roles`, `Retry-After` en los `429` y Playwright en CI.
-8. **Front**: login (también al caducar la MFA de un rol), selector de tenant, `X-Tenant-ID`, invitaciones (con `sessionStorage`) y miembros. Se hace en dos partes: 8a, base del front, login, tenant y MFA (hecho, 10.1); 8b, miembros e invitaciones.
+8. **Front** (hecho, 10.1 y `web/README.md`): login (también al caducar la MFA de un rol), selector de tenant, `X-Tenant-ID`, invitaciones y miembros. 8a, base, login, tenant y MFA; 8b, miembros, invitaciones, `/invite`, renombrar el tenant, `GET /tenant/roles`, `Retry-After` en los `429` y Playwright en CI.
+9. **S1, preparar la API para salir de desarrollo** (hecho): https fuera de desarrollo, migraciones en el binario (`api migrate`), email por SMTP (5.6.7) e imagen publicada con procedencia, SBOM y escaneo (`docs/runbooks/release.md`). Servidor, Cloudflare, copias y observabilidad: S2 a S4.
