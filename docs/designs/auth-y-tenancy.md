@@ -444,7 +444,7 @@ Ya no existe ninguna función que devuelva datos de **otro** miembro.
 - **Roles** definidos en código por cada app. La plantilla trae:
   - `owner`: reservado, todos los permisos, incluido `tenant:own`;
   - `admin` y `member`.
-- **Al arrancar**, la app valida su catálogo (`cmd/api/roles.go`, con `platform/authz`) y no arranca si falla: ningún rol salvo `owner` puede tener `tenant:own`, `owner` no se puede renombrar ni eliminar y tiene todos los permisos de plataforma y de los demás roles. Avisa, con un error en el log por cada uno, de los roles de `roles_in_use()` que no existen en el código.
+- **Al arrancar**, la app valida su catálogo (`api/roles.go`, con `platform/authz`) y no arranca si falla: ningún rol salvo `owner` puede tener `tenant:own`, `owner` no se puede renombrar ni eliminar y tiene todos los permisos de plataforma y de los demás roles. Avisa, con un error en el log por cada uno, de los roles de `roles_in_use()` que no existen en el código.
 - Gracias a `tenant:own`, **ningún rol puede incluir a `owner`**: la regla de inclusión ya impide que un admin conceda owner. Además, la regla "solo un owner concede owner" se comprueba explícitamente.
 - **Cada rol declara** si requiere MFA y su antigüedad máxima.
 - **Inclusión**: los permisos de A son un subconjunto de los de B. "Estrictamente incluido": subconjunto propio.

@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/authz"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/clientip"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/ratelimit"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/telemetry"
+	"chaskicode.dev/saas/modules/identity/domain"
+	"chaskicode.dev/saas/platform/apperr"
+	"chaskicode.dev/saas/platform/authz"
+	"chaskicode.dev/saas/platform/clientip"
+	"chaskicode.dev/saas/platform/pii"
+	"chaskicode.dev/saas/platform/ratelimit"
+	"chaskicode.dev/saas/platform/telemetry"
 )
 
 // MFA is the second factor the app verifies itself (design, 5.2; ADR 0002): enrolling a

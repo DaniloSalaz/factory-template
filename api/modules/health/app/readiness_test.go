@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/health/app"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/health/domain"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
+	"chaskicode.dev/saas/modules/health/app"
+	"chaskicode.dev/saas/modules/health/domain"
+	"chaskicode.dev/saas/platform/apperr"
 )
 
 type fakeDBChecker struct {

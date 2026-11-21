@@ -6,9 +6,9 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/clientip"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/ratelimit"
+	"chaskicode.dev/saas/platform/apperr"
+	"chaskicode.dev/saas/platform/clientip"
+	"chaskicode.dev/saas/platform/ratelimit"
 )
 
 // ClientIP stores the request's client address (see clientip.Resolver) in its context,

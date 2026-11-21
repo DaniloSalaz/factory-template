@@ -8,7 +8,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
+	"chaskicode.dev/saas/modules/identity/app"
 )
 
 // Subject is fixed: the tenant's and the inviter's names are written by users, and in a

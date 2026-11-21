@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 
-	healthapi "github.com/DaniloSalaz/factory-template/api/gen/openapi/health"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/health/app"
+	healthapi "chaskicode.dev/saas/gen/openapi/health"
+	"chaskicode.dev/saas/modules/health/app"
 )
 
 var _ healthapi.StrictServerInterface = (*Handler)(nil)

@@ -21,8 +21,8 @@ var rlsVarPatterns = []*regexp.Regexp{
 
 // rlsVarViolations lists every Go file under root, tests and generated code included,
 // that calls the function setting RLS variables, or names one of them, outside
-// internal/platform/db. Fixtures
-// under internal/archtest/testdata are checked by their own test.
+// platform/db. Fixtures
+// under archtest/testdata are checked by their own test.
 func rlsVarViolations(root string) ([]string, error) {
 	var out []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -35,7 +35,7 @@ func rlsVarViolations(root string) ([]string, error) {
 		}
 		rel = filepath.ToSlash(rel)
 		if d.IsDir() {
-			if rel == "internal/platform/db" || rel == "internal/archtest/testdata" {
+			if rel == "platform/db" || rel == "archtest/testdata" {
 				return filepath.SkipDir
 			}
 			return nil
@@ -51,7 +51,7 @@ func rlsVarViolations(root string) ([]string, error) {
 			for _, re := range rlsVarPatterns {
 				if m := re.FindString(line); m != "" {
 					out = append(out, fmt.Sprintf(
-						"[rls-vars-only-in-db] %s:%d mentions %q: only internal/platform/db sets or reads "+
+						"[rls-vars-only-in-db] %s:%d mentions %q: only platform/db sets or reads "+
 							"the RLS variables; run the statements inside db.WithTenantTx, WithUserTx or "+
 							"WithAnonTx, which set them for you", rel, i+1, m))
 				}
@@ -68,7 +68,7 @@ func rlsVarViolations(root string) ([]string, error) {
 func TestRLSVarsOnlyInDB(t *testing.T) {
 	t.Parallel()
 
-	got, err := rlsVarViolations("../..")
+	got, err := rlsVarViolations("..")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,13 +91,13 @@ func TestRLSVarsOnlyInDB_DetectsViolations(t *testing.T) {
 		file string
 		want bool
 	}{
-		{"internal/modules/a/adapters/postgres/setconfig.go", true},
-		{"internal/modules/a/adapters/postgres/setlocal_test.go", true},
+		{"modules/a/adapters/postgres/setconfig.go", true},
+		{"modules/a/adapters/postgres/setlocal_test.go", true},
 		{"gen/sqlc/a/query.sql.go", true},
-		{"internal/modules/b/userid.go", true},
-		{"internal/modules/b/allowed.go", false},
-		{"internal/platform/db/tx.go", false},
-		{"internal/platform/db/schematest/rls_test.go", false},
+		{"modules/b/userid.go", true},
+		{"modules/b/allowed.go", false},
+		{"platform/db/tx.go", false},
+		{"platform/db/schematest/rls_test.go", false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.file, func(t *testing.T) {

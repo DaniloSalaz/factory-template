@@ -2,5 +2,5 @@
 package httpx
 
 import (
-	_ "github.com/DaniloSalaz/factory-template/api/internal/modules/a/app"
+	_ "chaskicode.dev/saas/modules/a/app"
 )

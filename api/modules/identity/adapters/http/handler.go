@@ -10,10 +10,10 @@ import (
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
-	identityapi "github.com/DaniloSalaz/factory-template/api/gen/openapi/identity"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/clientip"
+	identityapi "chaskicode.dev/saas/gen/openapi/identity"
+	"chaskicode.dev/saas/modules/identity/app"
+	"chaskicode.dev/saas/modules/identity/domain"
+	"chaskicode.dev/saas/platform/clientip"
 )
 
 var _ identityapi.StrictServerInterface = (*Handler)(nil)

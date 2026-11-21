@@ -27,22 +27,22 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go"
 
-	"github.com/DaniloSalaz/factory-template/api/gen/routes"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/adapters/fakeidp"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/authz"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/clientip"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/config"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/db"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/db/dbtest"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/httpx"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/logx"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/ratelimit"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/telemetry"
+	"chaskicode.dev/saas/gen/routes"
+	"chaskicode.dev/saas/modules/identity"
+	"chaskicode.dev/saas/modules/identity/adapters/fakeidp"
+	"chaskicode.dev/saas/modules/identity/app"
+	"chaskicode.dev/saas/modules/identity/domain"
+	"chaskicode.dev/saas/platform/authctx"
+	"chaskicode.dev/saas/platform/authz"
+	"chaskicode.dev/saas/platform/clientip"
+	"chaskicode.dev/saas/platform/config"
+	"chaskicode.dev/saas/platform/db"
+	"chaskicode.dev/saas/platform/db/dbtest"
+	"chaskicode.dev/saas/platform/httpx"
+	"chaskicode.dev/saas/platform/logx"
+	"chaskicode.dev/saas/platform/pii"
+	"chaskicode.dev/saas/platform/ratelimit"
+	"chaskicode.dev/saas/platform/telemetry"
 )
 
 // Integration tests of the login, the session middleware and logout, over HTTPS (the
@@ -130,7 +130,7 @@ type options struct {
 	acceptLimit int
 	// catalog defaults to testCatalog.
 	catalog *authz.Catalog
-	// telemetry, if set, instruments the module and the server as cmd/api does.
+	// telemetry, if set, instruments the module and the server as main.go does.
 	telemetry *telemetry.Telemetry
 }
 
@@ -249,7 +249,7 @@ func newEnv(t *testing.T, opts options) *env {
 	security["GET /whoami"] = httpx.Security{Session: true}
 	security["GET /in-tenant"] = httpx.Security{Session: true, Tenant: true}
 	security["POST /deny-in-tx"] = httpx.Security{Session: true, Tenant: true}
-	// The same chain as cmd/api.
+	// The same chain as main.go.
 	h := httpx.Chain(httpx.WithRouteFallback(mux, logger),
 		httpx.RequestID(),
 		httpx.AccessLog(logger),

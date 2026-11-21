@@ -5,10 +5,10 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/config"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/db"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/logx"
-	"github.com/DaniloSalaz/factory-template/api/migrations"
+	"chaskicode.dev/saas/migrations"
+	"chaskicode.dev/saas/platform/config"
+	"chaskicode.dev/saas/platform/db"
+	"chaskicode.dev/saas/platform/logx"
 )
 
 // migrateCommand applies the migrations embedded in this binary with

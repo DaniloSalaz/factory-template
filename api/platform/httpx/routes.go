@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
+	"chaskicode.dev/saas/platform/apperr"
 )
 
 // WithRouteFallback serves mux but answers unmatched routes with problem+json: 404

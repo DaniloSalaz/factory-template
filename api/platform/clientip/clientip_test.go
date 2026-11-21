@@ -5,7 +5,7 @@ import (
 	"net/netip"
 	"testing"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/clientip"
+	"chaskicode.dev/saas/platform/clientip"
 )
 
 func TestResolver_Addr(t *testing.T) {

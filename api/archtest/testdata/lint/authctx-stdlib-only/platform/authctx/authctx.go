@@ -4,7 +4,7 @@ package authctx
 import (
 	"strings"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/logx"
+	"chaskicode.dev/saas/platform/logx"
 )
 
 // Key mixes an allowed (strings) and a forbidden (logx) import.

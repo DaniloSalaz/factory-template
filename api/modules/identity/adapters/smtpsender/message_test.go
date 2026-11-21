@@ -5,8 +5,8 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
+	"chaskicode.dev/saas/modules/identity/app"
+	"chaskicode.dev/saas/platform/pii"
 )
 
 const testToken = "not-a-real-invitation-token"

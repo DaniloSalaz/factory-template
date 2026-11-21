@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/telemetry"
+	"chaskicode.dev/saas/modules/identity/domain"
+	"chaskicode.dev/saas/platform/apperr"
+	"chaskicode.dev/saas/platform/telemetry"
 )
 
 // LoginConfig configures the login use cases.

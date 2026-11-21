@@ -34,7 +34,7 @@ descarta en el último punto antes de salir del proceso:
   query string, fragmento y migas, deja solo las etiquetas permitidas y enmascara emails y
   tokens en los mensajes.
 
-El filtro vive en `api/internal/platform/telemetry` y `web/src/platform/telemetry` y tiene
+El filtro vive en `api/platform/telemetry` y `web/src/platform/telemetry` y tiene
 tests que construyen eventos con datos prohibidos y comprueban que salen sin ellos.
 
 ### Permitido

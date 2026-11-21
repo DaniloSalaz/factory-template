@@ -14,9 +14,9 @@ import (
 	"net/url"
 	"sync"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
+	"chaskicode.dev/saas/modules/identity/app"
+	"chaskicode.dev/saas/modules/identity/domain"
+	"chaskicode.dev/saas/platform/apperr"
 )
 
 // AuthorizeBase is the fake provider's authorization endpoint.

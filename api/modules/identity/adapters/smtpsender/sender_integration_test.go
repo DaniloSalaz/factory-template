@@ -21,10 +21,10 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/adapters/smtpsender"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/config"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
+	"chaskicode.dev/saas/modules/identity/adapters/smtpsender"
+	"chaskicode.dev/saas/modules/identity/app"
+	"chaskicode.dev/saas/platform/config"
+	"chaskicode.dev/saas/platform/pii"
 )
 
 // The same image as compose.yaml.

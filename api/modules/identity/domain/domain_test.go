@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
+	"chaskicode.dev/saas/platform/apperr"
 )
 
 const front = "http://localhost:5173"

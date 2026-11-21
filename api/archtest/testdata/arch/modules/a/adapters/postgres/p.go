@@ -2,5 +2,5 @@
 package postgres
 
 import (
-	_ "github.com/DaniloSalaz/factory-template/api/gen/sqlc/a"
+	_ "chaskicode.dev/saas/gen/sqlc/a"
 )

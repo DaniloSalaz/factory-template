@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
+	"chaskicode.dev/saas/modules/identity/app"
 )
 
 // Tenants and members over HTTP (design 5.5 and 5.7, migration 00005), with the real

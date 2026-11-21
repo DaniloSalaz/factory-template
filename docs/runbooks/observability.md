@@ -76,7 +76,7 @@ mise run obs         # Grafana (admin / admin) en el dashboard "Factory Template
 ## Añadir telemetría
 
 - Un atributo nuevo solo sale si está en la lista de `allowedKeys`
-  (`api/internal/platform/telemetry/filter.go`) y en la tabla del ADR 0004, con su porqué.
+  (`api/platform/telemetry/filter.go`) y en la tabla del ADR 0004, con su porqué.
   Si no, el filtro lo descarta sin avisar.
 - Una métrica nueva va en `telemetry.Metrics`; `tenant_id` solo donde el ADR lo permite.
 - Una llamada a otro servicio externo: `telemetry.ClientSpan(ctx, tracers, "<servicio>",

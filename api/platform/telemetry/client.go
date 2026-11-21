@@ -7,7 +7,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
+	"chaskicode.dev/saas/platform/apperr"
 )
 
 // ResultOf names an outcome for a metric or a span: success, the code of an apperr
@@ -35,7 +35,7 @@ func ClientSpan(ctx context.Context, tp trace.TracerProvider, service, operation
 	if tp == nil {
 		tp = tracenoop.NewTracerProvider()
 	}
-	ctx, span := tp.Tracer("github.com/DaniloSalaz/factory-template/api").Start(ctx, service+"."+operation,
+	ctx, span := tp.Tracer("chaskicode.dev/saas").Start(ctx, service+"."+operation,
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(KeyPeerService.String(service)))
 	return ctx, func(err error) {

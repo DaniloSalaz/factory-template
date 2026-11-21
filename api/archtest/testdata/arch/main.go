@@ -2,8 +2,8 @@
 package main
 
 import (
-	_ "github.com/DaniloSalaz/factory-template/api/internal/modules/a"
-	_ "github.com/DaniloSalaz/factory-template/api/internal/modules/b"
+	_ "chaskicode.dev/saas/modules/a"
+	_ "chaskicode.dev/saas/modules/b"
 )
 
 func main() {}

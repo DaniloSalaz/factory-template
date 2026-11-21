@@ -2,7 +2,7 @@ version: "2"
 
 run:
   tests: true
-  # Architecture tests live behind this tag (see internal/archtest); lint them too.
+  # Architecture tests live behind this tag (see archtest); lint them too.
   build-tags: [arch]
 
 linters:
@@ -33,54 +33,54 @@ linters:
   settings:
     # Architecture rules. Messages name the rule and the fix so that whoever reads the
     # lint output (person or agent) can correct the code without looking anything up.
-    # Each rule has a failing fixture in internal/archtest/testdata/lint.
+    # Each rule has a failing fixture in archtest/testdata/lint.
     forbidigo:
       analyze-types: true
       forbid:
         - pattern: ^os\.(Getenv|LookupEnv|Environ)$
           msg: >-
-            [env-only-in-config] the environment is read only in internal/platform/config:
+            [env-only-in-config] the environment is read only in platform/config:
             add the variable to config.Config (env tag + Validate) and pass the value in
             through a constructor
     depguard:
       rules:
         # In strict mode depguard only prints the list name for imports missing from
         # `allow`, so these names carry the explanation.
-        "[platform-no-modules] internal/platform must not import internal/modules: move the code into the module, or define an interface in platform that the module implements":
-          files: ["**/internal/platform/**"]
+        "[platform-no-modules] platform must not import modules: move the code into the module, or define an interface in platform that the module implements":
+          files: ["**/platform/**"]
           deny:
-            - pkg: github.com/DaniloSalaz/factory-template/api/internal/modules
+            - pkg: chaskicode.dev/saas/modules
               desc: >-
                 [platform-no-modules] platform is shared infrastructure: move the code into
                 the module, or define an interface in platform that the module implements
         "[apperr-stdlib-only] platform/apperr may import only the standard library: keep it dependency-free so every domain package can use it":
-          files: ["**/internal/platform/apperr/**"]
+          files: ["**/platform/apperr/**"]
           list-mode: strict
           allow:
             - $gostd
             # Its own external test package (apperr_test) imports it.
-            - github.com/DaniloSalaz/factory-template/api/internal/platform/apperr
+            - chaskicode.dev/saas/platform/apperr
         "[authctx-stdlib-only] platform/authctx may import only the standard library: platform/db and every module read it, so it must not pull dependencies into them":
-          files: ["**/internal/platform/authctx/**"]
+          files: ["**/platform/authctx/**"]
           list-mode: strict
           allow:
             - $gostd
             # Its own external test package (authctx_test) imports it.
-            - github.com/DaniloSalaz/factory-template/api/internal/platform/authctx
+            - chaskicode.dev/saas/platform/authctx
         "[authz-in-use-cases] adapters/http must not import platform/authz: check permissions in the use case (app/) with Require, never in the handler":
-          files: ["**/internal/modules/*/adapters/http/**"]
+          files: ["**/modules/*/adapters/http/**"]
           deny:
-            - pkg: github.com/DaniloSalaz/factory-template/api/internal/platform/authz
+            - pkg: chaskicode.dev/saas/platform/authz
               desc: >-
                 [authz-in-use-cases] permissions are checked in the use case (app/) with
                 Authorizer.Require, so every transport gets the same check; the handler
                 only calls the use case
         "[domain-pure] domain packages may import only the standard library and platform/apperr: move infrastructure to adapters/ behind a port (interface) declared in app/":
-          files: ["**/internal/modules/*/domain/**"]
+          files: ["**/modules/*/domain/**"]
           list-mode: strict
           allow:
             - $gostd
-            - github.com/DaniloSalaz/factory-template/api/internal/platform/apperr
+            - chaskicode.dev/saas/platform/apperr
           deny:
             - pkg: net/http
               desc: >-
@@ -96,7 +96,7 @@ linters:
       context: scope
     wrapcheck:
       ignore-package-globs:
-        - github.com/DaniloSalaz/factory-template/api/*
+        - chaskicode.dev/saas/*
   exclusions:
     generated: strict
     paths:
@@ -105,7 +105,7 @@ linters:
       - path: _test\.go
         linters: [gochecknoglobals, wrapcheck, gosec]
       # The one package allowed to read the environment, tests included.
-      - path: internal/platform/config/
+      - path: platform/config/
         linters: [forbidigo]
 
 formatters:
@@ -115,7 +115,7 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/DaniloSalaz/factory-template
+        - chaskicode.dev/saas
   exclusions:
     generated: strict
     paths:

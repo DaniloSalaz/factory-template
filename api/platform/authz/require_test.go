@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/authz"
+	"chaskicode.dev/saas/platform/apperr"
+	"chaskicode.dev/saas/platform/authctx"
+	"chaskicode.dev/saas/platform/authz"
 )
 
 type denial struct {

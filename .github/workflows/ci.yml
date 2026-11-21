@@ -246,7 +246,7 @@ jobs:
           WORKOS_API_KEY: sk_test_ci_placeholder_never_sent
         run: |
           cd api
-          go build -o "$RUNNER_TEMP/api" ./cmd/api
+          go build -o "$RUNNER_TEMP/api" .
           mise exec -- "$RUNNER_TEMP/api" > "$RUNNER_TEMP/api.log" 2>&1 &
           curl --silent --show-error --fail --retry 30 --retry-delay 1 --retry-all-errors \
             http://localhost:8080/readyz

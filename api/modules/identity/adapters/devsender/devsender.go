@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/config"
+	"chaskicode.dev/saas/modules/identity/app"
+	"chaskicode.dev/saas/platform/config"
 )
 
 // LogMessage is the message of the log record that carries the link.

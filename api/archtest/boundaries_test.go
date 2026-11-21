@@ -64,10 +64,10 @@ func runGo(t *testing.T, dir string, args ...string) ([]byte, error) {
 }
 
 // privateOwner reports which module owns path when path is private to that module: the
-// interior of internal/modules/<x> (anything below its root package) or its generated
+// interior of modules/<x> (anything below its root package) or its generated
 // code under gen/openapi/<x> and gen/sqlc/<x>.
 func privateOwner(modPath, path string) (string, bool) {
-	if rest, ok := strings.CutPrefix(path, modPath+"/internal/modules/"); ok {
+	if rest, ok := strings.CutPrefix(path, modPath+"/modules/"); ok {
 		name, sub, _ := strings.Cut(rest, "/")
 		return name, sub != ""
 	}
@@ -80,9 +80,9 @@ func privateOwner(modPath, path string) (string, bool) {
 	return "", false
 }
 
-// moduleOf returns the module a package belongs to, or "" outside internal/modules.
+// moduleOf returns the module a package belongs to, or "" outside modules.
 func moduleOf(modPath, path string) string {
-	rest, ok := strings.CutPrefix(path, modPath+"/internal/modules/")
+	rest, ok := strings.CutPrefix(path, modPath+"/modules/")
 	if !ok {
 		return ""
 	}
@@ -104,7 +104,7 @@ func boundaryViolations(modPath string, pkgs []goPackage) []string {
 			}
 			out = append(out, fmt.Sprintf(
 				"[module-boundaries] %s imports %s, which is private to module %q: "+
-					"outside internal/modules/%s import only its root package (module.go) and "+
+					"outside modules/%s import only its root package (module.go) and "+
 					"expose what you need there", p.ImportPath, imp, owner, owner))
 		}
 	}
@@ -114,7 +114,7 @@ func boundaryViolations(modPath string, pkgs []goPackage) []string {
 func TestModuleBoundaries(t *testing.T) {
 	t.Parallel()
 
-	modPath, pkgs := listPackages(t, "../..")
+	modPath, pkgs := listPackages(t, "..")
 	if len(pkgs) == 0 {
 		t.Fatal("go list returned no packages")
 	}
@@ -136,20 +136,20 @@ func TestModuleBoundaries_DetectsViolations(t *testing.T) {
 		imported string
 		want     bool
 	}{
-		{"another module's domain", "internal/modules/b", "internal/modules/a/domain", true},
-		{"another module's generated code", "internal/modules/b/app", "gen/sqlc/a", true},
-		{"platform into a module's interior", "internal/platform/httpx", "internal/modules/a/app", true},
-		{"test files are checked too", "internal/modules/b_test", "internal/modules/a/adapters/postgres", true},
-		{"another module's root package", "internal/modules/b", "internal/modules/a", false},
-		{"own interior", "internal/modules/a/app", "internal/modules/a/domain", false},
-		{"own generated code", "internal/modules/a/adapters/postgres", "gen/sqlc/a", false},
-		{"composition root uses module roots", "cmd/api", "internal/modules/a", false},
+		{"another module's domain", "modules/b", "modules/a/domain", true},
+		{"another module's generated code", "modules/b/app", "gen/sqlc/a", true},
+		{"platform into a module's interior", "platform/httpx", "modules/a/app", true},
+		{"test files are checked too", "modules/b_test", "modules/a/adapters/postgres", true},
+		{"another module's root package", "modules/b", "modules/a", false},
+		{"own interior", "modules/a/app", "modules/a/domain", false},
+		{"own generated code", "modules/a/adapters/postgres", "gen/sqlc/a", false},
+		{"composition root uses module roots", "", "modules/a", false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			importer := strings.TrimSuffix(modPath+"/"+tc.importer, "_test")
+			importer := strings.TrimSuffix(strings.TrimSuffix(modPath+"/"+tc.importer, "/"), "_test") // "" is the module root
 			needle := importer + " imports " + modPath + "/" + tc.imported + ","
 			found := slices.ContainsFunc(got, func(v string) bool { return strings.Contains(v, needle) })
 			if found != tc.want {

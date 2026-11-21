@@ -6,7 +6,7 @@ package domain
 import (
 	"time"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
+	"chaskicode.dev/saas/platform/apperr"
 )
 
 // Every session failure is the same 401, so a client cannot tell a revoked session from

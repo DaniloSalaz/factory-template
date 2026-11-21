@@ -2,7 +2,7 @@
 // standard library and platform/apperr.
 package domain
 
-import "github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
+import "chaskicode.dev/saas/platform/apperr"
 
 // CodeDatabaseUnavailable identifies a readiness failure caused by the database.
 const CodeDatabaseUnavailable = "health.db_unavailable"

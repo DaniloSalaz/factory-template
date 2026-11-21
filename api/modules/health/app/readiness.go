@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/health/domain"
+	"chaskicode.dev/saas/modules/health/domain"
 )
 
 // CheckReadiness decides whether the service is ready to receive traffic.

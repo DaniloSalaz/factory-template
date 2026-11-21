@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/config"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/httpx"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/logx"
+	"chaskicode.dev/saas/platform/apperr"
+	"chaskicode.dev/saas/platform/config"
+	"chaskicode.dev/saas/platform/httpx"
+	"chaskicode.dev/saas/platform/logx"
 )
 
 func TestWriteProblem(t *testing.T) {

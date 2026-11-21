@@ -4,7 +4,7 @@ package domain
 import (
 	"strings"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
+	"chaskicode.dev/saas/platform/apperr"
 )
 
 // Allowed uses stdlib and apperr only.

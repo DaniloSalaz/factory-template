@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
+	"chaskicode.dev/saas/platform/authctx"
 )
 
 // Platform permissions. Apps add their own, with the same "resource:action" form.

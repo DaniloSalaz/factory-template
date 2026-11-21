@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/httpx"
+	"chaskicode.dev/saas/platform/httpx"
 )
 
 func TestWithRouteFallback(t *testing.T) {

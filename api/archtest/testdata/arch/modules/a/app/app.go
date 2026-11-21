@@ -2,5 +2,5 @@
 package app
 
 import (
-	_ "github.com/DaniloSalaz/factory-template/api/internal/modules/a/domain"
+	_ "chaskicode.dev/saas/modules/a/domain"
 )

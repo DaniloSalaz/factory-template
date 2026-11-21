@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/authz"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/clientip"
+	"chaskicode.dev/saas/platform/authctx"
+	"chaskicode.dev/saas/platform/authz"
+	"chaskicode.dev/saas/platform/clientip"
 )
 
 // DenialAuditor records authz.denied in the principal's tenant, with the principal as

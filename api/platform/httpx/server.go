@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/config"
+	"chaskicode.dev/saas/platform/config"
 )
 
 // Server is an HTTP server with configured timeouts and graceful shutdown.

@@ -11,7 +11,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/telemetry"
+	"chaskicode.dev/saas/platform/telemetry"
 )
 
 // counts returns, per metric of ours, its data points as attribute set -> value.

@@ -11,7 +11,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/logx"
+	"chaskicode.dev/saas/platform/logx"
 )
 
 // Middleware wraps a handler with cross-cutting behaviour.

@@ -10,9 +10,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/health"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/db/dbtest"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/httpx"
+	"chaskicode.dev/saas/modules/health"
+	"chaskicode.dev/saas/platform/db/dbtest"
+	"chaskicode.dev/saas/platform/httpx"
 )
 
 func TestReadyz_Integration(t *testing.T) {

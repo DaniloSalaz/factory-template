@@ -7,11 +7,11 @@ import (
 	"net/netip"
 	"slices"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/authz"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/clientip"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/ratelimit"
+	"chaskicode.dev/saas/modules/identity/domain"
+	"chaskicode.dev/saas/platform/authctx"
+	"chaskicode.dev/saas/platform/authz"
+	"chaskicode.dev/saas/platform/clientip"
+	"chaskicode.dev/saas/platform/ratelimit"
 )
 
 // Authorizer is the permission check of the use cases (authz.Authorizer).

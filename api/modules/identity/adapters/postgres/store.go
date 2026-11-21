@@ -14,13 +14,13 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	identitydb "github.com/DaniloSalaz/factory-template/api/gen/sqlc/identity"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/db"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
+	identitydb "chaskicode.dev/saas/gen/sqlc/identity"
+	"chaskicode.dev/saas/modules/identity/app"
+	"chaskicode.dev/saas/modules/identity/domain"
+	"chaskicode.dev/saas/platform/apperr"
+	"chaskicode.dev/saas/platform/authctx"
+	"chaskicode.dev/saas/platform/db"
+	"chaskicode.dev/saas/platform/pii"
 )
 
 // Store implements app.Store.

@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 
-	healthdb "github.com/DaniloSalaz/factory-template/api/gen/sqlc/health"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/health/app"
+	healthdb "chaskicode.dev/saas/gen/sqlc/health"
+	"chaskicode.dev/saas/modules/health/app"
 )
 
 var _ app.DBChecker = (*Checker)(nil)

@@ -5,7 +5,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
+	"chaskicode.dev/saas/platform/apperr"
 )
 
 type tnError struct {

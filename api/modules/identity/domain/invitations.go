@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
+	"chaskicode.dev/saas/platform/apperr"
 )
 
 // Invitations (design, 5.6). Who may offer which role is CanOffer; the token is a

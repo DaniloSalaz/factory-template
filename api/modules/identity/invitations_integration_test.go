@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
+	"chaskicode.dev/saas/modules/identity/app"
+	"chaskicode.dev/saas/platform/pii"
 )
 
 // Invitations over HTTP (design 5.6 and 11, migration 00006), with the real middlewares

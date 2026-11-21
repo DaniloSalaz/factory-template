@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
+	"chaskicode.dev/saas/platform/authctx"
 )
 
 const (

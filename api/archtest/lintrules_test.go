@@ -20,7 +20,7 @@ func TestLintRules(t *testing.T) {
 	if err != nil {
 		t.Fatal("golangci-lint not found in PATH; run the tests through `mise run arch`")
 	}
-	cfg, err := filepath.Abs("../../.golangci.yml")
+	cfg, err := filepath.Abs("../.golangci.yml")
 	if err != nil {
 		t.Fatalf("config path: %v", err)
 	}
@@ -33,22 +33,22 @@ func TestLintRules(t *testing.T) {
 		{
 			fixture: "env-only-in-config",
 			want: []string{
-				"internal/platform/httpx/port.go", "internal/modules/foo/foo.go",
+				"platform/httpx/port.go", "modules/foo/foo.go",
 				"[env-only-in-config]", "add the variable to config.Config",
 			},
-			allowed: []string{"internal/platform/config/"},
+			allowed: []string{"platform/config/"},
 		},
 		{
 			fixture: "platform-no-modules",
-			want:    []string{"internal/platform/httpx/httpx.go", "[platform-no-modules]", "move the code into"},
+			want:    []string{"platform/httpx/httpx.go", "[platform-no-modules]", "move the code into"},
 		},
 		{
 			fixture: "apperr-stdlib-only",
-			want:    []string{"internal/platform/apperr/apperr.go", "platform/logx", "[apperr-stdlib-only]", "only the standard library"},
+			want:    []string{"platform/apperr/apperr.go", "platform/logx", "[apperr-stdlib-only]", "only the standard library"},
 		},
 		{
 			fixture: "authctx-stdlib-only",
-			want:    []string{"internal/platform/authctx/authctx.go", "platform/logx", "[authctx-stdlib-only]", "only the standard library"},
+			want:    []string{"platform/authctx/authctx.go", "platform/logx", "[authctx-stdlib-only]", "only the standard library"},
 		},
 		{
 			fixture: "authz-in-use-cases",

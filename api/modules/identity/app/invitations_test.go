@@ -13,13 +13,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/authz"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/ratelimit"
+	"chaskicode.dev/saas/modules/identity/app"
+	"chaskicode.dev/saas/modules/identity/domain"
+	"chaskicode.dev/saas/platform/apperr"
+	"chaskicode.dev/saas/platform/authctx"
+	"chaskicode.dev/saas/platform/authz"
+	"chaskicode.dev/saas/platform/pii"
+	"chaskicode.dev/saas/platform/ratelimit"
 )
 
 // The invitation side of memTenants: invitations by id with their token hashes, the

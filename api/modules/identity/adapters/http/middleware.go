@@ -4,11 +4,11 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/httpx"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/logx"
+	"chaskicode.dev/saas/modules/identity/app"
+	"chaskicode.dev/saas/platform/apperr"
+	"chaskicode.dev/saas/platform/authctx"
+	"chaskicode.dev/saas/platform/httpx"
+	"chaskicode.dev/saas/platform/logx"
 )
 
 // SessionMiddleware requires a valid session (design, 5.4.1) unless the route's security,

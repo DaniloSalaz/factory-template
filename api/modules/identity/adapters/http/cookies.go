@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
+	"chaskicode.dev/saas/modules/identity/domain"
 )
 
 // Cookie names (design, 5.1.2 and section 6). The __Host- prefix makes the browser

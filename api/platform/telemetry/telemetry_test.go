@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/config"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/telemetry"
+	"chaskicode.dev/saas/platform/config"
+	"chaskicode.dev/saas/platform/telemetry"
 )
 
 func settings(c config.Telemetry) telemetry.Settings {

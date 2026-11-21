@@ -12,9 +12,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/clientip"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/httpx"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/ratelimit"
+	"chaskicode.dev/saas/platform/clientip"
+	"chaskicode.dev/saas/platform/httpx"
+	"chaskicode.dev/saas/platform/ratelimit"
 )
 
 var allowedOrigins = []string{"https://app.example.com"}

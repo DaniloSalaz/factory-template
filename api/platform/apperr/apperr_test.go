@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
+	"chaskicode.dev/saas/platform/apperr"
 )
 
 func TestConstructors(t *testing.T) {

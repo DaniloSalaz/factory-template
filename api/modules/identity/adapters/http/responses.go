@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"net/http"
 
-	identityapi "github.com/DaniloSalaz/factory-template/api/gen/openapi/identity"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/httpx"
+	identityapi "chaskicode.dev/saas/gen/openapi/identity"
+	"chaskicode.dev/saas/modules/identity/app"
+	"chaskicode.dev/saas/platform/httpx"
 )
 
 // The generated responses carry one value per header, and these set several cookies,

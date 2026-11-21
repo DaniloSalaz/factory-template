@@ -14,9 +14,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/config"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/httpx"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/logx"
+	"chaskicode.dev/saas/platform/config"
+	"chaskicode.dev/saas/platform/httpx"
+	"chaskicode.dev/saas/platform/logx"
 )
 
 func TestChain_FirstIsOutermost(t *testing.T) {

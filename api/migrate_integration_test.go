@@ -4,8 +4,8 @@ import (
 	"io/fs"
 	"testing"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/db/dbtest"
-	"github.com/DaniloSalaz/factory-template/api/migrations"
+	"chaskicode.dev/saas/migrations"
+	"chaskicode.dev/saas/platform/db/dbtest"
 )
 
 // `api migrate` exits 0 when everything is applied and non-zero on any failure, without

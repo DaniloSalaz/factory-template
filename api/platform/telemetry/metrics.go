@@ -23,7 +23,7 @@ const (
 )
 
 func newMetrics(mp metric.MeterProvider) (*Metrics, error) {
-	m := mp.Meter("github.com/DaniloSalaz/factory-template/api")
+	m := mp.Meter("chaskicode.dev/saas")
 	var errs []error
 	counter := func(name, desc string) metric.Int64Counter {
 		c, err := m.Int64Counter(name, metric.WithDescription(desc))

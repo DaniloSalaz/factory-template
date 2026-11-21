@@ -1,7 +1,7 @@
 # Runbook: email (SMTP)
 
 Las invitaciones salen por SMTP (diseño 5.6.7, adaptador
-`api/internal/modules/identity/adapters/smtpsender`). Es un relay SMTP genérico: sirve
+`api/modules/identity/adapters/smtpsender`). Es un relay SMTP genérico: sirve
 cualquier proveedor que dé usuario y contraseña SMTP (Postmark, Amazon SES, Brevo,
 Resend, Mailgun, el de tu dominio…). La plantilla no elige proveedor.
 

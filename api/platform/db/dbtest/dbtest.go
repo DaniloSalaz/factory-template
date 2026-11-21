@@ -19,8 +19,8 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
-	platformdb "github.com/DaniloSalaz/factory-template/api/internal/platform/db"
-	"github.com/DaniloSalaz/factory-template/api/migrations"
+	"chaskicode.dev/saas/migrations"
+	platformdb "chaskicode.dev/saas/platform/db"
 )
 
 // Credentials of the throwaway container; they never leave the test process.
@@ -151,6 +151,6 @@ func repoRoot() (string, error) {
 	if !ok {
 		return "", errors.New("locate dbtest source file")
 	}
-	// file is <root>/api/internal/platform/db/dbtest/dbtest.go
-	return filepath.Join(filepath.Dir(file), "..", "..", "..", "..", ".."), nil
+	// file is <root>/api/platform/db/dbtest/dbtest.go
+	return filepath.Join(filepath.Dir(file), "..", "..", "..", ".."), nil
 }

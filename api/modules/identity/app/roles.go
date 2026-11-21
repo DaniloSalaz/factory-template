@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/authz"
+	"chaskicode.dev/saas/platform/authz"
 )
 
 // UnknownRolesInUse returns the roles stored in memberships that catalog lacks (design,

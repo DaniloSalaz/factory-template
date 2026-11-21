@@ -3,11 +3,11 @@ package http
 import (
 	"context"
 
-	identityapi "github.com/DaniloSalaz/factory-template/api/gen/openapi/identity"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
+	identityapi "chaskicode.dev/saas/gen/openapi/identity"
+	"chaskicode.dev/saas/modules/identity/app"
+	"chaskicode.dev/saas/modules/identity/domain"
+	"chaskicode.dev/saas/platform/apperr"
+	"chaskicode.dev/saas/platform/authctx"
 )
 
 // Tenants and members (design, 5.5 and 5.7). Permissions are checked in the use cases,

@@ -88,11 +88,11 @@ añadas filtros de rutas al `on:` de `ci.yml`.
 
 | Regla | Dónde se comprueba | Fixture que demuestra que funciona |
 |---|---|---|
-| `[env-only-in-config]`: `os.Getenv/LookupEnv/Environ` solo en `internal/platform/config` | forbidigo | `api/internal/archtest/testdata/lint/env-only-in-config` |
+| `[env-only-in-config]`: `os.Getenv/LookupEnv/Environ` solo en `platform/config` | forbidigo | `api/archtest/testdata/lint/env-only-in-config` |
 | `[platform-no-modules]`: `platform` no importa `modules` | depguard | `…/testdata/lint/platform-no-modules` |
 | `[apperr-stdlib-only]`: `apperr` solo importa la stdlib | depguard | `…/testdata/lint/apperr-stdlib-only` |
 | `[domain-pure]`: `domain` solo importa la stdlib y `platform/apperr` | depguard | `…/testdata/lint/domain-pure` |
-| `[module-boundaries]`: fuera de `internal/modules/<x>` solo se importa su paquete raíz; `gen/openapi/<x>` y `gen/sqlc/<x>` son privados de `<x>` | `api/internal/archtest/boundaries_test.go` | `…/testdata/arch` |
+| `[module-boundaries]`: fuera de `modules/<x>` solo se importa su paquete raíz; `gen/openapi/<x>` y `gen/sqlc/<x>` son privados de `<x>` | `api/archtest/boundaries_test.go` | `…/testdata/arch` |
 | `[platform-imports-app]`: `web/src/platform` no importa `web/src/app` salvo en `platform/app-registry.ts` | `web/src/platform/architecture.test.ts` (Vitest, `mise run web:test`) | El propio test, con cada forma de importar |
 
 Los fixtures son mini-módulos con el mismo module path que `api/`, para que las reglas les

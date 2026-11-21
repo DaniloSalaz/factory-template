@@ -14,9 +14,9 @@ import (
 	"github.com/wneessen/go-mail"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/config"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/telemetry"
+	"chaskicode.dev/saas/modules/identity/app"
+	"chaskicode.dev/saas/platform/config"
+	"chaskicode.dev/saas/platform/telemetry"
 )
 
 // Sender emails invitations through an SMTP relay.

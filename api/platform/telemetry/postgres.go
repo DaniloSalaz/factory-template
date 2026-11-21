@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/db"
+	"chaskicode.dev/saas/platform/db"
 )
 
 // PgxTracer traces every query (otelpgx): a span named by db.QueryName (the sqlc

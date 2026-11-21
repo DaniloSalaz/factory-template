@@ -6,12 +6,12 @@ import (
 	"net/http"
 	"time"
 
-	healthapi "github.com/DaniloSalaz/factory-template/api/gen/openapi/health"
-	healthdb "github.com/DaniloSalaz/factory-template/api/gen/sqlc/health"
-	healthhttp "github.com/DaniloSalaz/factory-template/api/internal/modules/health/adapters/http"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/health/adapters/postgres"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/health/app"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/httpx"
+	healthapi "chaskicode.dev/saas/gen/openapi/health"
+	healthdb "chaskicode.dev/saas/gen/sqlc/health"
+	healthhttp "chaskicode.dev/saas/modules/health/adapters/http"
+	"chaskicode.dev/saas/modules/health/adapters/postgres"
+	"chaskicode.dev/saas/modules/health/app"
+	"chaskicode.dev/saas/platform/httpx"
 )
 
 // readinessTimeout keeps /readyz under typical orchestrator probe timeouts.

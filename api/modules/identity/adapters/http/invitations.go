@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	identityapi "github.com/DaniloSalaz/factory-template/api/gen/openapi/identity"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
+	identityapi "chaskicode.dev/saas/gen/openapi/identity"
+	"chaskicode.dev/saas/modules/identity/app"
+	"chaskicode.dev/saas/modules/identity/domain"
+	"chaskicode.dev/saas/platform/authctx"
 )
 
 // Invitations (design, 5.6). Permissions are checked in the use case. No response

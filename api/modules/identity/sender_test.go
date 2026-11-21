@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/adapters/devsender"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/adapters/smtpsender"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/config"
+	"chaskicode.dev/saas/modules/identity"
+	"chaskicode.dev/saas/modules/identity/adapters/devsender"
+	"chaskicode.dev/saas/modules/identity/adapters/smtpsender"
+	"chaskicode.dev/saas/platform/config"
 )
 
 // Outside development the links go by email or the API does not start: the log sender

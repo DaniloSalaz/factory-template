@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/adapters/devsender"
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/config"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/logx"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
+	"chaskicode.dev/saas/modules/identity/adapters/devsender"
+	"chaskicode.dev/saas/modules/identity/app"
+	"chaskicode.dev/saas/platform/config"
+	"chaskicode.dev/saas/platform/logx"
+	"chaskicode.dev/saas/platform/pii"
 )
 
 func TestNew_OnlyInDevelopment(t *testing.T) {

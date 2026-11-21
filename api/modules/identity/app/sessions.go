@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
+	"chaskicode.dev/saas/modules/identity/domain"
+	"chaskicode.dev/saas/platform/apperr"
 )
 
 // Sessions checks the session of each request (design, 5.4.1) and ends sessions (5.5).

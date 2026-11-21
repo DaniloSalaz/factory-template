@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/authctx"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/db"
-	"github.com/DaniloSalaz/factory-template/api/internal/platform/telemetry"
+	"chaskicode.dev/saas/platform/apperr"
+	"chaskicode.dev/saas/platform/authctx"
+	"chaskicode.dev/saas/platform/db"
+	"chaskicode.dev/saas/platform/telemetry"
 )
 
 // auditTimeout bounds the denial's audit, which also runs if the request is cancelled.
