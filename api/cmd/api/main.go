@@ -1,5 +1,5 @@
 // Command api is the HTTP API process and the application's composition root.
-package main
+package main // PR de prueba de CI: no fusionar.
 
 import (
 	"context"
