@@ -1154,7 +1154,14 @@ type RedirectResponse struct {
 
 type ServiceUnavailableApplicationProblemPlusJSONResponse Problem
 
-type TooManyRequestsApplicationProblemPlusJSONResponse Problem
+type TooManyRequestsResponseHeaders struct {
+	RetryAfter *int
+}
+type TooManyRequestsApplicationProblemPlusJSONResponse struct {
+	Body Problem
+
+	Headers TooManyRequestsResponseHeaders
+}
 
 type UnauthorizedApplicationProblemPlusJSONResponse Problem
 
@@ -1233,10 +1240,13 @@ type AuthCallback429ApplicationProblemPlusJSONResponse struct {
 func (response AuthCallback429ApplicationProblemPlusJSONResponse) VisitAuthCallbackResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
 	w.WriteHeader(429)
 	_, err := buf.WriteTo(w)
 	return err
@@ -1315,10 +1325,13 @@ type AuthLogin429ApplicationProblemPlusJSONResponse struct {
 func (response AuthLogin429ApplicationProblemPlusJSONResponse) VisitAuthLoginResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
 	w.WriteHeader(429)
 	_, err := buf.WriteTo(w)
 	return err
@@ -1673,10 +1686,13 @@ type CreateInvitation429ApplicationProblemPlusJSONResponse struct {
 func (response CreateInvitation429ApplicationProblemPlusJSONResponse) VisitCreateInvitationResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
 	w.WriteHeader(429)
 	_, err := buf.WriteTo(w)
 	return err
@@ -1807,10 +1823,13 @@ type AcceptInvitation429ApplicationProblemPlusJSONResponse struct {
 func (response AcceptInvitation429ApplicationProblemPlusJSONResponse) VisitAcceptInvitationResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
 	w.WriteHeader(429)
 	_, err := buf.WriteTo(w)
 	return err
@@ -2053,10 +2072,13 @@ type ResendInvitation429ApplicationProblemPlusJSONResponse struct {
 func (response ResendInvitation429ApplicationProblemPlusJSONResponse) VisitResendInvitationResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
 	w.WriteHeader(429)
 	_, err := buf.WriteTo(w)
 	return err
@@ -2240,10 +2262,13 @@ type CreateMFAChallenge429ApplicationProblemPlusJSONResponse struct {
 func (response CreateMFAChallenge429ApplicationProblemPlusJSONResponse) VisitCreateMFAChallengeResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
 	w.WriteHeader(429)
 	_, err := buf.WriteTo(w)
 	return err
@@ -2357,10 +2382,13 @@ type EnrollTOTP429ApplicationProblemPlusJSONResponse struct {
 func (response EnrollTOTP429ApplicationProblemPlusJSONResponse) VisitEnrollTOTPResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
 	w.WriteHeader(429)
 	_, err := buf.WriteTo(w)
 	return err
@@ -2533,10 +2561,13 @@ type VerifyTOTP429ApplicationProblemPlusJSONResponse struct {
 func (response VerifyTOTP429ApplicationProblemPlusJSONResponse) VisitVerifyTOTPResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
 	w.WriteHeader(429)
 	_, err := buf.WriteTo(w)
 	return err

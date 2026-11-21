@@ -420,7 +420,9 @@ func TestInvitations_AcceptIsRateLimited(t *testing.T) {
 	for range 3 {
 		wantProblem(t, b.accept(strings.Repeat("A", 43)), http.StatusNotFound, "invitation.not_found")
 	}
-	wantProblem(t, b.accept(strings.Repeat("A", 43)), http.StatusTooManyRequests, "rate_limit.exceeded")
+	res := b.accept(strings.Repeat("A", 43))
+	wantProblem(t, res, http.StatusTooManyRequests, "rate_limit.exceeded")
+	wantRetryAfter(t, res, 15*time.Minute)
 }
 
 // The only way to hold a session with an unverified email (design 5.1.7): a later login

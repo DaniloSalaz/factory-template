@@ -3,7 +3,11 @@
 // standard library and platform/apperr.
 package domain
 
-import "github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
+import (
+	"time"
+
+	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
+)
 
 // Every session failure is the same 401, so a client cannot tell a revoked session from
 // an expired or unknown one.
@@ -84,8 +88,8 @@ func ErrMFACodeInvalid() error {
 
 // ErrMFARateLimited is returned when the user or the session has made too many
 // verification attempts or challenges in the window.
-func ErrMFARateLimited() error {
-	return apperr.RateLimited("mfa.rate_limited", "Too many attempts; try again later.")
+func ErrMFARateLimited(retryAfter time.Duration) error {
+	return apperr.RateLimited("mfa.rate_limited", "Too many attempts; try again later.", retryAfter)
 }
 
 // ErrMFALastFactor is returned when removing the factor would leave the user without a

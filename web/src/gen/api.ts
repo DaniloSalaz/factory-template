@@ -306,7 +306,7 @@ export type ForbiddenResponse = Problem;
 export type ConflictResponse = Problem;
 
 /**
- * Rate limit exceeded; retry later.
+ * Rate limit exceeded; retry after the seconds of Retry-After.
  */
 export type TooManyRequestsResponse = Problem;
 

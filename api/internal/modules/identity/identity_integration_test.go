@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -286,6 +287,16 @@ type response struct {
 	status int
 	header http.Header
 	body   []byte
+}
+
+// wantRetryAfter checks that a 429 says how long to wait: whole seconds, from 1 up to
+// the quota's window.
+func wantRetryAfter(t *testing.T, r response, window time.Duration) {
+	t.Helper()
+	s, err := strconv.Atoi(r.header.Get("Retry-After"))
+	if err != nil || s < 1 || time.Duration(s)*time.Second > window {
+		t.Fatalf("Retry-After = %q, want 1 to %v in seconds", r.header.Get("Retry-After"), window)
+	}
 }
 
 func (r response) problemCode(t *testing.T) string {
@@ -1005,9 +1016,11 @@ func TestLogin_RateLimited(t *testing.T) {
 	for range 3 {
 		b.startLogin("/")
 	}
-	if res := b.do(http.MethodGet, "/auth/login", ""); res.status != http.StatusTooManyRequests || res.problemCode(t) != "rate_limit.exceeded" {
+	res := b.do(http.MethodGet, "/auth/login", "")
+	if res.status != http.StatusTooManyRequests || res.problemCode(t) != "rate_limit.exceeded" {
 		t.Fatalf("fourth request: %d %s", res.status, res.body)
 	}
+	wantRetryAfter(t, res, time.Minute)
 	if res := b.callback("x", "y"); res.status != http.StatusTooManyRequests {
 		t.Fatalf("the callback shares the quota: %d", res.status)
 	}
@@ -1445,6 +1458,7 @@ func TestMFA_VerificationIsRateLimited(t *testing.T) {
 		res.header.Get("Content-Type") != httpx.ProblemContentType {
 		t.Fatalf("6th attempt: %d %s, want 429 mfa.rate_limited (problem+json)", res.status, res.body)
 	}
+	wantRetryAfter(t, res, 15*time.Minute)
 	if n := e.count(`SELECT count(*) FROM audit_log WHERE action = 'mfa.verify_locked' AND actor_user_id = $1`, e.userID(who)); n != 1 {
 		t.Fatalf("mfa.verify_locked events = %d, want 1", n)
 	}

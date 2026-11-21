@@ -344,12 +344,12 @@ func (in *Invitations) send(ctx context.Context, inv Invitation, token, tenantNa
 
 // allow counts one request of key against limiter.
 func allow(ctx context.Context, limiter ratelimit.Limiter, key string) error {
-	ok, err := limiter.Allow(ctx, key)
+	d, err := limiter.Allow(ctx, key)
 	if err != nil {
 		return apperr.Wrap(err, apperr.KindUnavailable, "rate_limit.unavailable", "The service is temporarily unavailable.")
 	}
-	if !ok {
-		return apperr.RateLimited("rate_limit.exceeded", "Too many requests; try again later.")
+	if !d.Allowed {
+		return apperr.RateLimited("rate_limit.exceeded", "Too many requests; try again later.", d.RetryAfter)
 	}
 	return nil
 }

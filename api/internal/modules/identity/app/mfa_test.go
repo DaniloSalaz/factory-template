@@ -173,7 +173,7 @@ func TestMFA_VerificationIsRateLimited(t *testing.T) {
 		}
 	}
 	_, err := m.mfa.Verify(t.Context(), cur, "no-such-challenge", "000000")
-	if !errors.Is(err, domain.ErrMFARateLimited()) || apperr.KindOf(err) != apperr.KindRateLimited {
+	if !errors.Is(err, domain.ErrMFARateLimited(0)) || apperr.KindOf(err) != apperr.KindRateLimited {
 		t.Fatalf("6th attempt: %v, want 429 mfa.rate_limited", err)
 	}
 	if m.audits(app.AuditMFAVerifyLocked) != 1 || m.audits(app.AuditMFAVerifyFailed) != 5 {

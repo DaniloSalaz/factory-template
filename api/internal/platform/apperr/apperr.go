@@ -6,6 +6,7 @@ package apperr
 import (
 	"errors"
 	"fmt"
+	"time"
 )
 
 // Kind classifies an error by how a caller should react to it.
@@ -63,7 +64,10 @@ type Error struct {
 	Code    string
 	Message string
 	Fields  []FieldError
-	cause   error
+	// RetryAfter, on a KindRateLimited error, is how long until the quota allows another
+	// request; zero when unknown.
+	RetryAfter time.Duration
+	cause      error
 }
 
 // Error renders the code, message and cause for logs.
@@ -104,8 +108,11 @@ func Unauthorized(code, msg string) error { return newError(KindUnauthorized, co
 // Forbidden reports authenticated access to something the caller may not use.
 func Forbidden(code, msg string) error { return newError(KindForbidden, code, msg) }
 
-// RateLimited reports that the caller exceeded a quota.
-func RateLimited(code, msg string) error { return newError(KindRateLimited, code, msg) }
+// RateLimited reports that the caller exceeded a quota, which allows another request
+// after retryAfter (zero when unknown).
+func RateLimited(code, msg string, retryAfter time.Duration) error {
+	return &Error{Kind: KindRateLimited, Code: code, Message: msg, RetryAfter: retryAfter}
+}
 
 // BadRequest reports a request that is malformed, as opposed to well-formed but invalid.
 func BadRequest(code, msg string) error { return newError(KindBadRequest, code, msg) }

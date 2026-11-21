@@ -1215,7 +1215,13 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
     TooManyRequests:
-      description: Rate limit exceeded; retry later.
+      description: Rate limit exceeded; retry after the seconds of Retry-After.
+      headers:
+        Retry-After:
+          description: Seconds until the quota allows another request.
+          schema:
+            type: integer
+            minimum: 1
       content:
         application/problem+json:
           schema:

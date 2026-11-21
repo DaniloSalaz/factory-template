@@ -23,7 +23,7 @@ func TestConstructors(t *testing.T) {
 		{"validation", apperr.Validation("invalid_input", "invalid input", field), apperr.KindValidation, 1},
 		{"unauthorized", apperr.Unauthorized("no_session", "login required"), apperr.KindUnauthorized, 0},
 		{"forbidden", apperr.Forbidden("not_owner", "not allowed"), apperr.KindForbidden, 0},
-		{"rate limited", apperr.RateLimited("too_many", "slow down"), apperr.KindRateLimited, 0},
+		{"rate limited", apperr.RateLimited("too_many", "slow down", 0), apperr.KindRateLimited, 0},
 		{"bad request", apperr.BadRequest("malformed", "malformed body"), apperr.KindBadRequest, 0},
 		{"unavailable", apperr.Unavailable("db_down", "try later"), apperr.KindUnavailable, 0},
 	}
