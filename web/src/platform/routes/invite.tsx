@@ -8,7 +8,7 @@ import { texts } from "@/platform/texts";
 import { Button, buttonVariants } from "@/platform/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/platform/ui/card";
 
-// The invitation link's page (design 5.6.3). Outside the shell, so nothing runs before
+// The invitation link's page (auth-y-tenancy §5.6.3). Outside the shell, so nothing runs before
 // it but the token's capture at start-up (src/router.ts). index.html sets
 // Referrer-Policy: no-referrer for the whole app, and so for this page.
 export const Route = createFileRoute("/invite")({

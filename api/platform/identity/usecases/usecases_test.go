@@ -684,7 +684,7 @@ func TestComplete_EmailChange(t *testing.T) {
 	})
 }
 
-// A login never gives the session MFA: only verifying a factor does (design, 5.2), so
+// A login never gives the session MFA: only verifying a factor does (auth-y-tenancy §5.2), so
 // no method of the provider, however it authenticated, can stand in for it.
 func TestComplete_NeverGivesMFA(t *testing.T) {
 	t.Parallel()

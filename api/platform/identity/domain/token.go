@@ -34,7 +34,7 @@ func WellFormed(s string) bool {
 }
 
 // HashToken returns the SHA-256 of a session token: the only form stored in the
-// database (design, 5.1.9).
+// database (auth-y-tenancy §5.1.9).
 func HashToken(token string) []byte {
 	sum := sha256.Sum256([]byte(token))
 	return sum[:]

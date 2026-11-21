@@ -5,7 +5,7 @@ import { captureInviteToken } from "@/platform/invite/invite-token";
 import { initSentry } from "@/platform/telemetry/sentry";
 import { routeTree } from "./gen/routeTree.gen";
 
-// Before anything reads the URL: an invitation's token leaves the fragment (design 5.6.3).
+// Before anything reads the URL: an invitation's token leaves the fragment (auth-y-tenancy §5.6.3).
 captureInviteToken(window);
 
 // Error reports, only with VITE_SENTRY_DSN; after the token's capture, so Sentry never

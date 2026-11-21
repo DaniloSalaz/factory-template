@@ -51,10 +51,10 @@ func Modules(deps Deps) ([]Module, error) { //nolint:revive // unused only while
 }
 
 // ownerMFAMaxAge is how old an owner's MFA may be before acting in a tenant needs a
-// new login (design, section 6).
+// new login (auth-y-tenancy §6).
 const ownerMFAMaxAge = 12 * time.Hour
 
-// Roles is the app's role catalog (design, section 8). Each app replaces this example
+// Roles is the app's role catalog (auth-y-tenancy §8). Each app replaces this example
 // with its own roles and permissions; owner is reserved by the platform and must keep
 // its name and every permission (authz.NewCatalog checks it). The API does not start if
 // it is invalid.

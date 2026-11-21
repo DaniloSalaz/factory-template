@@ -8,7 +8,7 @@ import (
 	"chaskicode.dev/saas/platform/kit/apperr"
 )
 
-// Tenants and members (design, 5.5 and 5.7): what a slug and a name may be, and who may
+// Tenants and members (auth-y-tenancy §5.5 and §5.7): what a slug and a name may be, and who may
 // change or remove whom. The hierarchy is decided here, on the permissions of the
 // app's catalog, never on role names written by hand; the database only keeps an owner
 // in every tenant.
@@ -83,7 +83,7 @@ type Member struct {
 	Role   Role
 }
 
-// CheckRoleChange decides whether actor may give target the role to (design, 5.7.3):
+// CheckRoleChange decides whether actor may give target the role to (auth-y-tenancy §5.7.3):
 // nobody changes their own role, to must exist in the catalog, the actor acts only on a
 // member their role manages (canManage) and assigns only a role CanAssign allows.
 func CheckRoleChange(actor, target Member, to Role) error {
@@ -103,7 +103,7 @@ func CheckRoleChange(actor, target Member, to Role) error {
 }
 
 // CanAssign reports whether a member with role actor may give some member the role
-// (design, 5.7.2): actor holds members:manage, role exists and is included in actor's,
+// (auth-y-tenancy §5.7.2): actor holds members:manage, role exists and is included in actor's,
 // and owner is granted only by an owner; tenant:own already keeps any other role from
 // including it, and this says it explicitly. Whom it may be given to is canManage's.
 func CanAssign(actor, role Role) bool {
@@ -111,9 +111,9 @@ func CanAssign(actor, role Role) bool {
 }
 
 // CanOffer reports whether a member with role actor may offer role in an invitation
-// (design, 5.6.1): actor holds members:invite, role exists and is included in actor's,
+// (auth-y-tenancy §5.6.1): actor holds members:invite, role exists and is included in actor's,
 // and owner is offered only by an owner. The same rule decides which pending invitations
-// survive their inviter's change of role (5.6.4).
+// survive their inviter's change of role (auth-y-tenancy §5.6.4).
 func CanOffer(actor, role Role) bool {
 	return actor.CanInvite && role.Known && included(role.Permissions, actor.Permissions) && (!role.Owner || actor.Owner)
 }
@@ -199,7 +199,7 @@ func ErrRoleNotAssignable() error {
 }
 
 // ErrUnknownRole is returned when the new role is not in the app's catalog: an unknown
-// role is never assigned (design, section 8).
+// role is never assigned (auth-y-tenancy §8).
 func ErrUnknownRole() error {
 	return apperr.Validation("membership.unknown_role", "The role does not exist.",
 		apperr.FieldError{Field: "role", Code: "unknown", Message: "not a role of the catalog"})

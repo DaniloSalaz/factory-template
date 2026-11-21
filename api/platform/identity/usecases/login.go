@@ -21,7 +21,7 @@ type LoginConfig struct {
 	Metrics *telemetry.Metrics
 }
 
-// Login implements the login of the design (5.1): the redirect to the provider and the
+// Login implements the login of the design (auth-y-tenancy §5.1): the redirect to the provider and the
 // callback that turns its answer into a session.
 type Login struct {
 	idp   IdentityProvider
@@ -48,7 +48,7 @@ type Started struct {
 	Discard     []string
 }
 
-// Start validates return_to and creates a login intent (design, 5.1.1 and 5.1.2).
+// Start validates return_to and creates a login intent (auth-y-tenancy §5.1.1 and §5.1.2).
 func (l *Login) Start(rawReturnTo string, stored []domain.StoredIntent) (Started, error) {
 	returnTo, err := domain.ResolveReturnTo(l.cfg.FrontendOrigin, rawReturnTo)
 	if err != nil {
@@ -96,7 +96,7 @@ type Completed struct {
 	ReturnTo  string
 }
 
-// Complete runs the callback (design, 5.1.3 to 5.1.10). Nothing is written until every
+// Complete runs the callback (auth-y-tenancy §5.1.3 to §5.1.10). Nothing is written until every
 // check has passed, except the audit event of a rejection.
 func (l *Login) Complete(ctx context.Context, cb Callback) (Completed, error) {
 	out, err := l.complete(ctx, cb)
@@ -151,7 +151,7 @@ func (l *Login) complete(ctx context.Context, cb Callback) (Completed, error) {
 				return fmt.Errorf("revoke previous session: %w", err)
 			}
 		}
-		// A new session never has MFA: only verifying a factor gives it (design, 5.2).
+		// A new session never has MFA: only verifying a factor gives it (auth-y-tenancy §5.2).
 		sessionID, err := r.CreateSession(ctx, NewSession{
 			TokenHash: domain.HashToken(token), UserID: userID, AuthTime: authn.AuthTime,
 			Now: now, IdleExpiresAt: idle, AbsoluteExpiresAt: absolute,
@@ -174,7 +174,7 @@ func (l *Login) complete(ctx context.Context, cb Callback) (Completed, error) {
 	return Completed{Token: token, ExpiresAt: absolute, ReturnTo: intent.ReturnTo}, nil
 }
 
-// resolveUser finds or creates the user of authn (design, 5.1.5 to 5.1.7): reads first,
+// resolveUser finds or creates the user of authn (auth-y-tenancy §5.1.5 to §5.1.7): reads first,
 // and writes only once the identity is known to be usable.
 //
 // Two first logins of the same identity can race to create it. The loser's insert

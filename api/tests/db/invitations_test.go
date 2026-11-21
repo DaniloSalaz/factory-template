@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Invitations in the database (migration 00006, design 5.6): the automatic revocation of
+// Invitations in the database (migration 00006, auth-y-tenancy §5.6): the automatic revocation of
 // the member functions and accept_invitation under concurrency.
 
 // invite inserts a pending invitation from inviter offering role and returns its id.

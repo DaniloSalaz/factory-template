@@ -12,14 +12,14 @@ import (
 )
 
 // Purpose is what a login intent is for. The callback acts on the intent's purpose,
-// never on anything in its URL (design, 5.1.3). Only login exists: the step-up of the
-// design (5.2) cannot be built on WorkOS (section 13).
+// never on anything in its URL (auth-y-tenancy §5.1.3). Only login exists: the step-up of the
+// design (auth-y-tenancy §5.2) cannot be built on WorkOS (auth-y-tenancy §13).
 type Purpose string
 
 // PurposeLogin starts a new session.
 const PurposeLogin Purpose = "login"
 
-// Intent limits (design, 5.1.2).
+// Intent limits (auth-y-tenancy §5.1.2).
 const (
 	IntentTTL       = 5 * time.Minute
 	MaxLiveIntents  = 3

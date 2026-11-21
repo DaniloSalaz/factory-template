@@ -10,7 +10,7 @@ import (
 	"chaskicode.dev/saas/platform/kit/authctx"
 )
 
-// Invitations (design, 5.6). Permissions are checked in the use case. No response
+// Invitations (auth-y-tenancy §5.6). Permissions are checked in the use case. No response
 // carries a token or its hash.
 
 // ListInvitations returns a page of the tenant's pending invitations.

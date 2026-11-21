@@ -13,7 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// The tenant and member functions of migration 00005 (design 5.5 and 5.7, ADR 0003),
+// The tenant and member functions of migration 00005 (auth-y-tenancy §5.5 and §5.7, ADR 0003),
 // called as app_runtime with the variables WithUserTx and WithTenantTx set.
 
 // execAs runs sql in one transaction as app_runtime with vars and returns its error.

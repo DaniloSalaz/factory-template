@@ -8,7 +8,7 @@ import (
 	"chaskicode.dev/saas/platform/identity/domain"
 )
 
-// Cookie names (design, 5.1.2 and section 6). The __Host- prefix makes the browser
+// Cookie names (auth-y-tenancy §5.1.2 and §6). The __Host- prefix makes the browser
 // require Secure, Path=/ and no Domain, so no subdomain can set or overwrite them.
 const (
 	SessionCookie = "__Host-session"

@@ -19,7 +19,7 @@ function Login() {
   const { Logo, name } = registeredApp;
 
   // A top-level navigation: the API stores the intent and redirects to AuthKit, which
-  // comes back to /auth/callback; the server validates return_to (design, 5.1).
+  // comes back to /auth/callback; the server validates return_to (auth-y-tenancy §5.1).
   function login() {
     window.location.assign(apiUrl(getAuthLoginUrl({ return_to })));
   }

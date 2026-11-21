@@ -7,7 +7,7 @@ import (
 )
 
 // TouchInterval is how stale last_seen_at may get before a request refreshes it
-// (design, 5.4.1): at most one write per session every five minutes.
+// (auth-y-tenancy §5.4.1): at most one write per session every five minutes.
 const TouchInterval = 5 * time.Minute
 
 // MaxUserAgentLength is how many characters of the User-Agent a session keeps: enough to
@@ -25,7 +25,7 @@ func TruncateUserAgent(ua string) string {
 	return string([]rune(ua)[:MaxUserAgentLength])
 }
 
-// SessionPolicy holds the session lifetimes (design, section 6).
+// SessionPolicy holds the session lifetimes (auth-y-tenancy §6).
 type SessionPolicy struct {
 	IdleTTL     time.Duration
 	AbsoluteTTL time.Duration
@@ -46,7 +46,7 @@ type SessionState struct {
 }
 
 // Check returns ErrSessionInvalid unless the session is usable at now. Inactivity is
-// measured from the last_seen_at stored before this request (design, 5.4.1), and the
+// measured from the last_seen_at stored before this request (auth-y-tenancy §5.4.1), and the
 // current idle TTL also applies, so shortening it takes effect on existing sessions.
 func (p SessionPolicy) Check(s SessionState, now time.Time) error {
 	idleExpiry := s.IdleExpiresAt

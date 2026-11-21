@@ -15,7 +15,7 @@ import (
 	"chaskicode.dev/saas/platform/kit/pii"
 )
 
-// Invitations over HTTP (design 5.6 and 11, migration 00006), with the real middlewares
+// Invitations over HTTP (auth-y-tenancy §5.6 and §11, migration 00006), with the real middlewares
 // and database, and a sender that keeps the links instead of emailing them.
 
 // captureSender records every link it is asked to send.
@@ -327,7 +327,7 @@ func TestInvitations_Isolation(t *testing.T) {
 }
 
 // Demoting, removing or the departure of whoever invited revokes their pending
-// invitations, in the same transaction (design 5.6.4).
+// invitations, in the same transaction (auth-y-tenancy §5.6.4).
 func TestInvitations_RevokedWhenTheInviterLosesTheRight(t *testing.T) {
 	e := newEnv(t, options{})
 	s := e.staff()
@@ -428,7 +428,7 @@ func TestInvitations_AcceptIsRateLimited(t *testing.T) {
 	wantRetryAfter(t, res, 15*time.Minute)
 }
 
-// The only way to hold a session with an unverified email (design 5.1.7): a later login
+// The only way to hold a session with an unverified email (auth-y-tenancy §5.1.7): a later login
 // brings, as verified, an email another user already has, so the user keeps the old one
 // unverified. An invitation to that old email is then refused: the provider no longer
 // vouches for it. A login whose email is unverified gets no session at all

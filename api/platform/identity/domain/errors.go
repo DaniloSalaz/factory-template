@@ -39,13 +39,13 @@ func ErrUserDisabled() error {
 }
 
 // ErrEmailInUse is returned when a new identity's email already belongs to another user;
-// identities are never linked by email (design, section 2).
+// identities are never linked by email (auth-y-tenancy §2).
 func ErrEmailInUse() error {
 	return apperr.Conflict("auth.email_in_use", "The email address is already used by another account.")
 }
 
 // ErrImpersonationRefused is returned when the provider reports that someone signed in
-// as the user: impersonation for support is out of this version (design, section 12).
+// as the user: impersonation for support is out of this version (auth-y-tenancy §12).
 func ErrImpersonationRefused() error {
 	return apperr.Forbidden("auth.impersonation_refused", "Signing in as another user is not allowed.")
 }
@@ -59,12 +59,12 @@ func ErrStaleAuthentication() error {
 // ErrTenantForbidden is returned when the request may not act in the tenant it names:
 // a malformed or missing X-Tenant-ID, a tenant that does not exist or is suspended, no
 // membership, or a disabled user. All are the same 403, so a caller cannot learn which
-// tenants exist (design, 5.4.2).
+// tenants exist (auth-y-tenancy §5.4.2).
 func ErrTenantForbidden() error {
 	return apperr.Forbidden("auth.tenant_forbidden", "You cannot act in this tenant.")
 }
 
-// The two answers of a role that requires MFA (design, 5.4.3) differ in what the front
+// The two answers of a role that requires MFA (auth-y-tenancy §5.4.3) differ in what the front
 // end must do next, so they have different codes.
 
 // ErrMFAVerificationRequired is returned when the user has a verified factor but the

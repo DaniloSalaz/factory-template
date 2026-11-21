@@ -15,7 +15,7 @@ import (
 	"chaskicode.dev/saas/platform/kit/telemetry"
 )
 
-// Invitations creates, lists, resends, revokes and accepts invitations (design, 5.6).
+// Invitations creates, lists, resends, revokes and accepts invitations (auth-y-tenancy §5.6).
 type Invitations struct {
 	store     TenantStore
 	authz     Authorizer
@@ -329,7 +329,7 @@ func (in *Invitations) revoke(ctx context.Context, r TenantRepo, p authctx.Princ
 }
 
 // audit records an invitation event. The invitee's email never goes in the metadata
-// (design, section 9).
+// (auth-y-tenancy §9).
 func (in *Invitations) audit(ctx context.Context, r TenantRepo, p authctx.Principal, action string, inv Invitation, extra map[string]string) error {
 	meta := map[string]string{"role": inv.Role, "invited_by": inv.InvitedBy}
 	for k, v := range extra {

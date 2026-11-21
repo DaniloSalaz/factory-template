@@ -28,7 +28,7 @@ type IdentityProvider interface {
 
 // MFAProvider is the provider's MFA API (WorkOS today). The provider reports nothing
 // about MFA in a login, so the app challenges the user's factor and verifies the code
-// itself after the login (design, 5.2).
+// itself after the login (auth-y-tenancy §5.2).
 type MFAProvider interface {
 	// EnrollTOTP creates a TOTP factor for the provider's user and its first challenge.
 	EnrollTOTP(ctx context.Context, subject string) (TOTPEnrollment, error)
@@ -128,8 +128,8 @@ type Repo interface {
 	RemoveMFAFactor(ctx context.Context, factorID string) (providerFactorID string, err error)
 }
 
-// TenantStore runs the transactions of tenant and member management (design, 5.5 and
-// 5.7). It is apart from Store so that each use case sees only what it needs.
+// TenantStore runs the transactions of tenant and member management (auth-y-tenancy §5.5 and
+// §5.7). It is apart from Store so that each use case sees only what it needs.
 type TenantStore interface {
 	// AsUser runs fn as userID, without a tenant (db.WithUserTx).
 	AsUser(ctx context.Context, userID string, fn func(ctx context.Context, r TenantRepo) error) error
@@ -187,11 +187,11 @@ type TenantRepo interface {
 	// after the invitation after ("" for the first page), oldest first.
 	ListInvitations(ctx context.Context, tenantID, after string, limit int) ([]Invitation, error)
 	// AcceptInvitation accepts, as the transaction's user, the invitation of tokenHash;
-	// the database revalidates everything (design 5.6.5).
+	// the database revalidates everything (auth-y-tenancy §5.6.5).
 	AcceptInvitation(ctx context.Context, tokenHash []byte, ip netip.Prefix) (AcceptedInvitation, error)
 }
 
-// InvitationSender delivers an invitation's link to the invitee (design, 5.6.7). It is
+// InvitationSender delivers an invitation's link to the invitee (auth-y-tenancy §5.6.7). It is
 // called after the transaction commits; if it fails the invitation stays, and resending
 // it is the remedy. The link carries the token: it never reaches a log, a response or
 // the audit trail, except in the development adapter, whose whole job is to log it.
@@ -353,7 +353,7 @@ type Session struct {
 }
 
 // AuditEvent is an audit event; the actor is the transaction's user, if any.
-// Metadata never holds personal data (design, section 9).
+// Metadata never holds personal data (auth-y-tenancy §9).
 type AuditEvent struct {
 	Action     string
 	TargetType string
@@ -362,7 +362,7 @@ type AuditEvent struct {
 	IPPrefix   netip.Prefix
 }
 
-// Audit actions of the identity module (design, section 9).
+// Audit actions of the identity module (auth-y-tenancy §9).
 const (
 	AuditLogin       = "auth.login"
 	AuditLoginFailed = "auth.login_failed"

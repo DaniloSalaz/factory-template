@@ -8,7 +8,7 @@ import (
 	"chaskicode.dev/saas/platform/kit/apperr"
 )
 
-// Invitations (design, 5.6). Who may offer which role is CanOffer; the token is a
+// Invitations (auth-y-tenancy §5.6). Who may offer which role is CanOffer; the token is a
 // NewRandom value whose hash is the only form stored, like a session's.
 
 // InvitationTTL is how long an invitation, or a resent one, can be accepted.
@@ -32,7 +32,7 @@ func NormalizeInviteEmail(raw string) (string, error) {
 }
 
 // InvitationLink is where the invitee goes: the token travels in the fragment, which
-// the browser never sends to a server nor puts in a Referer (5.6.3).
+// the browser never sends to a server nor puts in a Referer (auth-y-tenancy §5.6.3).
 func InvitationLink(frontBaseURL, token string) string {
 	return strings.TrimRight(frontBaseURL, "/") + "/invite#token=" + token
 }

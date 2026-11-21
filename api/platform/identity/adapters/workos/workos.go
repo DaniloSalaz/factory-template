@@ -78,7 +78,7 @@ func (*Provider) Name() string { return ProviderName }
 
 // Max_age=0 forces a fresh
 // authentication even when AuthKit has a session, so auth_time is always the time of
-// this login (design, 5.2 and 13); WorkOS supports it only with provider=authkit, and
+// this login (auth-y-tenancy §5.2 and §13); WorkOS supports it only with provider=authkit, and
 // SDK v7 has no field for it.
 func (p *Provider) AuthorizationURL(state, codeChallenge string) (string, error) {
 	method := "S256"
@@ -115,7 +115,7 @@ func (p *Provider) ExchangeCode(ctx context.Context, code, codeVerifier string) 
 		return usecases.Authentication{}, unavailable(err)
 	}
 	// Only the names, never the values: whether WorkOS ever starts sending an MFA claim
-	// (design, section 13) shows here.
+	// (auth-y-tenancy §13) shows here.
 	p.logger.DebugContext(ctx, "workos access token claims", slog.Any("claims", names))
 	if claims.Subject != res.User.ID {
 		return usecases.Authentication{}, unavailable(errors.New("workos: access token sub does not match the user"))

@@ -15,7 +15,7 @@ import (
 // auditTimeout bounds the denial's audit, which also runs if the request is cancelled.
 const auditTimeout = 5 * time.Second
 
-// AuditDenied is the audit action of a refused permission (design, section 9).
+// AuditDenied is the audit action of a refused permission (auth-y-tenancy §9).
 const AuditDenied = "authz.denied"
 
 // Auditor records a refused permission in the principal's tenant, in a transaction of
@@ -25,7 +25,7 @@ type Auditor interface {
 	RecordDenied(ctx context.Context, p authctx.Principal, perm authctx.Permission) error
 }
 
-// Authorizer is the permission check of the use cases (design, 5.4.5). Handlers never
+// Authorizer is the permission check of the use cases (auth-y-tenancy §5.4.5). Handlers never
 // call it: a depguard rule keeps it out of adapters/http.
 type Authorizer struct {
 	auditor Auditor

@@ -16,8 +16,8 @@ func FreshAuthentication(authTime, intentStartedAt time.Time) bool {
 	return !authTime.Before(intentStartedAt.Add(-AuthClockSkew))
 }
 
-// MFA is optional, and required only by the roles of the catalog that say so (design,
-// 5.2; ADR 0002). The identity provider reports nothing about MFA in a login, so the app
+// MFA is optional, and required only by the roles of the catalog that say so (auth-y-tenancy
+// §5.2; ADR 0002). The identity provider reports nothing about MFA in a login, so the app
 // verifies the second factor itself after the login, and a session counts as MFA only
 // through the mfa_auth_time that verification sets.
 

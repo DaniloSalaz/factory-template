@@ -13,7 +13,7 @@ import (
 )
 
 // ----------------------------------------------------------------------------------
-// Tables with tenant_id, and tenants itself (design, section 7.3; rules in rules.go)
+// Tables with tenant_id, and tenants itself (auth-y-tenancy §7.3; rules in rules.go)
 // ----------------------------------------------------------------------------------
 
 // The checks above are only worth something if they fail on misbuilt tables. These are
@@ -184,7 +184,7 @@ func TestSchema_DetectsMisbuiltTenants(t *testing.T) {
 }
 
 // ----------------------------------------------------------------------------------
-// SECURITY DEFINER functions (design, section 7.4)
+// SECURITY DEFINER functions (auth-y-tenancy §7.4)
 // ----------------------------------------------------------------------------------
 
 func TestSchema_DetectsMisbuiltFunction(t *testing.T) {
@@ -270,7 +270,7 @@ func TestSchema_RuntimeCannotWriteAuditLog(t *testing.T) {
 	}
 }
 
-// app_runtime writes only what the design needs (section 7.1): tenants and memberships
+// app_runtime writes only what the design needs (auth-y-tenancy §7.1): tenants and memberships
 // are created only through create_tenant and accept_invitation, and change only through
 // the member functions of migration 00005, users and
 // identities are deleted only by app_admin, and UPDATE is granted per column. Every
@@ -341,7 +341,7 @@ func TestSchema_RuntimeWritePrivileges(t *testing.T) {
 		{"update session absolute expiry", `UPDATE sessions SET absolute_expires_at = now() WHERE id = $1`, []any{session}, denied},
 		{"update session provider session", `UPDATE sessions SET provider_session_id = 'x' WHERE id = $1`, []any{session}, denied},
 		// Only mark_session_mfa gives a session MFA, and it does so in a new session with a
-		// new token (design, 5.2): app_runtime never writes either column.
+		// new token (auth-y-tenancy §5.2): app_runtime never writes either column.
 		{"update session mfa_auth_time", `UPDATE sessions SET mfa_auth_time = now() WHERE id = $1`, []any{session}, denied},
 		{"update session token", `UPDATE sessions SET token_hash = sha256(uuidv7()::text::bytea) WHERE id = $1`, []any{session}, denied},
 

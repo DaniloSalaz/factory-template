@@ -1,5 +1,5 @@
 // Package clientip decides which address a request comes from and is the only place
-// that truncates it: for storage (design, section 6), /24 for IPv4 and /48 for IPv6;
+// that truncates it: for storage (auth-y-tenancy §6), /24 for IPv4 and /48 for IPv6;
 // for rate limiting, /32 and /64.
 package clientip
 

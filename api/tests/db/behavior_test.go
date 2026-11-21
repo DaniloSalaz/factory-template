@@ -789,7 +789,7 @@ func TestFunc_TenantStatusAndRolesInUse(t *testing.T) {
 	}
 }
 
-// Client IPs are stored only truncated (design, section 6): /24 for IPv4 and /48 for
+// Client IPs are stored only truncated (auth-y-tenancy §6): /24 for IPv4 and /48 for
 // IPv6, in sessions and audit_log alike. Each value goes through app_runtime's own path
 // into each column: an INSERT into sessions and record_audit into audit_log.
 func TestIPPrefixIsTruncated(t *testing.T) {

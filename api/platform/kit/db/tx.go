@@ -36,7 +36,7 @@ type Querier interface {
 // ctx is how a nested helper call is detected.
 type TxFunc func(ctx context.Context, q Querier) error
 
-// DB runs the three kinds of transaction of the design (section 5.3). They are the only
+// DB runs the three kinds of transaction of the design (auth-y-tenancy §5.3). They are the only
 // code that sets the RLS variables, always with set_config(..., true), so the values die
 // with the transaction and a pooled connection never carries them into the next one.
 type DB struct {

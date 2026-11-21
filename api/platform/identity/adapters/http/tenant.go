@@ -13,14 +13,14 @@ import (
 	"chaskicode.dev/saas/platform/kit/telemetry"
 )
 
-// TenantHeader names the tenant a request acts in (design, section 2).
+// TenantHeader names the tenant a request acts in (auth-y-tenancy §2).
 const TenantHeader = "X-Tenant-ID"
 
 // TenantMiddleware requires X-Tenant-ID, and the right to act in that tenant, on every
 // route whose contract security asks for a tenant, and on every route when
 // httpx.RouteSecurity did not run (a wiring bug). It runs after SessionMiddleware and
 // puts the authctx.Principal in the context and tenant_id in the logs, the access
-// record included (design, 5.4.2 to 5.4.4).
+// record included (auth-y-tenancy §5.4.2 to §5.4.4).
 func TenantMiddleware(tenancy *usecases.Tenancy, metrics *telemetry.Metrics, logger *slog.Logger) httpx.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -59,7 +59,7 @@ func TenantMiddleware(tenancy *usecases.Tenancy, metrics *telemetry.Metrics, log
 	}
 }
 
-// logDenied logs a refused tenant at Warn. It is not audited (design, 5.4.2): anyone
+// logDenied logs a refused tenant at Warn. It is not audited (auth-y-tenancy §5.4.2): anyone
 // with a session could fill the trail with made-up tenant ids. The requested id is
 // logged only when it is a UUID, so the header cannot inject anything into the logs.
 func logDenied(r *http.Request, err error, raw string, logger *slog.Logger) {

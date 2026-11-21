@@ -26,7 +26,7 @@ describe("errorMessage", () => {
     );
   });
 
-  // Members (5.7) and invitations (5.6): every code a screen shows has its own text.
+  // Members (auth-y-tenancy §5.7) and invitations (auth-y-tenancy §5.6): every code a screen shows has its own text.
   it.each([
     [409, "membership.last_owner"],
     [409, "membership.changed"],

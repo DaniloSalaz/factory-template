@@ -1,4 +1,4 @@
-// Package smtpsender is the SMTP adapter of usecases.InvitationSender (design, 5.6.7): a
+// Package smtpsender is the SMTP adapter of usecases.InvitationSender (auth-y-tenancy §5.6.7): a
 // plain SMTP relay, of whatever provider, over TLS only. It is the sender outside
 // development, where devsender may not run.
 package smtpsender
