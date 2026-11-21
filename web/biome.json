@@ -7,14 +7,7 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": [
-      "**",
-      "!src/gen",
-      "!src/routeTree.gen.ts",
-      "!dist",
-      "!test-results",
-      "!playwright-report"
-    ]
+    "includes": ["**", "!src/gen", "!dist", "!test-results", "!playwright-report"]
   },
   "formatter": {
     "enabled": true,

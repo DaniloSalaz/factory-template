@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/platform/api/problem";
+import { errorMessage } from "@/platform/errors/message";
 import { texts } from "@/platform/texts";
-import { errorMessage } from "./message";
 
 describe("errorMessage", () => {
   it("shows nothing for errors the platform handles", () => {

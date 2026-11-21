@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { PlatformErrorBoundary } from "@/platform/components/ErrorScreen";
 import { texts } from "@/platform/texts";
-import { PlatformErrorBoundary } from "./ErrorScreen";
 
 function Broken(): never {
   throw new Error("secret detail for ana@example.com");

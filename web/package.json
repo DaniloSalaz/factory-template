@@ -11,7 +11,7 @@
     "typecheck": "tsc -b",
     "lint": "biome check .",
     "format": "biome format --write .",
-    "generate": "orval --config orval.config.ts && node scripts/gen-route-security.ts",
+    "generate": "orval --config orval.config.ts && node scripts/gen-route-security.ts && npm run routes",
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test"
