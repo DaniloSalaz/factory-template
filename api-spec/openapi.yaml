@@ -562,6 +562,31 @@ paths:
           $ref: "#/components/responses/Conflict"
         "500":
           $ref: "#/components/responses/InternalError"
+  /tenant/roles:
+    get:
+      operationId: listTenantRoles
+      summary: The roles of the app's catalog, as the caller may use them
+      description: >-
+        Needs members:read. Every role of the catalog, the ones with the most permissions
+        first, with whether it requires MFA and whether the caller could give it to a
+        member (can_assign: the caller holds members:manage and the role is included in
+        theirs; owner only by an owner) or offer it in an invitation (can_offer: the same
+        with members:invite). The API applies the same rules on each change; this is so the
+        front end only offers what it would accept.
+      tags: [identity]
+      responses:
+        "200":
+          description: The catalog's roles
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantRoleList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /invitations:
     get:
       operationId: listInvitations
@@ -1004,6 +1029,30 @@ components:
         next_cursor:
           description: Pass it as cursor to get the next page; null on the last one.
           type: [string, "null"]
+    TenantRole:
+      type: object
+      additionalProperties: false
+      required: [name, mfa_required, can_assign, can_offer]
+      properties:
+        name:
+          type: string
+        mfa_required:
+          type: boolean
+        can_assign:
+          description: The caller may give this role to a member they manage.
+          type: boolean
+        can_offer:
+          description: The caller may offer this role in an invitation.
+          type: boolean
+    TenantRoleList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantRole"
     MemberRoleChange:
       type: object
       additionalProperties: false
@@ -1166,7 +1215,13 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
     TooManyRequests:
-      description: Rate limit exceeded; retry later.
+      description: Rate limit exceeded; retry after the seconds of Retry-After.
+      headers:
+        Retry-After:
+          description: Seconds until the quota allows another request.
+          schema:
+            type: integer
+            minimum: 1
       content:
         application/problem+json:
           schema:

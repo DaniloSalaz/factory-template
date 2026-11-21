@@ -541,3 +541,51 @@ func codeOf(r response) string {
 	_ = json.Unmarshal(r.body, &p)
 	return p.Code
 }
+
+// GET /tenant/roles: the catalog, with what each caller may assign and offer. An admin
+// never sees owner as assignable or offerable; a client, without members:read, gets 403.
+func TestTenantRoles(t *testing.T) {
+	e := newEnv(t, options{})
+	s := e.staff()
+
+	// name:mfa_required:can_assign:can_offer, in the order of the response.
+	summary := func(b *browser) []string {
+		t.Helper()
+		res := b.tenantJSON(s.tenant, http.MethodGet, "/tenant/roles", nil)
+		var list struct {
+			Items []struct {
+				Name        string `json:"name"`
+				MFARequired bool   `json:"mfa_required"`
+				CanAssign   bool   `json:"can_assign"`
+				CanOffer    bool   `json:"can_offer"`
+			} `json:"items"`
+		}
+		if err := json.Unmarshal(res.body, &list); err != nil || res.status != http.StatusOK {
+			t.Fatalf("GET /tenant/roles: %d %s", res.status, res.body)
+		}
+		var out []string
+		for _, r := range list.Items {
+			out = append(out, fmt.Sprintf("%s:%t:%t:%t", r.Name, r.MFARequired, r.CanAssign, r.CanOffer))
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		who  string
+		b    *browser
+		want []string
+	}{
+		{"owner", s.ob, []string{"owner:false:true:true", "admin:false:true:true", "member:false:true:true", "client:false:true:true"}},
+		{"admin", s.ab, []string{"owner:false:false:false", "admin:false:true:true", "member:false:true:true", "client:false:true:true"}},
+		{"member", s.mb, []string{"owner:false:false:false", "admin:false:false:false", "member:false:false:false", "client:false:false:false"}},
+	} {
+		if got := summary(tc.b); !slices.Equal(got, tc.want) {
+			t.Errorf("%s: roles = %v, want %v", tc.who, got, tc.want)
+		}
+	}
+
+	client, cb := e.signedIn()
+	e.member(client, s.tenant, "client")
+	wantProblem(t, cb.tenantJSON(s.tenant, http.MethodGet, "/tenant/roles", nil), http.StatusForbidden, "authz.denied")
+	_, outsider := e.signedIn()
+	wantProblem(t, outsider.tenantJSON(s.tenant, http.MethodGet, "/tenant/roles", nil), http.StatusForbidden, "auth.tenant_forbidden")
+}

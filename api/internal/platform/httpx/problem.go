@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/logx"
@@ -52,11 +55,20 @@ func WriteProblem(w http.ResponseWriter, r *http.Request, err error, logger *slo
 		)
 	}
 
+	if e, ok := apperr.As(err); ok && e.Kind == apperr.KindRateLimited && e.RetryAfter > 0 {
+		w.Header().Set("Retry-After", retryAfterSeconds(e.RetryAfter))
+	}
 	w.Header().Set("Content-Type", ProblemContentType)
 	w.WriteHeader(p.Status)
 	if encErr := json.NewEncoder(w).Encode(p); encErr != nil {
 		logger.WarnContext(ctx, "write problem response", slog.Any("error", encErr))
 	}
+}
+
+// retryAfterSeconds renders d as Retry-After's delay-seconds, rounded up so a client
+// that waits exactly that long is not refused again (RFC 9110, 10.2.3).
+func retryAfterSeconds(d time.Duration) string {
+	return strconv.FormatInt(int64(math.Ceil(d.Seconds())), 10)
 }
 
 // RequestErrorHandler answers requests the generated server could not decode. The decoder

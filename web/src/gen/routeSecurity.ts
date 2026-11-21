@@ -20,6 +20,7 @@ export const routeSecurity: Readonly<Record<string, { session: boolean; tenant: 
   "DELETE /tenant/members/me": { session: true, tenant: true },
   "DELETE /tenant/members/{userId}": { session: true, tenant: true },
   "PATCH /tenant/members/{userId}": { session: true, tenant: true },
+  "GET /tenant/roles": { session: true, tenant: true },
   "GET /invitations": { session: true, tenant: true },
   "POST /invitations": { session: true, tenant: true },
   "POST /invitations/accept": { session: true, tenant: false },

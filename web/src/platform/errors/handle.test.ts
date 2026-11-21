@@ -42,6 +42,15 @@ describe("actionFor", () => {
     });
   });
 
+  it("never puts the URL's fragment in return_to", () => {
+    const invite = { pathname: "/invite", href: "/invite#token=secret" };
+    expect(actionFor(problem(401), invite)).toEqual({ kind: "login", returnTo: "/invite" });
+    expect(actionFor(problem(403, "auth.mfa_required"), invite)).toEqual({
+      kind: "mfa_verify",
+      returnTo: "/invite",
+    });
+  });
+
   it("maps the 403s the platform handles by their code", () => {
     expect(actionFor(problem(403, "auth.mfa_required"), at)).toEqual({
       kind: "mfa_verify",

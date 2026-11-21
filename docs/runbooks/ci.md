@@ -15,12 +15,20 @@ mismo PR se cancelan; las de `main` siempre terminan.
 | `test` | `go test -race -cover ./...`; la integración de `/readyz` arranca Postgres con Testcontainers en el Docker del runner | `mise run test` (Docker arrancado) |
 | `generate` | Regenera sqlc, oapi-codegen, orval y la seguridad por ruta del front (`web/src/gen/routeSecurity.ts`) y falla si cambia algo en `api/gen` o `web/src/gen` | `mise run generate:check` |
 | `security` | govulncheck, gitleaks sobre todo el historial y `trivy fs` (dependencias y Dockerfile), fallando con HIGH o CRITICAL | `mise run security` |
-| `web` | `npm ci`, Biome, `tsc`, `npm run build` (que regenera `web/src/routeTree.gen.ts` y falla si no coincide con el commit) y los tests unitarios con Vitest, incluido el de arquitectura del front. El recorrido de Playwright (`web:e2e`) es solo local por ahora | `mise run web:check`, `mise run web:test` |
+| `web` | `npm ci`, Biome, `npm run build` (genera `web/src/routeTree.gen.ts` con la CLI de TanStack Router, luego `tsc -b` y `vite build`; falla si el árbol no coincide con el commit) y los tests unitarios con Vitest, incluido el de arquitectura del front | `mise run web:check`, `mise run web:test` |
+| `e2e` | El recorrido de Playwright (`web/e2e`) contra la API real: Postgres 18 como servicio con el bootstrap de `infra/db`, `mise run migrate`, la API compilada y arrancada con una `WORKOS_API_KEY` ficticia, y Vite (lo arranca Playwright). Sube las capturas (`web/e2e-screenshots/`) y las trazas (`web/test-results/`, todas en CI) como artefacto `e2e-screenshots-and-traces`; si falla, también el log de la API (`e2e-api-log`) | `mise run up && mise run migrate`, `mise run dev` y `mise run web:e2e` |
 | `docker` | Construye la imagen de la API (sin publicarla) y la escanea con Trivy | `mise run docker:scan` |
 | `ci-ok` | Depende de todos los anteriores y falla si alguno no terminó en `success` (también si se saltó o se canceló) | — |
 
+El job `e2e` no llama nunca a WorkOS: el arranque de la API solo comprueba que
+`WORKOS_API_KEY` existe (la usa para derivar la clave que sella los intentos de login y en
+las llamadas de login y MFA), las sesiones se siembran por SQL (`web/e2e/db.ts`, que en CI
+entra en el contenedor de servicio con `docker exec`, `E2E_PG_CONTAINER`) y las pantallas de
+MFA usan respuestas simuladas. Si un test nuevo necesitara WorkOS, no cabe en este job.
+
 `mise run ci` ejecuta en orden: `lint:go`, `lint:actions`, `arch`, `test`, `generate:check`,
-`security:govulncheck`, `security:gitleaks`, `web:check` y `web:test`. Los escaneos de Trivy (`security:trivy`
+`security:govulncheck`, `security:gitleaks`, `web:check` y `web:test`. El job `e2e` no está
+en `ci` porque necesita Postgres y la API en marcha. Los escaneos de Trivy (`security:trivy`
 y `docker:scan`) no están en `ci` porque descargan su base de datos y tardan más; ejecútalos con
 `mise run security` y `mise run docker:scan` cuando toques dependencias o el Dockerfile.
 
@@ -56,6 +64,10 @@ Los tests de arquitectura llevan el build tag `arch`: `go test ./...` no los eje
     un falso positivo, añádelo a `.gitleaksignore` con su fingerprint y un comentario.
   - trivy: actualiza la dependencia o la imagen base. Ignorar un CVE (`.trivyignore`) exige un
     comentario con el motivo y una fecha de revisión.
+- **e2e**: descarga el artefacto `e2e-screenshots-and-traces` y abre la traza del test con
+  `npx playwright show-trace <zip>` (en `web/`), o `e2e-api-log` para ver qué respondió la
+  API. Para reproducirlo en local: `mise run up && mise run migrate`, `mise run dev` y
+  `mise run web:e2e`.
 - **test** solo en CI: suele ser Docker/Testcontainers. Revisa el log del contenedor en la salida
   del test.
 

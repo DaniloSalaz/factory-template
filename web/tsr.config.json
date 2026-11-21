@@ -1,0 +1,7 @@
+{
+  "target": "react",
+  "routesDirectory": "./src",
+  "virtualRouteConfig": "./src/platform/routes.ts",
+  "generatedRouteTree": "./src/routeTree.gen.ts",
+  "autoCodeSplitting": true
+}

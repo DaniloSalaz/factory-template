@@ -417,3 +417,62 @@ func TestMembers_ChangeRoleNamesTheOfferableRoles(t *testing.T) {
 		}
 	}
 }
+
+// GET /tenant/roles judges each role of the catalog for the caller with the rules of
+// ChangeRole (can_assign) and inviting (can_offer). The catalog is the example one.
+func TestMembers_Roles(t *testing.T) {
+	t.Parallel()
+
+	members := []authctx.Permission{authz.PermMembersRead, authz.PermMembersInvite, authz.PermMembersManage}
+	c, err := authz.NewCatalog(
+		authz.Role{Name: authz.RoleOwner, Permissions: authz.PlatformPermissions(), RequiresMFA: true, MFAMaxAge: time.Hour},
+		authz.Role{Name: "admin", Permissions: append(members, authz.PermAuditRead, authz.PermTenantUpdate, authctx.PermScopeTenant)},
+		authz.Role{Name: "member", Permissions: []authctx.Permission{authz.PermMembersRead, authctx.PermScopeTenant}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// name, mfa_required, can_assign, can_offer, in the order of the response.
+	view := func(name string, mfa, assign, offer bool) app.RoleView {
+		return app.RoleView{Name: name, MFARequired: mfa, CanAssign: assign, CanOffer: offer}
+	}
+	tests := []struct {
+		role string
+		want []app.RoleView
+	}{
+		{"owner", []app.RoleView{view("owner", true, true, true), view("admin", false, true, true), view("member", false, true, true)}},
+		{"admin", []app.RoleView{view("owner", true, false, false), view("admin", false, true, true), view("member", false, true, true)}},
+		{"member", []app.RoleView{view("owner", true, false, false), view("admin", false, false, false), view("member", false, false, false)}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.role, func(t *testing.T) {
+			t.Parallel()
+			authorizer := &fakeAuthorizer{}
+			got, err := app.NewMembers(newMemTenants(), authorizer, c).Roles(actingAs(t, c, ownerID, tc.role))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("Roles = %+v\nwant    %+v", got, tc.want)
+			}
+			if want := []string{tc.role + " members:read"}; !slices.Equal(authorizer.asked, want) {
+				t.Fatalf("asked = %v, want %v", authorizer.asked, want)
+			}
+		})
+	}
+
+	t.Run("without members:read", func(t *testing.T) {
+		t.Parallel()
+		noRead, err := authz.NewCatalog(
+			authz.Role{Name: authz.RoleOwner, Permissions: authz.PlatformPermissions()},
+			authz.Role{Name: "client"},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = app.NewMembers(newMemTenants(), &fakeAuthorizer{}, noRead).Roles(actingAs(t, noRead, ownerID, "client"))
+		if !errors.Is(err, authz.ErrDenied()) {
+			t.Fatalf("Roles = %v, want %v", err, authz.ErrDenied())
+		}
+	})
+}

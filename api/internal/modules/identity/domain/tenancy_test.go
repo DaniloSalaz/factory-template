@@ -55,9 +55,9 @@ func TestNormalizeTenantName(t *testing.T) {
 // The roles of the example catalog, plus a role unknown to it and "coowner": every
 // permission of owner but tenant:own.
 var (
-	ownerRole  = Role{Name: "owner", Known: true, Owner: true, Permissions: []string{"members:read", "members:manage", "audit:read", "tenant:update", "tenant:own", "scope:tenant"}}
-	coowner    = Role{Name: "coowner", Known: true, Permissions: []string{"members:read", "members:manage", "audit:read", "tenant:update", "scope:tenant"}}
-	adminRole  = Role{Name: "admin", Known: true, Permissions: []string{"members:read", "members:manage", "audit:read", "tenant:update", "scope:tenant"}}
+	ownerRole  = Role{Name: "owner", Known: true, Owner: true, CanManage: true, Permissions: []string{"members:read", "members:manage", "audit:read", "tenant:update", "tenant:own", "scope:tenant"}}
+	coowner    = Role{Name: "coowner", Known: true, CanManage: true, Permissions: []string{"members:read", "members:manage", "audit:read", "tenant:update", "scope:tenant"}}
+	adminRole  = Role{Name: "admin", Known: true, CanManage: true, Permissions: []string{"members:read", "members:manage", "audit:read", "tenant:update", "scope:tenant"}}
 	memberRole = Role{Name: "member", Known: true, Permissions: []string{"members:read", "scope:tenant"}}
 	clientRole = Role{Name: "client", Known: true}
 	ghostRole  = Role{Name: "ghost"}
@@ -153,6 +153,32 @@ func TestCanOffer(t *testing.T) {
 	for _, tc := range tests {
 		if got := CanOffer(tc.actor, tc.offers); got != tc.want {
 			t.Errorf("%s: CanOffer = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestCanAssign(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		actor, assign Role
+		want          bool
+	}{
+		{"owner assigns owner", ownerRole, ownerRole, true},
+		{"owner assigns admin", ownerRole, adminRole, true},
+		{"owner assigns member", ownerRole, memberRole, true},
+		{"admin assigns admin", adminRole, adminRole, true},
+		{"admin assigns member", adminRole, memberRole, true},
+		{"admin does not assign owner", adminRole, ownerRole, false},
+		{"coowner does not assign owner", coowner, ownerRole, false},
+		{"member assigns nothing without members:manage", memberRole, memberRole, false},
+		{"a role with members:manage assigns no role beyond its own", Role{Name: "lead", Known: true, CanManage: true, Permissions: []string{"members:manage"}}, memberRole, false},
+		{"an unknown role is never assigned", ownerRole, ghostRole, false},
+	}
+	for _, tc := range tests {
+		if got := CanAssign(tc.actor, tc.assign); got != tc.want {
+			t.Errorf("%s: CanAssign = %v, want %v", tc.name, got, tc.want)
 		}
 	}
 }

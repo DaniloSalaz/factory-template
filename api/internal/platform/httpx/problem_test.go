@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/apperr"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/config"
@@ -57,7 +58,7 @@ func TestWriteProblem(t *testing.T) {
 		},
 		{
 			name:      "rate limited with request id",
-			err:       apperr.RateLimited("too_many_requests", "Slow down."),
+			err:       apperr.RateLimited("too_many_requests", "Slow down.", 0),
 			requestID: "req-42",
 			want:      httpx.Problem{Type: "about:blank", Title: "Too Many Requests", Status: 429, Detail: "Slow down.", Code: "too_many_requests", RequestID: "req-42"},
 		},
@@ -184,6 +185,32 @@ func TestStrictErrorHandlers(t *testing.T) {
 			var p httpx.Problem
 			if err := json.Unmarshal(rec.Body.Bytes(), &p); err != nil || p.Code != tc.wantCode {
 				t.Fatalf("code = %q (err %v), want %q", p.Code, err, tc.wantCode)
+			}
+		})
+	}
+}
+
+func TestWriteProblem_RetryAfter(t *testing.T) {
+	t.Parallel()
+
+	logger := slog.New(slog.DiscardHandler)
+	for _, tc := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"whole seconds", apperr.RateLimited("rate_limit.exceeded", "Slow down.", 30*time.Second), "30"},
+		{"a fraction rounds up", apperr.RateLimited("rate_limit.exceeded", "Slow down.", 1500*time.Millisecond), "2"},
+		{"wrapped", fmt.Errorf("verify: %w", apperr.RateLimited("mfa.rate_limited", "Slow down.", time.Minute)), "60"},
+		{"unknown wait sends none", apperr.RateLimited("rate_limit.exceeded", "Slow down.", 0), ""},
+		{"only on 429", apperr.Conflict("x", "y"), ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rec := httptest.NewRecorder()
+			httpx.WriteProblem(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/x", nil), tc.err, logger)
+			if got := rec.Header().Get("Retry-After"); got != tc.want {
+				t.Fatalf("Retry-After = %q, want %q", got, tc.want)
 			}
 		})
 	}

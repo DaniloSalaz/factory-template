@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/clientip"
@@ -87,6 +89,11 @@ func TestCORS(t *testing.T) {
 		if rec.Header().Get("Access-Control-Allow-Credentials") != "true" || rec.Header().Get("Vary") != "Origin" {
 			t.Fatalf("headers = %v", rec.Header())
 		}
+		// Retry-After is not CORS-safelisted: without this the front end on another
+		// origin could not read a 429's wait.
+		if got := rec.Header().Get("Access-Control-Expose-Headers"); !strings.Contains(got, "Retry-After") {
+			t.Fatalf("expose-headers = %q", got)
+		}
 	})
 
 	t.Run("other origin gets no CORS headers", func(t *testing.T) {
@@ -117,8 +124,8 @@ func TestCORS(t *testing.T) {
 
 type failingLimiter struct{}
 
-func (failingLimiter) Allow(context.Context, string) (bool, error) {
-	return false, errors.New("store down")
+func (failingLimiter) Allow(context.Context, string) (ratelimit.Decision, error) {
+	return ratelimit.Decision{}, errors.New("store down")
 }
 
 func TestRateLimit(t *testing.T) {
@@ -144,6 +151,10 @@ func TestRateLimit(t *testing.T) {
 	rec := do("198.51.100.1:2000")
 	if rec.Code != http.StatusTooManyRequests || problemCode(t, rec) != "rate_limit.exceeded" {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	// The window is a minute and began a moment ago: a wait of up to 60 s, never 0.
+	if s, err := strconv.Atoi(rec.Header().Get("Retry-After")); err != nil || s < 1 || s > 60 {
+		t.Fatalf("Retry-After = %q, want 1 to 60 seconds", rec.Header().Get("Retry-After"))
 	}
 	if rec := do("198.51.100.2:1000"); rec.Code != http.StatusOK {
 		t.Fatalf("another IP: status = %d, want 200", rec.Code)

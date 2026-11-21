@@ -1,5 +1,6 @@
-// Test data, seeded as the local superuser `factory` exactly as docs/runbooks/auth.md does
-// (option B: a user and a session without AuthKit). Only for the local database.
+// Test data, seeded as the superuser `factory` exactly as docs/runbooks/auth.md does
+// (option B: a user and a session without AuthKit). Only for the local database, or the
+// CI job's: there E2E_PG_CONTAINER names its Postgres service container.
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -8,7 +9,10 @@ const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 
 /** sql runs statements as `factory` and returns the output (-At: unaligned, no headers). */
 export function sql(statements: string, vars: Record<string, string> = {}): string {
-  const args = ["compose", "exec", "-T", "postgres", "psql", "-U", "factory", "-d", "factory"];
+  const container = process.env["E2E_PG_CONTAINER"];
+  const args = container
+    ? ["exec", "-i", container, "psql", "-U", "factory", "-d", "factory"]
+    : ["compose", "exec", "-T", "postgres", "psql", "-U", "factory", "-d", "factory"];
   args.push("-v", "ON_ERROR_STOP=1", "-At");
   for (const [k, v] of Object.entries(vars)) args.push("-v", `${k}=${v}`);
   return execFileSync("docker", args, {
@@ -23,19 +27,52 @@ export const run = `e2e${Date.now().toString(36)}`;
 
 export type User = { id: string; email: string; token: string };
 
-/** newUser creates a user with a one-hour session; the database keeps only its hash. */
-export function newUser(name: string): User {
-  const email = `${name}.${run}@example.test`;
+/** emailOf is the address newUser gives name in this run. */
+export const emailOf = (name: string) => `${name}.${run}@example.test`;
+
+/**
+ * newUser creates a user with a one-hour session; the database keeps only its hash.
+ * session: false creates no session (someone who will sign in later). mfa: true gives
+ * the session an MFA of now, as mark_session_mfa would: owner requires it.
+ */
+export function newUser(name: string, opts: { session?: boolean; mfa?: boolean } = {}): User {
+  const email = emailOf(name);
   const token = randomBytes(32).toString("base64url");
   const id = sql(
-    `INSERT INTO users (email, email_verified, display_name) VALUES (:'email', true, :'name') RETURNING id;
-     INSERT INTO sessions (token_hash, user_id, auth_time, last_seen_at, idle_expires_at, absolute_expires_at)
-     SELECT sha256(convert_to(:'token', 'UTF8')), id, now(), now(), now() + interval '1 hour', now() + interval '1 hour'
-     FROM users WHERE email = :'email';`,
-    { email, name, token },
+    `INSERT INTO users (email, email_verified, display_name) VALUES (:'email', true, :'name') RETURNING id;`,
+    { email, name },
   ).split("\n")[0];
   if (!id) throw new Error("newUser: no id");
-  return { id, email, token };
+  const user = { id, email, token };
+  if (opts.session !== false) newSession(user, opts.mfa ?? false);
+  return user;
+}
+
+/** newSession gives user a one-hour session with user.token (the cookie's value). */
+export function newSession(user: User, mfa = false): void {
+  sql(
+    `INSERT INTO sessions (token_hash, user_id, auth_time, last_seen_at, idle_expires_at, absolute_expires_at, mfa_auth_time)
+     VALUES (sha256(convert_to(:'token', 'UTF8')), :'id', now(), now(), now() + interval '1 hour',
+             now() + interval '1 hour', CASE WHEN :'mfa' = 'true' THEN now() END);`,
+    { token: user.token, id: user.id, mfa: String(mfa) },
+  );
+}
+
+/**
+ * knownInviteToken replaces the token of the pending invitation of email in tenant with
+ * a new one and returns it: the real one only reaches the development log
+ * (docs/runbooks/auth.md), so the test cannot read it.
+ */
+export function knownInviteToken(tenant: string, email: string): string {
+  const token = randomBytes(32).toString("base64url");
+  const n = sql(
+    `UPDATE invitations SET token_hash = sha256(convert_to(:'token', 'UTF8'))
+     WHERE tenant_id = :'t' AND email = :'e' AND accepted_at IS NULL AND revoked_at IS NULL
+     RETURNING id;`,
+    { token, t: tenant, e: email },
+  );
+  if (!n) throw new Error(`knownInviteToken: no pending invitation of ${email}`);
+  return token;
 }
 
 /** newTenant creates a tenant with memberships, as the runbook's preparation does. */

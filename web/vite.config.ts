@@ -12,14 +12,9 @@ const api = "http://localhost:8080";
 export default defineConfig({
   plugins: [
     // Platform routes are listed in src/platform/routes.ts; the app's are file-based
-    // under src/app/routes, mounted inside /t/$tenantId (web/README.md).
-    tanstackRouter({
-      target: "react",
-      routesDirectory: "./src",
-      virtualRouteConfig: "./src/platform/routes.ts",
-      generatedRouteTree: "./src/routeTree.gen.ts",
-      autoCodeSplitting: true,
-    }),
+    // under src/app/routes, mounted inside /t/$tenantId (web/README.md). The options are
+    // in tsr.config.json, which the CLI of `npm run routes` reads too.
+    tanstackRouter(),
     react(),
     tailwindcss(),
   ],

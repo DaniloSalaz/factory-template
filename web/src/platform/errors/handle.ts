@@ -41,20 +41,28 @@ export function actionFor(error: unknown, at: Location): ErrorAction | null {
   if (!(error instanceof ApiError) || !isHandledGlobally(error)) {
     return null;
   }
+  // A fragment can hold a secret (an invitation's token, 5.6.3): it never travels in
+  // return_to, which the server receives and logs.
+  const returnTo = withoutFragment(at.href);
   if (error.status === 401) {
-    return at.pathname === paths.login ? null : { kind: "login", returnTo: at.href };
+    return at.pathname === paths.login ? null : { kind: "login", returnTo };
   }
   if (error.status === 429) {
     return { kind: "rate_limited", retryAfterSeconds: error.retryAfterSeconds };
   }
   switch (error.code) {
     case "auth.mfa_required":
-      return at.pathname === paths.mfaVerify ? null : { kind: "mfa_verify", returnTo: at.href };
+      return at.pathname === paths.mfaVerify ? null : { kind: "mfa_verify", returnTo };
     case "auth.mfa_enrollment_required":
-      return at.pathname === paths.mfaEnroll ? null : { kind: "mfa_enroll", returnTo: at.href };
+      return at.pathname === paths.mfaEnroll ? null : { kind: "mfa_enroll", returnTo };
     default:
       return { kind: "tenant_forbidden" };
   }
+}
+
+function withoutFragment(href: string): string {
+  const i = href.indexOf("#");
+  return i === -1 ? href : href.slice(0, i);
 }
 
 export type Destination =

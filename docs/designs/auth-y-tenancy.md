@@ -1,6 +1,6 @@
 # Diseño: autenticación y tenancy
 
-Estado: v4, tras tres revisiones sin contexto; actualizado con el paso 5a (tenants y miembros, ADR 0003) · Fase 1 de factory-template
+Estado: v4, tras tres revisiones sin contexto; actualizado con el paso 5a (tenants y miembros, ADR 0003) y el 8b (front de miembros e invitaciones, `GET /tenant/roles`, `Retry-After`) · Fase 1 de factory-template
 
 ## 1. Objetivo
 
@@ -231,6 +231,7 @@ Comando de administración, con `app_admin`:
   - por IP en `/auth/login` y `/auth/callback` (sin sesión todavía): la dirección en IPv4 (/32) y su /64 en IPv6, para que rotar direcciones dentro de un bloque no renueve la cuota. La IP sale de `TRUSTED_CLIENT_IP_HEADER` o de `RemoteAddr`, nunca de `X-Forwarded-For`;
   - por usuario y por sesión en la verificación de MFA, y por usuario en el alta y los challenges: 5 en 15 minutos (5.2);
   - por usuario en las rutas autenticadas que lo necesitan, en el caso de uso: `POST /invitations` y `POST /invitations/{id}/resend` comparten 20 por hora; `POST /invitations/accept`, 10 en 15 minutos (también frena probar tokens); `POST /tenants`, 5 por hora;
+  - todas las respuestas `429` llevan `Retry-After` en segundos (redondeados hacia arriba): el limitador dice cuánto falta para que su cuota admita otra petición, el error de `apperr` lo lleva y `httpx.WriteProblem` pone la cabecera, en un solo sitio. CORS la expone (`Access-Control-Expose-Headers`), porque no es una cabecera *safelisted* y en producción el front está en otro origen; el front muestra la espera (10.1);
   - detrás del puerto `ratelimit.Limiter`, con implementación en memoria: **cada réplica cuenta por separado**, así que el límite efectivo se multiplica por el número de réplicas. Un almacén compartido implementaría el mismo puerto.
 - **Datos personales**: emails con `pii.Email`; IPs solo truncadas: `/24` en IPv4 y `/48` en IPv6, guardadas como `cidr` (`sessions.ip_prefix`, `audit_log.ip_prefix`). Go trunca antes de escribir; un `CHECK` en cada columna rechaza una IP completa (`/32`, `/128`) o cualquier otra máscara, y el tipo `cidr` rechaza bits de host tras la máscara.
 
@@ -472,6 +473,7 @@ El email del invitado no va en `metadata`. Los eventos de miembros (`membership.
 | `POST /tenants` | Sí | No | — | Crea un tenant, con el creador como owner |
 | `POST /invitations/accept` | Sí | No | — | Acepta una invitación |
 | `GET /tenant/members` | Sí | Sí | `members:read` | Miembros del tenant, por cursor |
+| `GET /tenant/roles` | Sí | Sí | `members:read` | Roles del catálogo, con `mfa_required` y, para quien pregunta, `can_assign` (5.7.2: tiene `members:manage` y el rol está incluido en el suyo; `owner`, solo un owner) y `can_offer` (5.6.1). Los calcula `domain` con las mismas funciones que cambiar el rol e invitar; es solo para que el front ofrezca lo que la API aceptaría |
 | `DELETE /tenant/members/me` | Sí | Sí | — | Abandonar el tenant |
 | `PATCH /tenant/members/{userId}` | Sí | Sí | `members:manage` | Cambiar el rol |
 | `DELETE /tenant/members/{userId}` | Sí | Sí | `members:manage` | Quitar a un miembro |
@@ -494,7 +496,9 @@ Decisión del paso 8a. El front (`web/`, detalle en `web/README.md`) no guarda e
 - **Caché**: las claves de TanStack Query de las operaciones con tenant incluyen el de la ruta, para que `/t/B` nunca muestre datos leídos en `/t/A`.
 - **Último tenant usado**: lo único que se guarda (`localStorage`), y solo para redirigir desde `/`. Se usa si `GET /me` lo sigue listando como activo; si no, o si da `403 auth.tenant_forbidden`, se borra y se va al selector (`/tenants`, con aviso en el segundo caso).
 - **Errores**: `401` lleva a `/login` con `return_to` de la ruta actual (el servidor lo valida, 5.1.1); `403 auth.mfa_required` a la verificación (challenge y código, 5.2) y `auth.mfa_enrollment_required` al alta, y las dos vuelven a la ruta. Tras verificar, la sesión se sustituye y el front invalida toda su caché. Se decide en un solo sitio (`web/src/platform/errors/handle.ts`), nunca en cada pantalla.
-- **Permisos**: el front oculta lo que el rol no permite según `GET /tenant`; es solo UX, la API los comprueba en cada caso de uso (5.4.5).
+- **Permisos**: el front oculta lo que el rol no permite según `GET /tenant`; es solo UX, la API los comprueba en cada caso de uso (5.4.5). Los roles que ofrece al cambiar un rol o invitar son los `can_assign` y `can_offer` de `GET /tenant/roles` (paso 8b), nunca una lista propia.
+- **Invitación** (paso 8b, 5.6.3): al arrancar, antes de crear el router, el front quita el fragmento de `/invite#token=…` con `history.replaceState` y guarda el token en `sessionStorage`. Sin sesión, `GET /me` da `401` y va a `/login?return_to=/invite`; `return_to` nunca lleva el fragmento de ninguna URL. Con sesión, el token sale de `sessionStorage` pase lo que pase y va a `POST /invitations/accept`; después, a `/t/$tenantId`. `Referrer-Policy: no-referrer` en `index.html` para toda la app y, en producción, como cabecera del hosting (`docs/runbooks/deploy.md`).
+- **`429`**: el front muestra la espera de `Retry-After` (sección 6) en el aviso de la plataforma.
 
 ## 11. Pruebas obligatorias
 
@@ -567,4 +571,5 @@ Vincular identidades desde la sesión, borrado de un tenant (será un comando de
 5. **Tenants, invitaciones, miembros y auditoría**, con la revocación automática y el evento `identity.member_removed`. Se hace en tres partes: 5a, tenants y miembros (hecho, ADR 0003); 5b, invitaciones (hecho: 5.6 y 5.7.5; queda la revocación al deshabilitar, paso 7, y el email real, con el despliegue); 5c, consulta de la auditoría.
 6. **Trabajos**: workers de usuario y de sistema.
 7. **Administración**: deshabilitar y borrar usuario.
+8. **Front** (hecho, 10.1 y `web/README.md`): 8a, base, login, tenant y MFA; 8b, miembros, invitaciones, `/invite`, renombrar el tenant, `GET /tenant/roles`, `Retry-After` en los `429` y Playwright en CI.
 8. **Front**: login (también al caducar la MFA de un rol), selector de tenant, `X-Tenant-ID`, invitaciones (con `sessionStorage`) y miembros. Se hace en dos partes: 8a, base del front, login, tenant y MFA (hecho, 10.1); 8b, miembros e invitaciones.

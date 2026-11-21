@@ -71,7 +71,9 @@ type Role struct {
 	Known bool
 	Owner bool
 	// CanInvite: the role holds members:invite.
-	CanInvite   bool
+	CanInvite bool
+	// CanManage: the role holds members:manage.
+	CanManage   bool
 	Permissions []string
 }
 
@@ -83,9 +85,7 @@ type Member struct {
 
 // CheckRoleChange decides whether actor may give target the role to (design, 5.7.3):
 // nobody changes their own role, to must exist in the catalog, the actor acts only on a
-// member their role manages (canManage) and assigns only a role included in theirs.
-// owner is granted only by an owner; tenant:own already keeps any other role from
-// including it, and this says it explicitly.
+// member their role manages (canManage) and assigns only a role CanAssign allows.
 func CheckRoleChange(actor, target Member, to Role) error {
 	if actor.UserID == target.UserID {
 		return ErrMemberSelfChange()
@@ -96,10 +96,18 @@ func CheckRoleChange(actor, target Member, to Role) error {
 	if !canManage(actor.Role, target.Role) {
 		return ErrMemberTargetForbidden()
 	}
-	if !included(to.Permissions, actor.Role.Permissions) || (to.Owner && !actor.Role.Owner) {
+	if !CanAssign(actor.Role, to) {
 		return ErrRoleNotAssignable()
 	}
 	return nil
+}
+
+// CanAssign reports whether a member with role actor may give some member the role
+// (design, 5.7.2): actor holds members:manage, role exists and is included in actor's,
+// and owner is granted only by an owner; tenant:own already keeps any other role from
+// including it, and this says it explicitly. Whom it may be given to is canManage's.
+func CanAssign(actor, role Role) bool {
+	return actor.CanManage && role.Known && included(role.Permissions, actor.Permissions) && (!role.Owner || actor.Owner)
 }
 
 // CanOffer reports whether a member with role actor may offer role in an invitation

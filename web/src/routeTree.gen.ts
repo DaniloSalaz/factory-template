@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './platform/routes/root'
 import { Route as platformRoutesShellRouteImport } from './platform/routes/shell'
+import { Route as platformRoutesInviteRouteImport } from './platform/routes/invite'
 import { Route as platformRoutesLoginRouteImport } from './platform/routes/login'
 import { Route as platformRoutesHomeRouteImport } from './platform/routes/home'
 import { Route as platformRoutesTenantsRouteImport } from './platform/routes/tenants'
@@ -19,9 +20,16 @@ import { Route as platformRoutesMfaEnrollRouteImport } from './platform/routes/m
 import { Route as platformRoutesMfaVerifyRouteImport } from './platform/routes/mfa-verify'
 import { Route as platformRoutesTenantHomeRouteImport } from './platform/routes/tenant-home'
 import { Route as ExampleRouteImport } from './app/routes/example'
+import { Route as platformRoutesInvitationsRouteImport } from './platform/routes/invitations'
+import { Route as platformRoutesMembersRouteImport } from './platform/routes/members'
 
 const platformRoutesShellRoute = platformRoutesShellRouteImport.update({
   id: '/_shell',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const platformRoutesInviteRoute = platformRoutesInviteRouteImport.update({
+  id: '/invite',
+  path: '/invite',
   getParentRoute: () => rootRouteImport,
 } as any)
 const platformRoutesLoginRoute = platformRoutesLoginRouteImport.update({
@@ -70,9 +78,21 @@ const ExampleRoute = ExampleRouteImport.update({
   path: '/example',
   getParentRoute: () => platformRoutesTenantRoute,
 } as any)
+const platformRoutesInvitationsRoute =
+  platformRoutesInvitationsRouteImport.update({
+    id: '/invitations',
+    path: '/invitations',
+    getParentRoute: () => platformRoutesTenantRoute,
+  } as any)
+const platformRoutesMembersRoute = platformRoutesMembersRouteImport.update({
+  id: '/members',
+  path: '/members',
+  getParentRoute: () => platformRoutesTenantRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof platformRoutesHomeRoute
+  '/invite': typeof platformRoutesInviteRoute
   '/login': typeof platformRoutesLoginRoute
   '/tenants': typeof platformRoutesTenantsRoute
   '/t/$tenantId': typeof platformRoutesTenantRouteWithChildren
@@ -81,8 +101,11 @@ export interface FileRoutesByFullPath {
   '/account/mfa/enroll': typeof platformRoutesMfaEnrollRoute
   '/account/mfa/verify': typeof platformRoutesMfaVerifyRoute
   '/t/$tenantId/example': typeof ExampleRoute
+  '/t/$tenantId/invitations': typeof platformRoutesInvitationsRoute
+  '/t/$tenantId/members': typeof platformRoutesMembersRoute
 }
 export interface FileRoutesByTo {
+  '/invite': typeof platformRoutesInviteRoute
   '/login': typeof platformRoutesLoginRoute
   '/': typeof platformRoutesHomeRoute
   '/tenants': typeof platformRoutesTenantsRoute
@@ -91,10 +114,13 @@ export interface FileRoutesByTo {
   '/account/mfa/enroll': typeof platformRoutesMfaEnrollRoute
   '/account/mfa/verify': typeof platformRoutesMfaVerifyRoute
   '/t/$tenantId/example': typeof ExampleRoute
+  '/t/$tenantId/invitations': typeof platformRoutesInvitationsRoute
+  '/t/$tenantId/members': typeof platformRoutesMembersRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_shell': typeof platformRoutesShellRouteWithChildren
+  '/invite': typeof platformRoutesInviteRoute
   '/login': typeof platformRoutesLoginRoute
   '/_shell/': typeof platformRoutesHomeRoute
   '/_shell/tenants': typeof platformRoutesTenantsRoute
@@ -104,11 +130,14 @@ export interface FileRoutesById {
   '/_shell/account/mfa/enroll': typeof platformRoutesMfaEnrollRoute
   '/_shell/account/mfa/verify': typeof platformRoutesMfaVerifyRoute
   '/_shell/t/$tenantId/example': typeof ExampleRoute
+  '/_shell/t/$tenantId/invitations': typeof platformRoutesInvitationsRoute
+  '/_shell/t/$tenantId/members': typeof platformRoutesMembersRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/invite'
     | '/login'
     | '/tenants'
     | '/t/$tenantId'
@@ -117,8 +146,11 @@ export interface FileRouteTypes {
     | '/account/mfa/enroll'
     | '/account/mfa/verify'
     | '/t/$tenantId/example'
+    | '/t/$tenantId/invitations'
+    | '/t/$tenantId/members'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/invite'
     | '/login'
     | '/'
     | '/tenants'
@@ -127,9 +159,12 @@ export interface FileRouteTypes {
     | '/account/mfa/enroll'
     | '/account/mfa/verify'
     | '/t/$tenantId/example'
+    | '/t/$tenantId/invitations'
+    | '/t/$tenantId/members'
   id:
     | '__root__'
     | '/_shell'
+    | '/invite'
     | '/login'
     | '/_shell/'
     | '/_shell/tenants'
@@ -139,10 +174,13 @@ export interface FileRouteTypes {
     | '/_shell/account/mfa/enroll'
     | '/_shell/account/mfa/verify'
     | '/_shell/t/$tenantId/example'
+    | '/_shell/t/$tenantId/invitations'
+    | '/_shell/t/$tenantId/members'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   platformRoutesShellRoute: typeof platformRoutesShellRouteWithChildren
+  platformRoutesInviteRoute: typeof platformRoutesInviteRoute
   platformRoutesLoginRoute: typeof platformRoutesLoginRoute
 }
 
@@ -153,6 +191,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof platformRoutesShellRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/invite': {
+      id: '/invite'
+      path: '/invite'
+      fullPath: '/invite'
+      preLoaderRoute: typeof platformRoutesInviteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -218,17 +263,35 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ExampleRouteImport
       parentRoute: typeof platformRoutesTenantRoute
     }
+    '/_shell/t/$tenantId/invitations': {
+      id: '/_shell/t/$tenantId/invitations'
+      path: '/invitations'
+      fullPath: '/t/$tenantId/invitations'
+      preLoaderRoute: typeof platformRoutesInvitationsRouteImport
+      parentRoute: typeof platformRoutesTenantRoute
+    }
+    '/_shell/t/$tenantId/members': {
+      id: '/_shell/t/$tenantId/members'
+      path: '/members'
+      fullPath: '/t/$tenantId/members'
+      preLoaderRoute: typeof platformRoutesMembersRouteImport
+      parentRoute: typeof platformRoutesTenantRoute
+    }
   }
 }
 
 interface platformRoutesTenantRouteChildren {
   platformRoutesTenantHomeRoute: typeof platformRoutesTenantHomeRoute
   ExampleRoute: typeof ExampleRoute
+  platformRoutesInvitationsRoute: typeof platformRoutesInvitationsRoute
+  platformRoutesMembersRoute: typeof platformRoutesMembersRoute
 }
 
 const platformRoutesTenantRouteChildren: platformRoutesTenantRouteChildren = {
   platformRoutesTenantHomeRoute: platformRoutesTenantHomeRoute,
   ExampleRoute: ExampleRoute,
+  platformRoutesInvitationsRoute: platformRoutesInvitationsRoute,
+  platformRoutesMembersRoute: platformRoutesMembersRoute,
 }
 
 const platformRoutesTenantRouteWithChildren =
@@ -257,6 +320,7 @@ const platformRoutesShellRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   platformRoutesShellRoute: platformRoutesShellRouteWithChildren,
+  platformRoutesInviteRoute: platformRoutesInviteRoute,
   platformRoutesLoginRoute: platformRoutesLoginRoute,
 }
 export const routeTree = rootRouteImport

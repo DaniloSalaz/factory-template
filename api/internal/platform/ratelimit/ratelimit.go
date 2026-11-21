@@ -11,7 +11,14 @@ import (
 
 // Limiter decides whether one more request under key fits in its quota.
 type Limiter interface {
-	Allow(ctx context.Context, key string) (bool, error)
+	Allow(ctx context.Context, key string) (Decision, error)
+}
+
+// Decision is a Limiter's answer. RetryAfter, when the request is refused, is how long
+// until the quota allows another one: the 429's Retry-After (design, section 6).
+type Decision struct {
+	Allowed    bool
+	RetryAfter time.Duration
 }
 
 // Memory is a fixed-window limiter held in process memory: at most limit requests per key
@@ -35,8 +42,8 @@ func NewMemory(limit int, window time.Duration, now func() time.Time) *Memory {
 	return &Memory{limit: limit, window: window, now: now, counts: map[string]int{}}
 }
 
-// Allow implements Limiter.
-func (m *Memory) Allow(_ context.Context, key string) (bool, error) {
+// Allow implements Limiter. A refusal waits for the end of the current window.
+func (m *Memory) Allow(_ context.Context, key string) (Decision, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -46,8 +53,8 @@ func (m *Memory) Allow(_ context.Context, key string) (bool, error) {
 		clear(m.counts)
 	}
 	if m.counts[key] >= m.limit {
-		return false, nil
+		return Decision{RetryAfter: m.start.Add(m.window).Sub(now)}, nil
 	}
 	m.counts[key]++
-	return true, nil
+	return Decision{Allowed: true}, nil
 }

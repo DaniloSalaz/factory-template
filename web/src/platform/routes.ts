@@ -6,6 +6,7 @@ import { index, layout, physical, rootRoute, route } from "@tanstack/virtual-fil
 // navigation and GET /tenant) and their URLs are /t/$tenantId/<file>.
 export const routes = rootRoute("platform/routes/root.tsx", [
   route("/login", "platform/routes/login.tsx"),
+  route("/invite", "platform/routes/invite.tsx"),
   layout("shell", "platform/routes/shell.tsx", [
     index("platform/routes/home.tsx"),
     route("/tenants", "platform/routes/tenants.tsx"),
@@ -16,6 +17,8 @@ export const routes = rootRoute("platform/routes/root.tsx", [
     ]),
     route("/t/$tenantId", "platform/routes/tenant.tsx", [
       index("platform/routes/tenant-home.tsx"),
+      route("/members", "platform/routes/members.tsx"),
+      route("/invitations", "platform/routes/invitations.tsx"),
       physical("app/routes"),
     ]),
   ]),

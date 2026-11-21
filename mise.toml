@@ -161,17 +161,17 @@ run = [
 ]
 
 [tasks."web:check"]
-description = "Check the web app: lint, types, production build and an up-to-date route tree"
+description = "Check the web app: lint, route tree, types and production build"
 dir = "web"
 run = [
   "npm ci",
   "npm run lint",
-  "npm run typecheck",
+  # The build generates src/routeTree.gen.ts with the router CLI, then runs tsc -b and
+  # vite build. The generated tree must match the commit.
   "npm run build",
-  # The router plugin regenerates src/routeTree.gen.ts on build; it must match the commit.
   """
   if ! git diff --quiet -- src/routeTree.gen.ts; then
-    echo "src/routeTree.gen.ts is out of date. Run 'npm run build' in web/ and commit it." >&2
+    echo "src/routeTree.gen.ts is out of date. Run 'npm run routes' in web/ and commit it." >&2
     exit 1
   fi
   """,
@@ -184,7 +184,7 @@ dir = "web"
 run = "npm test"
 
 [tasks."web:e2e"]
-description = "Run the browser journey (Playwright) against the local API; needs `up`, `migrate` and `dev`"
+description = "Run the browser journey (Playwright) against the local API; needs `up`, `migrate` and `dev` (CI: the e2e job)"
 depends = ["web:install"]
 dir = "web"
 run = "npx playwright install chromium && npm run e2e"

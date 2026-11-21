@@ -281,15 +281,15 @@ func (m *MFA) roleRequiresMFA(ctx context.Context, r Repo) (bool, error) {
 // the refusal is audited.
 func (m *MFA) allow(ctx context.Context, cur Current, keys ...string) error {
 	for _, k := range keys {
-		ok, err := m.limiter.Allow(ctx, "mfa:"+k)
+		d, err := m.limiter.Allow(ctx, "mfa:"+k)
 		if err != nil {
 			return apperr.Wrap(err, apperr.KindUnavailable, "rate_limit.unavailable", "The service is temporarily unavailable.")
 		}
-		if !ok {
+		if !d.Allowed {
 			_ = m.store.AsUser(ctx, cur.UserID, func(ctx context.Context, r Repo) error {
 				return r.RecordAudit(ctx, m.event(ctx, AuditMFAVerifyLocked, "session", cur.ID, map[string]string{"limit": k}))
 			})
-			return domain.ErrMFARateLimited()
+			return domain.ErrMFARateLimited(d.RetryAfter)
 		}
 	}
 	return nil

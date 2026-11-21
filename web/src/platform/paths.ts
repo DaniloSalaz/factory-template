@@ -6,6 +6,7 @@ export const paths = {
   mfa: "/account/mfa",
   mfaVerify: "/account/mfa/verify",
   mfaEnroll: "/account/mfa/enroll",
+  invite: "/invite",
 } as const;
 
 /**

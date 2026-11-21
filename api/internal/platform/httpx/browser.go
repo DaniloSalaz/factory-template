@@ -26,10 +26,12 @@ func ClientIP(resolver clientip.Resolver) Middleware {
 
 const corsMaxAgeSeconds = 600
 
-// The methods and request headers a cross-origin caller may use.
+// The methods and request headers a cross-origin caller may use, and the response
+// headers it may read beyond the CORS-safelisted ones: the front end shows a 429's wait.
 const (
-	corsMethods = "GET, POST, PUT, PATCH, DELETE"
-	corsHeaders = "Content-Type, X-Request-ID, X-Tenant-ID"
+	corsMethods       = "GET, POST, PUT, PATCH, DELETE"
+	corsHeaders       = "Content-Type, X-Request-ID, X-Tenant-ID"
+	corsExposeHeaders = "Retry-After, X-Request-ID"
 )
 
 // CORS lets exactly the allowed origins call the API with credentials (design, section
@@ -46,6 +48,7 @@ func CORS(allowedOrigins []string) Middleware {
 			if ok {
 				h.Set("Access-Control-Allow-Origin", origin)
 				h.Set("Access-Control-Allow-Credentials", "true")
+				h.Set("Access-Control-Expose-Headers", corsExposeHeaders)
 			}
 			if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
 				if ok {
@@ -95,15 +98,15 @@ func RateLimit(limiter ratelimit.Limiter, logger *slog.Logger) Middleware {
 					key = block.String()
 				}
 			}
-			ok, err := limiter.Allow(r.Context(), key)
+			d, err := limiter.Allow(r.Context(), key)
 			if err != nil {
 				WriteProblem(w, r, apperr.Wrap(err, apperr.KindUnavailable, "rate_limit.unavailable",
 					"The service is temporarily unavailable."), logger)
 				return
 			}
-			if !ok {
+			if !d.Allowed {
 				WriteProblem(w, r, apperr.RateLimited("rate_limit.exceeded",
-					"Too many requests; try again later."), logger)
+					"Too many requests; try again later.", d.RetryAfter), logger)
 				return
 			}
 			next.ServeHTTP(w, r)
