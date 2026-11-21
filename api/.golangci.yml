@@ -2,8 +2,9 @@ version: "2"
 
 run:
   tests: true
-  # Architecture tests live behind this tag (see archtest); lint them too.
-  build-tags: [arch]
+  # Architecture tests (tests/arch) and the tests that need Docker live behind these
+  # tags; lint them too, or depguard and forbidigo would not see their files.
+  build-tags: [arch, integration]
 
 linters:
   default: standard # errcheck, govet, ineffassign, staticcheck, unused
@@ -33,7 +34,7 @@ linters:
   settings:
     # Architecture rules. Messages name the rule and the fix so that whoever reads the
     # lint output (person or agent) can correct the code without looking anything up.
-    # Each rule has a failing fixture in archtest/testdata/lint.
+    # Each rule has a failing fixture in tests/arch/testdata/lint.
     forbidigo:
       analyze-types: true
       forbid:
@@ -50,7 +51,7 @@ linters:
           files: ["**/platform/kit/**"]
           # In lax mode the longest match wins: kit may import kit and nothing else below
           # platform/ (identity, health, any future platform module). Importing app/ is
-          # [platform-imports-app], checked for all of platform/ in archtest.
+          # [platform-imports-app], checked for all of platform/ in tests/arch.
           list-mode: lax
           allow:
             - chaskicode.dev/saas/platform/kit

@@ -1,3 +1,5 @@
+//go:build integration
+
 package identity_test
 
 import (
@@ -37,13 +39,13 @@ import (
 	"chaskicode.dev/saas/platform/kit/clientip"
 	"chaskicode.dev/saas/platform/kit/config"
 	"chaskicode.dev/saas/platform/kit/db"
-	"chaskicode.dev/saas/platform/kit/db/dbtest"
 	"chaskicode.dev/saas/platform/kit/httpx"
 	"chaskicode.dev/saas/platform/kit/logx"
 	"chaskicode.dev/saas/platform/kit/pii"
 	"chaskicode.dev/saas/platform/kit/ratelimit"
 	"chaskicode.dev/saas/platform/kit/telemetry"
 	"chaskicode.dev/saas/platform/migrations"
+	"chaskicode.dev/saas/tests/testkit"
 )
 
 // Integration tests of the login, the session middleware and logout, over HTTPS (the
@@ -57,7 +59,7 @@ const (
 	absoluteTTL = 30 * 24 * time.Hour
 )
 
-var testDB *dbtest.DB
+var testDB *testkit.DB
 
 func TestMain(m *testing.M) {
 	flag.Parse()
@@ -65,7 +67,7 @@ func TestMain(m *testing.M) {
 		os.Exit(m.Run())
 	}
 	ctx := context.Background()
-	database, err := dbtest.New(ctx, migrations.Set())
+	database, err := testkit.New(ctx, migrations.Set())
 	if err != nil {
 		if database != nil && database.Container != nil {
 			_ = testcontainers.TerminateContainer(database.Container)

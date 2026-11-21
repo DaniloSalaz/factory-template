@@ -1,21 +1,26 @@
+//go:build integration
+
 package main
 
 import (
+	"context"
 	"io/fs"
 	"testing"
 
-	"chaskicode.dev/saas/platform/kit/db/dbtest"
+	"github.com/jackc/pgx/v5"
+
 	platformmigrations "chaskicode.dev/saas/platform/migrations"
+	"chaskicode.dev/saas/tests/testkit"
 )
 
 // startDB runs a database migrated with the sets `api migrate` applies, in its order.
-func startDB(t *testing.T) *dbtest.DB {
+func startDB(t *testing.T) *testkit.DB {
 	t.Helper()
-	return dbtest.Start(t, migrationSets()...)
+	return testkit.Start(t, migrationSets()...)
 }
 
 // `api migrate` exits 0 when everything is applied and non-zero on any failure, without
-// starting the server. dbtest.New already applied the embedded migrations through the
+// starting the server. testkit.New already applied the embedded migrations through the
 // same db.Migrate, so here there is nothing left to apply.
 func TestMigrateCommand(t *testing.T) {
 	if testing.Short() {
@@ -65,4 +70,15 @@ func TestMigrateCommand(t *testing.T) {
 			t.Errorf("version table %s does not exist", table)
 		}
 	}
+}
+
+func connect(t *testing.T, url string) *pgx.Conn {
+	t.Helper()
+
+	conn, err := pgx.Connect(t.Context(), url)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close(context.WithoutCancel(t.Context())) })
+	return conn
 }

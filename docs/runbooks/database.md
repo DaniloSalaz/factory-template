@@ -34,8 +34,9 @@ El script es idempotente y recibe las contraseñas como variables de psql. Crea:
   y la imagen lo ejecuta **solo cuando el volumen está vacío**. Con un volumen anterior a
   los roles, recréalo con `docker compose down -v && mise run up && mise run migrate`, o
   ejecútalo a mano con `mise run db:bootstrap`.
-- **Tests**: `api/platform/kit/db/dbtest` arranca Postgres 18 con el mismo
-  `initdb.sh` y el mismo `bootstrap.sql`, y migra como `app_owner`.
+- **Tests**: `api/tests/testkit` arranca Postgres 18 (Testcontainers) con el mismo
+  `initdb.sh` y el mismo `bootstrap.sql`, y migra como `app_owner`. Los tests que lo usan
+  llevan la etiqueta `integration` y corren con `mise run test:integration`.
 - **Otros entornos**: un superusuario lo ejecuta una vez, y otra vez cada vez que cambie el script:
 
   ```sh
@@ -53,13 +54,13 @@ su migración dice quién la usa y cómo. En la misma migración que crea la tab
 
 1. Si tiene `tenant_id`: `ENABLE` y `FORCE ROW LEVEL SECURITY`, la política
    `tenant_isolation` y su alcance declarado (diseño, sección 7.3). El test de esquema
-   (`TestSchema` en `api/schema_integration_test.go`, con las reglas de
-   `api/platform/kit/db/schematest`) falla si falta algo, también en las tablas de la app. Si es una tabla de acceso
+   (`TestSchema` en `api/tests/db/schema_test.go`, con las reglas de
+   `api/tests/db/rules.go`) falla si falta algo, también en las tablas de la app. Si es una tabla de acceso
    o una tabla hija, sigue los patrones de `docs/patterns.md`.
 2. `GRANT` a `app_runtime` solo de los privilegios que la aplicación necesita (por ejemplo,
    sin `DELETE` en tablas de solo inserción). `UPDATE` siempre por columnas
    (`GRANT UPDATE (col, …)`), nunca de toda la tabla. Añade los permisos nuevos a
-   `api/platform/kit/db/schematest/testdata/runtime_privileges.golden`, a mano, y
+   `api/tests/db/testdata/runtime_privileges.golden`, a mano, y
    justifícalos en el PR: es una decisión de seguridad, y el test falla mostrando el diff
    hasta que el fichero coincide. La foto cubre los permisos de plataforma y de app: la
    compara `TestSchema` sobre una base de datos con los dos conjuntos de migraciones.
@@ -154,9 +155,14 @@ vez y antes de desplegar el binario nuevo:
 El procedimiento se probó sobre una base de datos con una `00007` propia de la app y una
 `00007` nueva de plataforma.
 
-Tests: `dbtest.New`/`dbtest.Start` reciben los conjuntos a aplicar. Los módulos de
-plataforma pasan `migrations.Set()` de `api/platform/migrations`; los tests de
-`platform/kit`, que no pueden importarlo (`[platform-no-modules]`), pasan
-`dbtest.PlatformFromSource()`, el mismo conjunto leído del disco (un test comprueba que
-son idénticos). Los tests de `package main` (`api/`) aplican plataforma y app, y ahí corren
-las reglas de RLS, las funciones `SECURITY DEFINER` y la foto de permisos.
+Tests: `testkit.New`/`testkit.Start` (`api/tests/testkit`) reciben los conjuntos a aplicar.
+`migrationsets.All()` (`api/tests/testkit/migrationsets`) devuelve los de plataforma y app en
+el orden de `api migrate`; con ellos corren los tests de `api/tests/db`: las reglas de RLS,
+las funciones `SECURITY DEFINER`, los miembros, las invitaciones y la foto de permisos. Los
+módulos de plataforma pasan `migrations.Set()` de `api/platform/migrations`, y
+`TestPlatformMigrationsApplyAlone` (`api/tests/integration/migrations`) comprueba que se
+aplica sola. Los tests de `platform/kit`, que no pueden importarlo (`[platform-no-modules]`),
+pasan `testkit.PlatformFromSource()`, el mismo conjunto leído del disco (un test comprueba
+que son idénticos). `migrationsets` va aparte de `testkit` para que esos tests no importen
+la app ni de forma indirecta; lo comprueba `[platform-imports-app]` (`mise run arch`), que
+sigue los imports de `platform/` a través de los paquetes de fuera de él.

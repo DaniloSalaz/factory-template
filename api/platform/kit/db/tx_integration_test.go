@@ -1,3 +1,5 @@
+//go:build integration
+
 package db_test
 
 import (
@@ -15,7 +17,7 @@ import (
 	"chaskicode.dev/saas/platform/kit/apperr"
 	"chaskicode.dev/saas/platform/kit/authctx"
 	"chaskicode.dev/saas/platform/kit/db"
-	"chaskicode.dev/saas/platform/kit/db/schematest"
+	schemarules "chaskicode.dev/saas/tests/db"
 )
 
 // Integration tests of the three transactions, run as app_runtime against the real
@@ -212,7 +214,7 @@ func TestExampleTablesFollowTheRules(t *testing.T) {
 	t.Parallel()
 
 	conn := connect(t, testDB.OwnerURL)
-	violations, err := schematest.TenantTableViolations(t.Context(), conn)
+	violations, err := schemarules.TenantTableViolations(t.Context(), conn)
 	if err != nil {
 		t.Fatal(err)
 	}

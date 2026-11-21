@@ -27,6 +27,7 @@ web/e2e-screenshots/
 .idea/
 .vscode/*
 !.vscode/extensions.json
+!.vscode/settings.json
 
 # Claude Code local settings
 .claude/settings.local.json

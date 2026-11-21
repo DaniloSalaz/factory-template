@@ -14,7 +14,7 @@ los jobs pesados se saltan (ver [Cambios que solo tocan documentación](#cambios
 |---|---|---|
 | `changes` | Se ejecuta primero y decide si el cambio toca código (`code=true`) o solo documentación (`code=false`) con `.github/scripts/changes.sh` | `.github/scripts/changes.sh push <base> <head>` |
 | `lint` | golangci-lint (incluye las reglas de arquitectura de depguard y forbidigo), actionlint + shellcheck sobre los workflows y los tests de arquitectura | `mise run lint:go`, `mise run lint:actions`, `mise run arch` |
-| `test` | `go test -race -cover ./...`; la integración de `/readyz` arranca Postgres con Testcontainers en el Docker del runner | `mise run test` (Docker arrancado) |
+| `test` | Primero los unitarios (`go test -race -cover ./...`, sin Docker) y después los de integración (`-tags integration`), que arrancan Postgres y Mailpit con Testcontainers en el Docker del runner | `mise run test`, `mise run test:integration` (Docker arrancado) |
 | `generate` | Une el contrato (`api-spec/platform.yaml` + `api-spec/app.yaml` → `api-spec/openapi.gen.yaml`, con `api/tools/specmerge`), regenera sqlc, oapi-codegen (un paquete por `codegen.yaml` de módulo), orval y la seguridad por ruta del front (`web/src/gen/routeSecurity.ts`) y falla si cambia algo en `api/gen`, `web/src/gen` o `api-spec/openapi.gen.yaml` (`gen/openapi/` se regenera desde cero: el paquete de un módulo sin `codegen.yaml` aparece como borrado) | `mise run generate:check` |
 | `security` | govulncheck y `trivy fs` (dependencias y Dockerfile), fallando con HIGH o CRITICAL | `mise run security:govulncheck`, `mise run security:trivy` |
 | `gitleaks` | gitleaks sobre todo el historial. Se ejecuta siempre, también si solo cambia documentación | `mise run security:gitleaks` |
@@ -30,7 +30,7 @@ las llamadas de login y MFA), las sesiones se siembran por SQL (`web/e2e/db.ts`,
 entra en el contenedor de servicio con `docker exec`, `E2E_PG_CONTAINER`) y las pantallas de
 MFA usan respuestas simuladas. Si un test nuevo necesitara WorkOS, no cabe en este job.
 
-`mise run ci` ejecuta en orden: `lint:go`, `lint:actions`, `arch`, `test`, `generate:check`,
+`mise run ci` ejecuta en orden: `lint:go`, `lint:actions`, `arch`, `test`, `test:integration`, `generate:check`,
 `security:govulncheck`, `security:gitleaks`, `web:check` y `web:test`. El job `e2e` no está
 en `ci` porque necesita Postgres y la API en marcha. Los escaneos de Trivy (`security:trivy`
 y `docker:scan`) no están en `ci` porque descargan su base de datos y tardan más; ejecútalos con
@@ -88,12 +88,14 @@ añadas filtros de rutas al `on:` de `ci.yml`.
 
 | Regla | Dónde se comprueba | Fixture que demuestra que funciona |
 |---|---|---|
-| `[env-only-in-config]`: `os.Getenv/LookupEnv/Environ` solo en `platform/kit/config` | forbidigo | `api/archtest/testdata/lint/env-only-in-config` |
+| `[env-only-in-config]`: `os.Getenv/LookupEnv/Environ` solo en `platform/kit/config` | forbidigo | `api/tests/arch/testdata/lint/env-only-in-config` |
 | `[platform-no-modules]`: `platform/kit` no importa ningún módulo de plataforma (`platform/<x>` fuera de `kit`) | depguard | `…/testdata/lint/platform-no-modules` |
 | `[apperr-stdlib-only]`: `apperr` solo importa la stdlib | depguard | `…/testdata/lint/apperr-stdlib-only` |
 | `[domain-pure]`: `domain` solo importa la stdlib y `platform/kit/apperr` | depguard | `…/testdata/lint/domain-pure` |
-| `[module-boundaries]`: un módulo es `platform/<x>` (salvo `kit`) o `app/modules/<x>`; fuera de él solo se importa su paquete raíz; `gen/openapi/<x>` y `gen/sqlc/<x>` son privados de `<x>` | `api/archtest/boundaries_test.go` | `…/testdata/arch` |
-| `[platform-imports-app]` (back): nada bajo `api/platform/` importa `api/app` ni nada debajo; solo `package main` importa `app` | `api/archtest/appimports_test.go` | `…/testdata/arch` |
+| `[module-boundaries]`: un módulo es `platform/<x>` (salvo `kit`) o `app/modules/<x>`; fuera de él solo se importa su paquete raíz; `gen/openapi/<x>` y `gen/sqlc/<x>` son privados de `<x>` | `api/tests/arch/boundaries_test.go` | `…/testdata/arch` |
+| `[platform-imports-app]` (back): nada bajo `api/platform/` importa `api/app` ni nada debajo, tampoco de forma indirecta a través de un paquete de fuera de `platform/` (un helper de `api/tests/`, `gen/`); solo `package main` importa `app` | `api/tests/arch/appimports_test.go` | `…/testdata/arch` |
+| `[tests-not-in-prod]`: ningún fichero que no sea `_test.go` fuera de `api/tests/` importa `chaskicode.dev/saas/tests/...` (helpers y fixtures que nunca van en el binario) | `api/tests/arch/testsimports_test.go` | `…/testdata/arch` (también un fichero con la etiqueta `integration`) |
+| `[rls-vars-only-in-db]`: ningún fichero Go fuera de `platform/kit/db` y de `api/tests/db` llama a `set_config` ni nombra las variables de RLS | `api/tests/arch/rlsvars_test.go` | `…/testdata/rlsvars` |
 | `[contract-platform-owned]`: `app.yaml` no define seguridad raíz, `servers` ni `securitySchemes`, ni la cabecera de tenant; usa la misma versión de OpenAPI; sus `$ref` van solo a componentes, propios (`#/components/…`) o de plataforma (`platform.yaml#/components/…`), y resuelven; ningún path item es un `$ref` | `api/tools/specmerge` (en `mise run generate`) | `api/tools/specmerge/main_test.go` |
 | `[contract-duplicate]`: `app.yaml` no repite una ruta (aunque cambien los nombres de parámetro), un `operationId` ni un nombre de componente (comparados sin mayúsculas, `_` ni `-`, como los ven los generadores), ni un tag de plataforma | `api/tools/specmerge` | `api/tools/specmerge/main_test.go` |
 | `[contract-module-key]`: cada operación tiene un solo tag, declarado y con módulo en su zona (`platform/<m>` o `app/modules/<m>`); cada `codegen.yaml` tiene `include-tags: [<m>]`, `package: <m>api` y `output: gen/openapi/<m>/<m>.gen.go`, y alguna operación con su tag | `api/tools/specmerge` | `api/tools/specmerge/main_test.go` |
@@ -105,7 +107,18 @@ que falla con el mensaje esperado y que los casos permitidos no se marcan. Si ca
 configuración del lint y una regla deja de funcionar, ese test falla.
 
 Los tests de arquitectura llevan el build tag `arch`: `go test ./...` no los ejecuta;
-`mise run arch` sí.
+`mise run arch` sí. Listan los paquetes con `-tags integration`, y golangci-lint usa las dos
+etiquetas (`build-tags` en `api/.golangci.yml`), para que las reglas también vean los
+ficheros de los tests de integración. Un fichero detrás de otra etiqueta escaparía a las
+reglas: una etiqueta nueva se añade también a `listPackages` y a `build-tags`.
+
+## Tests unitarios y de integración
+
+Los tests que necesitan Docker (Testcontainers) llevan `//go:build integration`:
+`mise run test` compila sin ellos y termina sin Docker; `mise run test:integration` los
+incluye (y repite los unitarios, porque Go no puede dejar fuera los ficheros sin etiqueta).
+Viven en `api/tests/` (`db/`, `integration/<módulo>/`, con el helper `testkit/`), salvo los
+que usan código no exportado, son de `package main` o importan el interior de su módulo.
 
 ## Qué hacer cuando falla
 

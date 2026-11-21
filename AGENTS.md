@@ -23,8 +23,9 @@ Plantilla base para SaaS: monolito modular en Go + frontend React. Desarrollador
 | `migration:new:platform <nombre>` | Crea una migración de plataforma en `api/platform/migrations/` (solo en factory-template) |
 | `generate` | sqlc + unión del contrato (`specmerge`) + oapi-codegen por cada `codegen.yaml` + orval (+ la seguridad por ruta del front) |
 | `dev` | Arranca la API en `:8080` |
-| `test` | Tests Go con `-race` (incluye integración con Testcontainers; requiere Docker) |
-| `arch` | Tests de arquitectura (límites entre módulos y fixtures de las reglas de lint) |
+| `test` | Tests unitarios de Go con `-race`; no necesita Docker |
+| `test:integration` | Tests con la etiqueta `integration` (Testcontainers; requiere Docker), unitarios incluidos |
+| `arch` | Tests de arquitectura de `api/tests/arch` (límites entre módulos y fixtures de las reglas de lint) |
 | `lint` / `fmt` | golangci-lint + actionlint + Biome + tsc / formateo |
 | `generate:check` | Regenera y falla si el código generado o `api-spec/openapi.gen.yaml` no coinciden con lo commiteado |
 | `web:test` | Tests unitarios del front (Vitest), incluida la regla `[platform-imports-app]` |
@@ -51,6 +52,11 @@ api/app/app.go            único enganche de la app: app.Roles (catálogo de rol
 api/app/modules/<m>/      módulos de la app, con la misma forma que platform/<m>
 api/app/migrations/       migraciones goose de la app (tabla `goose_app_db_version`), nuevas con `mise run migration:new <nombre>`
 api/gen/                  código generado (openapi/<m>, sqlc/<m>, routes)
+api/tests/                lo que no es unitario (los unitarios van junto a su fichero)
+  arch/  (+ testdata/)    reglas de arquitectura y sus fixtures (etiqueta `arch`)
+  db/    (+ testdata/)    RLS, funciones de la BD, miembros, invitaciones y foto de permisos, sobre plataforma + app
+  integration/<p>/        integración de un paquete o módulo por su API pública (`package <p>_test`)
+  testkit/                Postgres con Testcontainers; `migrationsets.All()` = plataforma + app
 api/tools/                routegen (seguridad por ruta) y specmerge (unión del contrato)
 api-spec/platform.yaml    contrato HTTP de la plantilla (una app no lo edita)
 api-spec/app.yaml         contrato HTTP de la app
@@ -67,7 +73,7 @@ Ejemplo vivo: `api/platform/health`.
 - Sin variables globales ni `init()`; dependencias por constructor (`NewX(deps)`).
 - Un módulo no importa el interior de otro módulo (ni su código en `gen/`); solo su `module.go`. Lo comprueba `mise run arch`.
 - `platform/kit` no importa ningún módulo de plataforma (`platform/<m>`, depguard `[platform-no-modules]`); `platform/kit/apperr` y `platform/kit/authctx` solo importan la stdlib; el dominio solo importa la stdlib y `platform/kit/apperr` (depguard).
-- Nada bajo `api/platform/` importa `api/app` ni nada debajo, y solo `package main` (`api/`) importa `app` (`[platform-imports-app]`, `mise run arch`; en el front, la regla del mismo nombre). `app/` importa solo `platform/kit/*` y el `module.go` de un módulo de plataforma; un módulo de app, además, su propio interior y el `module.go` de otros módulos de app (`[module-boundaries]`).
+- Nada bajo `api/platform/` importa `api/app` ni nada debajo, tampoco de forma indirecta a través de un paquete de fuera de `platform/` (un helper de `tests/`, código generado), y solo `package main` (`api/`) importa `app` (`[platform-imports-app]`, `mise run arch`; en el front, la regla del mismo nombre). `app/` importa solo `platform/kit/*` y el `module.go` de un módulo de plataforma; un módulo de app, además, su propio interior y el `module.go` de otros módulos de app (`[module-boundaries]`).
 - El código generado (`api/gen/`, `web/src/gen/`, `api-spec/openapi.gen.yaml`) no se edita: cambia el contrato (`platform.yaml` o `app.yaml`) o la query y ejecuta `mise run generate`.
 - El tag de una operación es la clave de su módulo: cada operación tiene exactamente un tag, el nombre de la carpeta del módulo, cuyo `codegen.yaml` lo incluye solo a él y genera `gen/openapi/<m>/` (paquete `<m>api`). `app.yaml` no redefine nada de `platform.yaml` (rutas, `operationId`, componentes, tags, `securitySchemes`, la seguridad raíz ni la cabecera de tenant): referencia sus componentes con `platform.yaml#/components/…`. Lo comprueba `specmerge` en `mise run generate` (`[contract-duplicate]`, `[contract-platform-owned]`, `[contract-module-key]`).
 - Un GET nunca modifica datos: SameSite=Lax envía la cookie en navegaciones GET entre sitios y la protección CSRF por Origin no lo cubriría.
@@ -83,12 +89,12 @@ Ejemplo vivo: `api/platform/health`.
 - Las membresías no se escriben directamente: `app_runtime` solo tiene `SELECT` sobre `memberships`. Se crean con `create_tenant` y `accept_invitation`, y su rol cambia o se borran solo con `change_member_role`, `remove_member` y `leave_tenant`, que bloquean el tenant y nunca lo dejan sin owner (ADR 0003). La jerarquía (quién gestiona a quién) se decide en `domain` con la inclusión de permisos del catálogo, nunca comparando nombres de rol; la BD solo comprueba que los roles en los que se basó Go no cambiaron.
 - Orden de bloqueo en la BD: fila del tenant → invitaciones → membresías. Quien escribe invitaciones bloquea antes el tenant (`FOR KEY SHARE`) y relee el rol del actor; las funciones de miembros lo bloquean `FOR UPDATE`. Otro orden puede interbloquearse con una degradación (`40P01`).
 - El token de una invitación (y su hash) no va en ningún log, respuesta ni auditoría; solo el adaptador de desarrollo de `InvitationSender` escribe el enlace, y no arranca fuera de desarrollo. El envío se hace después del commit y su fallo solo se registra (el remedio es reenviar).
-- Datos de un tenant, solo dentro de `db.WithTenantTx`; los flujos sin tenant usan `WithUserTx` o `WithAnonTx`. Ningún fichero Go fuera de `platform/kit/db` llama a `set_config` ni nombra las variables de RLS (`mise run arch`). Los errores `TN0xx` de las funciones de la BD se traducen con `db.MapError`.
+- Datos de un tenant, solo dentro de `db.WithTenantTx`; los flujos sin tenant usan `WithUserTx` o `WithAnonTx`. Ningún fichero Go fuera de `platform/kit/db` (y de los tests de esquema de `api/tests/db`) llama a `set_config` ni nombra las variables de RLS (`mise run arch`). Los errores `TN0xx` de las funciones de la BD se traducen con `db.MapError`.
 - Base de datos: la API conecta como `app_runtime` (RLS siempre); las migraciones, como `app_owner`. Toda tabla con `tenant_id` lleva RLS forzado, `tenant_isolation` y alcance declarado (diseño 7.3); los permisos se conceden explícitamente en la migración que crea la tabla (`docs/runbooks/database.md`).
-- Los permisos de `app_runtime` (de tabla, de columna y de ejecución) están fijados en `api/platform/kit/db/schematest/testdata/runtime_privileges.golden`; nunca un `UPDATE` sin columnas. Cambiar ese fichero es una decisión de seguridad: se edita a mano y el PR justifica qué permiso cambia y por qué el diseño lo necesita.
+- Los permisos de `app_runtime` (de tabla, de columna y de ejecución) están fijados en `api/tests/db/testdata/runtime_privileges.golden`; nunca un `UPDATE` sin columnas. Cambiar ese fichero es una decisión de seguridad: se edita a mano y el PR justifica qué permiso cambia y por qué el diseño lo necesita.
 - Migraciones en dos conjuntos con numeración y tabla de versiones propias (`docs/runbooks/database.md`): las de una app van en `api/app/migrations/` (`mise run migration:new`); las de `api/platform/migrations/` solo las cambia la plantilla. Una de app puede usar lo de plataforma; una de plataforma nunca referencia nada de la app (`TestPlatformMigrationsApplyAlone`, `[platform-migrations-alone]`). Sin migraciones vacías ni de relleno.
 - Una migración fusionada en main es inmutable; los cambios posteriores van en una migración nueva.
-- Las reglas de RLS, de `SECURITY DEFINER` y la foto de permisos se comprueban sobre plataforma + app desde `package main` (`api/schema_integration_test.go`): `platform/` nunca importa `app/`.
+- Las reglas de RLS, de `SECURITY DEFINER` y la foto de permisos se comprueban sobre plataforma + app en `api/tests/db` (con `migrationsets.All()`), que puede importar `app/`; `platform/` nunca la importa.
 - MFA (ADR 0002): opcional, exigida solo por los roles del catálogo que lo dicen. Una sesión solo tiene MFA por `sessions.mfa_auth_time`, que fija únicamente `mark_session_mfa` tras un `valid: true` del proveedor (y rota el token). Nunca se deduce del login ni de que el usuario tenga un factor.
 - Fuera de development (`staging`, `production`): todas las URL y orígenes del navegador y del proveedor de identidad son `https`, y el SMTP es obligatorio; config lo valida al arrancar. Una opción solo para desarrollo (como `SMTP_TLS_SKIP_VERIFY`) se rechaza fuera de él.
 - Email: nunca un texto escrito por usuarios (nombre del tenant, de una persona) en una cabecera (asunto, From); en el cuerpo, sin caracteres de control, recortado y escapado (`html/template`). El token de una invitación solo en el enlace. Los errores de envío no llevan destinatarios.
@@ -96,6 +102,8 @@ Ejemplo vivo: `api/platform/health`.
 - Telemetría (ADR 0004): en trazas, métricas y errores solo salen los atributos de su lista (`allowedKeys` en `platform/kit/telemetry/filter.go`); nunca añadas uno fuera de ella (ni `user_id`, emails, IPs, argumentos SQL, cuerpos, cabeceras, query strings o tokens). Añadir uno exige ampliar la lista y la tabla del ADR con su porqué. El nombre de un span HTTP es el patrón de `ServeMux`, nunca la ruta real; las llamadas a servicios externos van con `telemetry.ClientSpan`, sin URL ni cuerpo; los errores 5xx llegan a Sentry por `httpx.WriteProblem`, nunca con `sentry` directamente.
 - Usuario de sistema reservado: `00000000-0000-7000-8000-000000000001` (deshabilitado, sin login). Úsalo solo para trabajos de sistema.
 - Cada cambio va con su test (unitario con fakes de puertos; integración con Testcontainers).
+- Un test que necesita Docker lleva `//go:build integration`, esté donde esté: `mise run test` no lo compila y `mise run test:integration` sí. Los de integración, arquitectura y BD van en `api/tests/`; se quedan junto a su código solo si usan algo no exportado, son de `package main` o importan el interior de su módulo (`[module-boundaries]`).
+- Ningún fichero que no sea `_test.go` fuera de `api/tests/` importa `chaskicode.dev/saas/tests/...` (`[tests-not-in-prod]`, `mise run arch`). Desde `platform/`, sus tests usan `tests/testkit`, nunca `tests/testkit/migrationsets` ni nada que dependa de la app: `[platform-imports-app]` también sigue los imports indirectos.
 - Comentarios solo para explicar el porqué, no el qué.
 
 ## Reglas del front (`web/`, detalle en `web/README.md`)
