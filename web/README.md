@@ -2,7 +2,7 @@
 
 Frontend React + TypeScript + Vite: TanStack Router (rutas por fichero, con su plugin de
 Vite), TanStack Query, shadcn/ui (Base UI) con Tailwind CSS v4, Vitest + Testing Library y
-Playwright. Diseño: `docs/designs/auth-y-tenancy.md` (secciones 5, 6, 10 y 10.1).
+Playwright. Diseño: `docs/platform/designs/auth-y-tenancy.md` (secciones 5, 6, 10 y 10.1).
 
 ```sh
 npm run dev        # :5173; /api y /auth van por el proxy de Vite a la API (:8080)
@@ -89,7 +89,7 @@ npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.y
   de errores lleva a `/login?return_to=/invite`; al volver, el token sale de
   `sessionStorage` (pase lo que pase) y va a `POST /invitations/accept`. `index.html` pone
   `Referrer-Policy: no-referrer` para toda la app; en producción lo pone también el
-  hosting como cabecera (`docs/runbooks/deploy.md`).
+  hosting como cabecera (`docs/platform/runbooks/deploy.md`).
 - **Errores a Sentry** (`platform/telemetry/sentry.ts`, ADR 0004): solo con
   `VITE_SENTRY_DSN`, iniciado en `src/router.ts` después de capturar el token de
   `/invite`. Sin Session Replay, sin tracing ni `traceparent` hacia la API, y `beforeSend`
@@ -123,7 +123,7 @@ npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.y
 - **Playwright**: los recorridos de la plataforma en `e2e/` y los de la app en `e2e/app/`
   (con los mismos `e2e/db.ts` y `e2e/fixtures.ts`), contra la API real local: Postgres arrancado y migrado
   (`mise run up && mise run migrate`) y la API en marcha (`mise run dev`); Playwright arranca
-  Vite si no está. Las sesiones se siembran por SQL como en `docs/runbooks/auth.md`, sin
+  Vite si no está. Las sesiones se siembran por SQL como en `docs/platform/runbooks/auth.md`, sin
   AuthKit (`e2e/db.ts`), y se borran al acabar. Los flujos de MFA usan respuestas simuladas
   (`page.route`): no hay fake de WorkOS en el backend. Las capturas quedan en
   `e2e-screenshots/` (no se commitean). El token de una invitación creada desde la pantalla
@@ -131,4 +131,4 @@ npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.y
   (`knownInviteToken`).
 - En CI, el job `e2e` hace lo mismo con Postgres como servicio y la API con una
   `WORKOS_API_KEY` ficticia (el arranque solo comprueba que existe; nada del recorrido
-  llama a WorkOS), y sube capturas y trazas como artefactos (`docs/runbooks/ci.md`).
+  llama a WorkOS), y sube capturas y trazas como artefactos (`docs/platform/runbooks/ci.md`).

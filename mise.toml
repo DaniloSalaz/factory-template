@@ -24,7 +24,7 @@ LOG_FORMAT = "json"
 DATABASE_URL = "postgres://app_runtime:app_runtime@localhost:5432/factory?sslmode=disable"
 MIGRATIONS_DATABASE_URL = "postgres://app_owner:app_owner@localhost:5432/factory?sslmode=disable"
 # In development the front end (Vite, :5173) proxies /auth and /api to the API, so the
-# browser sees one origin and the AuthKit callback lands on Vite (docs/runbooks/auth.md).
+# browser sees one origin and the AuthKit callback lands on Vite (docs/platform/runbooks/auth.md).
 FRONTEND_ORIGIN = "http://localhost:5173"
 ALLOWED_ORIGINS = "http://localhost:5173"
 WORKOS_CLIENT_ID = "client_01M7V77YXSVNXZYGAW64XGHV92"
@@ -39,7 +39,7 @@ SMTP_TLS = "starttls"
 SMTP_TLS_SKIP_VERIFY = "true"
 # Traces and metrics go to the local LGTM (compose.yaml, `mise run obs`); without it
 # running, exports fail in the background and the API works the same. Metrics every
-# 10 s instead of 60 s, to see them sooner. See docs/runbooks/observability.md.
+# 10 s instead of 60 s, to see them sooner. See docs/platform/runbooks/observability.md.
 OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318"
 OTEL_METRIC_EXPORT_INTERVAL = "10000"
 # WORKOS_API_KEY lives in secrets.env (SOPS + age). mise cannot decrypt dotenv files

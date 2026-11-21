@@ -14,5 +14,5 @@
 
 ## Checklist
 
-- [ ] He actualizado AGENTS.md o un ADR (`docs/adr/`) si cambia una regla o una decisión.
+- [ ] He actualizado AGENTS.md o un ADR (`docs/platform/adr/` o `docs/app/adr/`) si cambia una regla o una decisión.
 - [ ] Si he cambiado `api-spec/platform.yaml`, `api-spec/app.yaml`, un `codegen.yaml` o `queries/`, he ejecutado `mise run generate` y commiteado el resultado.

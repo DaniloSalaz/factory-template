@@ -21,7 +21,7 @@ tags:
     description: Liveness and readiness probes
   - name: identity
     description: >-
-      Login with WorkOS AuthKit and browser sessions (docs/designs/auth-y-tenancy.md, 5.1
+      Login with WorkOS AuthKit and browser sessions (docs/platform/designs/auth-y-tenancy.md, 5.1
       and 5.5). The session is an HttpOnly __Host-session cookie; the browser never sees
       a provider token.
 paths:

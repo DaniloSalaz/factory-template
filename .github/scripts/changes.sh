@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Decides whether a change touches code (code=true) or only documentation (code=false), so
 # CI can skip the heavy jobs. Anything it cannot prove is documentation counts as code.
-# See docs/runbooks/ci.md.
+# See docs/platform/runbooks/ci.md.
 #
 # Usage: changes.sh <pull_request|push> <base> <head>
 # Writes `code=true|false` to $GITHUB_OUTPUT when set, and always to stdout.

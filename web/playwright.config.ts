@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// The browser journey against the real local API (docs/runbooks/auth.md): Postgres up and
+// The browser journey against the real local API (docs/platform/runbooks/auth.md): Postgres up and
 // migrated, and the API running (`mise run dev`). Playwright starts Vite if it is not
 // running. Sessions are seeded with SQL, never through AuthKit; the MFA flows answer with
 // simulated API responses (page.route), as there is no fake of WorkOS in the backend.

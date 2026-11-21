@@ -14,7 +14,7 @@
 // Each tag is the key of one module: the module whose codegen.yaml (platform/<m>/ or
 // app/modules/<m>/) includes it, which is how generate finds the modules without a
 // hand-written list. The merge refuses anything that would break that key or let the
-// app override the platform (see the [contract-*] rules in docs/runbooks/ci.md).
+// app override the platform (see the [contract-*] rules in docs/platform/runbooks/ci.md).
 package main
 
 import (
