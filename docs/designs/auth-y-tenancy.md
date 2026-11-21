@@ -1,6 +1,6 @@
 # Diseño: autenticación y tenancy
 
-Estado: v4, tras tres revisiones sin contexto; actualizado con el paso 5a (tenants y miembros, ADR 0003) · Fase 1 de factory-template
+Estado: v4, tras tres revisiones sin contexto; actualizado con el paso 5a (tenants y miembros, ADR 0003) y el 8b (front de miembros e invitaciones, `GET /tenant/roles`, `Retry-After`) · Fase 1 de factory-template
 
 ## 1. Objetivo
 
@@ -496,7 +496,9 @@ Decisión del paso 8a. El front (`web/`, detalle en `web/README.md`) no guarda e
 - **Caché**: las claves de TanStack Query de las operaciones con tenant incluyen el de la ruta, para que `/t/B` nunca muestre datos leídos en `/t/A`.
 - **Último tenant usado**: lo único que se guarda (`localStorage`), y solo para redirigir desde `/`. Se usa si `GET /me` lo sigue listando como activo; si no, o si da `403 auth.tenant_forbidden`, se borra y se va al selector (`/tenants`, con aviso en el segundo caso).
 - **Errores**: `401` lleva a `/login` con `return_to` de la ruta actual (el servidor lo valida, 5.1.1); `403 auth.mfa_required` a la verificación (challenge y código, 5.2) y `auth.mfa_enrollment_required` al alta, y las dos vuelven a la ruta. Tras verificar, la sesión se sustituye y el front invalida toda su caché. Se decide en un solo sitio (`web/src/platform/errors/handle.ts`), nunca en cada pantalla.
-- **Permisos**: el front oculta lo que el rol no permite según `GET /tenant`; es solo UX, la API los comprueba en cada caso de uso (5.4.5).
+- **Permisos**: el front oculta lo que el rol no permite según `GET /tenant`; es solo UX, la API los comprueba en cada caso de uso (5.4.5). Los roles que ofrece al cambiar un rol o invitar son los `can_assign` y `can_offer` de `GET /tenant/roles` (paso 8b), nunca una lista propia.
+- **Invitación** (paso 8b, 5.6.3): al arrancar, antes de crear el router, el front quita el fragmento de `/invite#token=…` con `history.replaceState` y guarda el token en `sessionStorage`. Sin sesión, `GET /me` da `401` y va a `/login?return_to=/invite`; `return_to` nunca lleva el fragmento de ninguna URL. Con sesión, el token sale de `sessionStorage` pase lo que pase y va a `POST /invitations/accept`; después, a `/t/$tenantId`. `Referrer-Policy: no-referrer` en `index.html` para toda la app y, en producción, como cabecera del hosting (`docs/runbooks/deploy.md`).
+- **`429`**: el front muestra la espera de `Retry-After` (sección 6) en el aviso de la plataforma.
 
 ## 11. Pruebas obligatorias
 
@@ -569,4 +571,5 @@ Vincular identidades desde la sesión, borrado de un tenant (será un comando de
 5. **Tenants, invitaciones, miembros y auditoría**, con la revocación automática y el evento `identity.member_removed`. Se hace en tres partes: 5a, tenants y miembros (hecho, ADR 0003); 5b, invitaciones (hecho: 5.6 y 5.7.5; queda la revocación al deshabilitar, paso 7, y el email real, con el despliegue); 5c, consulta de la auditoría.
 6. **Trabajos**: workers de usuario y de sistema.
 7. **Administración**: deshabilitar y borrar usuario.
+8. **Front** (hecho, 10.1 y `web/README.md`): 8a, base, login, tenant y MFA; 8b, miembros, invitaciones, `/invite`, renombrar el tenant, `GET /tenant/roles`, `Retry-After` en los `429` y Playwright en CI.
 8. **Front**: login (también al caducar la MFA de un rol), selector de tenant, `X-Tenant-ID`, invitaciones (con `sessionStorage`) y miembros. Se hace en dos partes: 8a, base del front, login, tenant y MFA (hecho, 10.1); 8b, miembros e invitaciones.

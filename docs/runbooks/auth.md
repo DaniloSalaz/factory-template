@@ -234,6 +234,55 @@ psql_su()  { docker compose exec -T postgres psql -U factory -d factory -v ON_ER
    issue. Limpieza: borra el factor como en "Recuperación" y el tenant como en "Prueba
    manual: tenants y miembros" (paso 10).
 
+## Prueba manual: miembros e invitaciones en el front con WorkOS (paso 8b)
+
+Diseño: 5.6, 5.7 y 10.1; front: `web/README.md`. Con WorkOS de verdad y **dos cuentas
+tuyas** (A y B, emails distintos y verificados en AuthKit). A es owner, con MFA, de un
+tenant: el de "Prueba manual: el front con WorkOS (paso 8a)" sirve. B usa otro navegador o
+una ventana privada, para que las sesiones no se mezclen.
+
+```sh
+mise run up && mise run migrate
+mise run dev 2>&1 | tee /tmp/factory-api.log     # terminal 1: el log trae el enlace
+cd web && npm run dev                            # terminal 2
+last_link() { grep '"invitation link (development only)"' /tmp/factory-api.log | tail -1 | sed -E 's/.*"link":"([^"]*)".*/\1/'; }
+```
+
+1. **Invitar** (A): en `/t/<id>` la navegación muestra **Miembros** e **Invitaciones**. En
+   **Invitaciones**, el desplegable de rol ofrece `owner`, `admin` y `member` (los
+   `can_offer` de `GET /tenant/roles`). Invita al email de B como `admin`: sale "Invitación
+   enviada" y la invitación aparece en la lista con su caducidad (7 días). Invitar otra vez
+   el mismo email da "ya tiene una invitación pendiente" y el botón **Reenviar la
+   pendiente**: púlsalo (rota el token, así que usa el enlace nuevo del log).
+2. **Abrir el enlace sin sesión** (B, ventana privada): pega `last_link`. El front lleva a
+   `/login?return_to=%2Finvite`. Comprueba:
+   - la barra de direcciones y el historial (botón atrás, `chrome://history`) muestran
+     `/invite`, nunca `#token=…`;
+   - DevTools → Application → Session Storage: `platform.inviteToken` con el token; nada en
+     Local Storage;
+   - DevTools → Network: ninguna petición lleva el token en la URL ni en `return_to`, y
+     ninguna lleva cabecera `Referer` (meta `no-referrer` de `index.html`).
+3. **Entrar y aceptar** (B): pulsa **Entrar** y entra en AuthKit con la cuenta B. Vuelves a
+   `/invite`, que llama a `POST /invitations/accept` y te lleva a `/t/<id>` con rol `admin`.
+   Session Storage ya no tiene `platform.inviteToken`. Abrir el mismo enlace otra vez da
+   "Esta invitación ya se ha aceptado".
+4. **Cambiar rol** (A): en **Miembros**, cambia a B a `member` con **Cambiar rol**. B
+   recarga: su rol es `member` e **Invitaciones** desaparece de su navegación (el cambio
+   vale en la siguiente petición). Como admin, B no habría visto `owner` entre los roles.
+5. **Expulsar** (A): **Expulsar** a B y confirma. La siguiente acción de B acaba en
+   `/tenants` con el aviso "No tienes acceso a esa organización".
+6. **Email distinto** (opcional): A invita a un tercer email; B, con su sesión, abre ese
+   enlace. Sale "La invitación es para otro email…" y **Salir para entrar con otra cuenta**.
+7. **Último owner** (A): en tu fila (**Tú**), **Salir de la organización** y confirma: sale
+   "La organización se quedaría sin propietario" y sigues dentro.
+8. **Renombrar** (A): en **Resumen**, cambia el nombre y **Guardar**: cambia el título y el
+   nombre en `/tenants`.
+9. **429**: la API manda `Retry-After` en todos los `429`. Para verlo sin esperar, invita y
+   reenvía hasta pasar el límite (20 por hora): el aviso dice cuántos minutos esperar.
+   Reinicia la API para vaciar el contador (está en memoria).
+10. Anota cualquier diferencia en el PR. Limpieza: revoca las invitaciones pendientes desde
+    la pantalla y borra el tenant como en "Prueba manual: tenants y miembros" (paso 10).
+
 ## Prueba manual: `/me`, tenant y `X-Tenant-ID` ajeno
 
 Dos roles, cada uno para lo suyo:
