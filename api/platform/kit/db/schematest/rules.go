@@ -282,14 +282,16 @@ func foreignKeyViolation(fk foreignKeyInfo) string {
 		fk.Table, fk.Name, strings.Join(fk.Columns, ", "), fk.RefTable, strings.Join(fk.RefColumns, ", "), fk.RefTable, fk.RefTable)
 }
 
-func schemaViolations(ctx context.Context, q querier) (map[string][]string, []tableInfo, error) {
+// TenantTableViolations applies the rules of section 7.3 to every table with tenant_id
+// (and tenants) that q can see, keyed by table. Each message names the rule and the fix.
+func TenantTableViolations(ctx context.Context, q querier) (map[string][]string, error) {
 	tables, err := loadTenantTables(ctx, q)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	policies, err := loadPolicies(ctx, q)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	rules := newExprRules()
 	out := map[string][]string{}
@@ -300,19 +302,26 @@ func schemaViolations(ctx context.Context, q querier) (map[string][]string, []ta
 	}
 	fks, err := loadTenantForeignKeys(ctx, q)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	for _, fk := range fks {
 		if v := foreignKeyViolation(fk); v != "" {
 			out[fk.Table] = append(out[fk.Table], v)
 		}
 	}
-	return out, tables, nil
+	return out, nil
 }
 
-// TenantTableViolations applies the rules of section 7.3 to every table with tenant_id
-// (and tenants) that q can see, keyed by table. Each message names the rule and the fix.
-func TenantTableViolations(ctx context.Context, q querier) (map[string][]string, error) {
-	violations, _, err := schemaViolations(ctx, q)
-	return violations, err
+// TenantTableNames lists the tables TenantTableViolations checks. A caller asserts it is
+// not empty: a broken discovery query would pass every rule.
+func TenantTableNames(ctx context.Context, q querier) ([]string, error) {
+	tables, err := loadTenantTables(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(tables))
+	for _, t := range tables {
+		names = append(names, t.Name)
+	}
+	return names, nil
 }

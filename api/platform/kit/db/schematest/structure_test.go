@@ -5,44 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
-
-	"github.com/jackc/pgx/v5"
 )
 
 // ----------------------------------------------------------------------------------
 // Tables with tenant_id, and tenants itself (design, section 7.3; rules in rules.go)
 // ----------------------------------------------------------------------------------
-
-func TestSchema_TenantTables(t *testing.T) {
-	t.Parallel()
-
-	conn := connect(t, testDB.OwnerURL)
-	violations, tables, err := schemaViolations(t.Context(), conn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(tables) == 0 {
-		t.Fatal("no tenant table was discovered; the discovery query is broken")
-	}
-	names := make([]string, 0, len(tables))
-	for _, tbl := range tables {
-		names = append(names, tbl.Name)
-	}
-	if !slices.Contains(names, "tenants") {
-		t.Error("tenants was not discovered; the discovery query is broken")
-	}
-	t.Logf("tenant tables: %s", strings.Join(names, ", "))
-
-	for _, vs := range violations {
-		for _, v := range vs {
-			t.Error(v)
-		}
-	}
-}
 
 // The checks above are only worth something if they fail on misbuilt tables. These are
 // created inside a transaction that is always rolled back.
@@ -146,7 +116,7 @@ func TestSchema_DetectsMisbuiltTables(t *testing.T) {
 		}
 	}
 
-	violations, _, err := schemaViolations(ctx, tx)
+	violations, err := TenantTableViolations(ctx, tx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +169,7 @@ func TestSchema_DetectsMisbuiltTenants(t *testing.T) {
 				}
 			}
 
-			violations, _, err := schemaViolations(ctx, tx)
+			violations, err := TenantTableViolations(ctx, tx)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -214,92 +184,6 @@ func TestSchema_DetectsMisbuiltTenants(t *testing.T) {
 // ----------------------------------------------------------------------------------
 // SECURITY DEFINER functions (design, section 7.4)
 // ----------------------------------------------------------------------------------
-
-type functionInfo struct {
-	Name           string
-	Owner          string
-	Config         []string
-	ArgNames       []string
-	PublicExecute  bool
-	ExecuteGranted []string // roles other than the owner and PUBLIC with EXECUTE
-}
-
-const pinnedSearchPath = "search_path=pg_catalog, extensions, pg_temp"
-
-var userIDParam = regexp.MustCompile(`(^|_)user_id$`)
-
-func loadSecurityDefiners(ctx context.Context, q querier) ([]functionInfo, error) {
-	// A NULL proacl means default privileges, which include EXECUTE for PUBLIC.
-	rows, err := q.Query(ctx, `
-		SELECT p.proname,
-		       pg_get_userbyid(p.proowner),
-		       coalesce(p.proconfig, '{}'),
-		       coalesce(p.proargnames, '{}'),
-		       p.proacl IS NULL OR EXISTS (SELECT 1 FROM aclexplode(p.proacl) a
-		                                   WHERE a.grantee = 0 AND a.privilege_type = 'EXECUTE'),
-		       ARRAY(SELECT pg_get_userbyid(a.grantee)
-		             FROM aclexplode(coalesce(p.proacl, '{}')) a
-		             WHERE a.privilege_type = 'EXECUTE' AND a.grantee NOT IN (0, p.proowner)
-		             ORDER BY 1)
-		FROM pg_proc p
-		JOIN pg_namespace n ON n.oid = p.pronamespace
-		WHERE p.prosecdef AND n.nspname = 'public'
-		ORDER BY p.proname`)
-	if err != nil {
-		return nil, fmt.Errorf("query security definer functions: %w", err)
-	}
-	fns, err := pgx.CollectRows(rows, pgx.RowToStructByPos[functionInfo])
-	if err != nil {
-		return nil, fmt.Errorf("collect security definer functions: %w", err)
-	}
-	return fns, nil
-}
-
-func functionViolations(f functionInfo) []string {
-	var out []string
-	add := func(format string, args ...any) {
-		out = append(out, fmt.Sprintf("[security-definer] function %s: ", f.Name)+fmt.Sprintf(format, args...))
-	}
-	if f.Owner != "app_security" {
-		add("owned by %s: ALTER FUNCTION ... OWNER TO app_security (after granting EXECUTE)", f.Owner)
-	}
-	if !slices.Contains(f.Config, pinnedSearchPath) {
-		add("search_path is not pinned: add SET %s", strings.Replace(pinnedSearchPath, "=", " = ", 1))
-	}
-	if f.PublicExecute {
-		add("EXECUTE is granted to PUBLIC: REVOKE EXECUTE ON FUNCTION ... FROM PUBLIC")
-	}
-	if !slices.Equal(f.ExecuteGranted, []string{"app_runtime"}) {
-		add("EXECUTE must be granted to app_runtime only, got %v", f.ExecuteGranted)
-	}
-	for _, arg := range f.ArgNames {
-		if userIDParam.MatchString(arg) {
-			add("parameter %q: the acting user comes from current_setting('app.user_id'), never from a parameter", arg)
-		}
-	}
-	return out
-}
-
-func TestSchema_SecurityDefinerFunctions(t *testing.T) {
-	t.Parallel()
-
-	conn := connect(t, testDB.OwnerURL)
-	fns, err := loadSecurityDefiners(t.Context(), conn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(fns) == 0 {
-		t.Fatal("no SECURITY DEFINER function was discovered; the discovery query is broken")
-	}
-	names := make([]string, 0, len(fns))
-	for _, f := range fns {
-		names = append(names, f.Name)
-		for _, v := range functionViolations(f) {
-			t.Error(v)
-		}
-	}
-	t.Logf("SECURITY DEFINER functions: %s", strings.Join(names, ", "))
-}
 
 func TestSchema_DetectsMisbuiltFunction(t *testing.T) {
 	t.Parallel()

@@ -1,14 +1,15 @@
 // Package schematest checks the database schema and its row-level security against a
 // real Postgres, bootstrapped and migrated like any environment:
 //
-//   - structure_test.go reads the catalogs (pg_class, pg_policies, pg_proc), checks the
-//     rules of the design (sections 7.3 and 7.4) and proves each check catches a
-//     misbuilt object; the rules for tables with tenant_id are in rules.go, which
-//     TenantTableViolations exposes to other packages' tests;
+//   - rules.go (tables with tenant_id, section 7.3), functions.go (SECURITY DEFINER
+//     functions, 7.4) and privileges.go (the snapshot of app_runtime's privileges) hold
+//     the rules. package main applies them to the whole schema, the platform's and the
+//     app's migrations (api/schema_integration_test.go), because nothing under
+//     platform/ may import the app's;
+//   - structure_test.go and privileges_test.go prove each rule catches a misbuilt
+//     object, on the platform's migrations;
 //   - behavior_test.go runs SQL as app_runtime and checks what RLS and the SECURITY
-//     DEFINER functions actually allow;
-//   - privileges_test.go compares every privilege of app_runtime with
-//     testdata/runtime_privileges.golden.
+//     DEFINER functions actually allow.
 package schematest
 
 import (
@@ -29,7 +30,7 @@ var testDB *dbtest.DB
 
 func TestMain(m *testing.M) {
 	ctx := context.Background()
-	db, err := dbtest.New(ctx)
+	db, err := dbtest.New(ctx, dbtest.PlatformFromSource())
 	if err != nil {
 		if db != nil && db.Container != nil {
 			_ = testcontainers.TerminateContainer(db.Container)

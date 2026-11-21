@@ -24,7 +24,7 @@ func TestPgxTracer_SpansWithoutArguments(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test: needs Docker")
 	}
-	pg := dbtest.Start(t)
+	pg := dbtest.Start(t, dbtest.PlatformFromSource())
 	spans := tracetest.NewInMemoryExporter()
 	reader := sdkmetric.NewManualReader()
 	// No filtering exporter here: the tracer itself must leave the arguments out, so a

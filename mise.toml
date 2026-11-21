@@ -101,9 +101,21 @@ run = [
 ]
 
 [tasks.migrate]
-description = "Apply pending database migrations as app_owner (the binary's `api migrate`)"
+description = "Apply pending platform and then app migrations as app_owner (the binary's `api migrate`)"
 dir = "api"
 run = "go run . migrate"
+
+[tasks."migration:new"]
+description = "Create an app migration in api/app/migrations: mise run migration:new <name>"
+dir = "api"
+usage = 'arg "<name>" help="Migration name, e.g. create_appointments"'
+run = "goose -s -dir app/migrations create {{usage.name}} sql"
+
+[tasks."migration:new:platform"]
+description = "Create a platform migration in api/platform/migrations (template only): mise run migration:new:platform <name>"
+dir = "api"
+usage = 'arg "<name>" help="Migration name, e.g. add_sessions_index"'
+run = "goose -s -dir platform/migrations create {{usage.name}} sql"
 
 [tasks."db:bootstrap"]
 description = "Re-run the role and extension bootstrap on the local Postgres (idempotent)"

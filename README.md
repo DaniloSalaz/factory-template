@@ -12,7 +12,7 @@ PostgreSQL 18 y frontend React + TypeScript + Vite. Las convenciones están en [
 mise install
 mise run hooks:install   # hook de pre-commit: rechaza commits en main
 mise run up        # Postgres 18 (en un volumen nuevo crea roles y extensiones), Mailpit y LGTM
-mise run migrate   # migraciones goose (api/migrations), como app_owner, con `api migrate`
+mise run migrate   # migraciones goose de plataforma y después de app, como app_owner, con `api migrate`
 mise run dev       # API en http://localhost:8080, como app_runtime (descifra secrets.env)
 mise run mail      # Mailpit: las invitaciones de desarrollo (docs/runbooks/email.md)
 mise run obs       # Grafana local: trazas, métricas y el dashboard (docs/runbooks/observability.md)

@@ -18,7 +18,9 @@ Plantilla base para SaaS: monolito modular en Go + frontend React. Desarrollador
 | `up` / `down` | Arranca / para Postgres, Mailpit y LGTM locales |
 | `obs` | Abre Grafana local (LGTM) en el dashboard de la API |
 | `mail` | Abre Mailpit (`http://localhost:8025`), donde llegan las invitaciones en desarrollo |
-| `migrate` | Aplica las migraciones de `api/migrations/` como `app_owner` con `api migrate` (el mismo subcomando que usa el despliegue) |
+| `migrate` | Aplica las migraciones de plataforma (`api/platform/migrations/`) y después las de app (`api/app/migrations/`) como `app_owner` con `api migrate` (el mismo subcomando que usa el despliegue) |
+| `migration:new <nombre>` | Crea una migración de app en `api/app/migrations/` |
+| `migration:new:platform <nombre>` | Crea una migración de plataforma en `api/platform/migrations/` (solo en factory-template) |
 | `generate` | sqlc + oapi-codegen + orval (+ la seguridad por ruta del front) |
 | `dev` | Arranca la API en `:8080` |
 | `test` | Tests Go con `-race` (incluye integración con Testcontainers; requiere Docker) |
@@ -36,6 +38,7 @@ Las variables de entorno de desarrollo vienen de `[env]` en `mise.toml`; `.env` 
 ```
 api/*.go                  composition root: main.go, migrate.go, version.go (único sitio que cablea todo; una app nunca lo edita)
 api/platform/kit/         config, db, httpx, logx, pii, apperr, telemetry… (transversal, sin negocio)
+api/platform/migrations/  migraciones goose de plataforma (tabla `goose_db_version`); solo las cambia la plantilla
 api/platform/<m>/         módulos de plataforma (identity, health)
   module.go               API pública del módulo: New(Deps) + Register(mux)
   domain/                 entidades y reglas; NO importa infraestructura (depguard lo impide)
@@ -45,9 +48,9 @@ api/platform/<m>/         módulos de plataforma (identity, health)
   queries/                SQL para sqlc
 api/app/app.go            único enganche de la app: app.Roles (catálogo de roles) y app.Modules (sus módulos)
 api/app/modules/<m>/      módulos de la app, con la misma forma que platform/<m>
+api/app/migrations/       migraciones goose de la app (tabla `goose_app_db_version`), nuevas con `mise run migration:new <nombre>`
 api/gen/                  código generado (openapi/<m>, sqlc/<m>, routes)
 api-spec/openapi.yaml     contrato HTTP
-api/migrations/           migraciones goose (NNNNN_nombre.sql), embebidas en el binario (`api migrate`); nuevas con `goose -dir api/migrations create <nombre> sql`
 web/src/gen/              cliente TS generado (orval) y seguridad por ruta (scripts/gen-route-security.ts)
 web/src/platform/         front de la plantilla: shell, auth, tenant, MFA, miembros, invitaciones, errores, fetcher, ui (shadcn)
 web/src/app/              lo propio de cada app: rutas bajo /t/$tenantId, registry.ts, theme.css, brand/
@@ -78,11 +81,13 @@ Ejemplo vivo: `api/platform/health`.
 - Datos de un tenant, solo dentro de `db.WithTenantTx`; los flujos sin tenant usan `WithUserTx` o `WithAnonTx`. Ningún fichero Go fuera de `platform/kit/db` llama a `set_config` ni nombra las variables de RLS (`mise run arch`). Los errores `TN0xx` de las funciones de la BD se traducen con `db.MapError`.
 - Base de datos: la API conecta como `app_runtime` (RLS siempre); las migraciones, como `app_owner`. Toda tabla con `tenant_id` lleva RLS forzado, `tenant_isolation` y alcance declarado (diseño 7.3); los permisos se conceden explícitamente en la migración que crea la tabla (`docs/runbooks/database.md`).
 - Los permisos de `app_runtime` (de tabla, de columna y de ejecución) están fijados en `api/platform/kit/db/schematest/testdata/runtime_privileges.golden`; nunca un `UPDATE` sin columnas. Cambiar ese fichero es una decisión de seguridad: se edita a mano y el PR justifica qué permiso cambia y por qué el diseño lo necesita.
+- Migraciones en dos conjuntos con numeración y tabla de versiones propias (`docs/runbooks/database.md`): las de una app van en `api/app/migrations/` (`mise run migration:new`); las de `api/platform/migrations/` solo las cambia la plantilla. Una de app puede usar lo de plataforma; una de plataforma nunca referencia nada de la app (`TestPlatformMigrationsApplyAlone`, `[platform-migrations-alone]`). Sin migraciones vacías ni de relleno.
 - Una migración fusionada en main es inmutable; los cambios posteriores van en una migración nueva.
+- Las reglas de RLS, de `SECURITY DEFINER` y la foto de permisos se comprueban sobre plataforma + app desde `package main` (`api/schema_integration_test.go`): `platform/` nunca importa `app/`.
 - MFA (ADR 0002): opcional, exigida solo por los roles del catálogo que lo dicen. Una sesión solo tiene MFA por `sessions.mfa_auth_time`, que fija únicamente `mark_session_mfa` tras un `valid: true` del proveedor (y rota el token). Nunca se deduce del login ni de que el usuario tenga un factor.
 - Fuera de development (`staging`, `production`): todas las URL y orígenes del navegador y del proveedor de identidad son `https`, y el SMTP es obligatorio; config lo valida al arrancar. Una opción solo para desarrollo (como `SMTP_TLS_SKIP_VERIFY`) se rechaza fuera de él.
 - Email: nunca un texto escrito por usuarios (nombre del tenant, de una persona) en una cabecera (asunto, From); en el cuerpo, sin caracteres de control, recortado y escapado (`html/template`). El token de una invitación solo en el enlace. Los errores de envío no llevan destinatarios.
-- Las migraciones (`api/migrations`) van dentro del binario; el despliegue ejecuta `api migrate` antes de cambiar de versión. La versión del binario (`-X main.buildVersion`) sale en los logs y en `/healthz`.
+- Las migraciones (`api/platform/migrations` y `api/app/migrations`) van dentro del binario; el despliegue ejecuta `api migrate` (plataforma primero, app después) antes de cambiar de versión. La versión del binario (`-X main.buildVersion`) sale en los logs y en `/healthz`.
 - Telemetría (ADR 0004): en trazas, métricas y errores solo salen los atributos de su lista (`allowedKeys` en `platform/kit/telemetry/filter.go`); nunca añadas uno fuera de ella (ni `user_id`, emails, IPs, argumentos SQL, cuerpos, cabeceras, query strings o tokens). Añadir uno exige ampliar la lista y la tabla del ADR con su porqué. El nombre de un span HTTP es el patrón de `ServeMux`, nunca la ruta real; las llamadas a servicios externos van con `telemetry.ClientSpan`, sin URL ni cuerpo; los errores 5xx llegan a Sentry por `httpx.WriteProblem`, nunca con `sentry` directamente.
 - Usuario de sistema reservado: `00000000-0000-7000-8000-000000000001` (deshabilitado, sin login). Úsalo solo para trabajos de sistema.
 - Cada cambio va con su test (unitario con fakes de puertos; integración con Testcontainers).
