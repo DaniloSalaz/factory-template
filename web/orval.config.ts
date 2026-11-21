@@ -2,7 +2,7 @@ import { defineConfig } from "orval";
 
 export default defineConfig({
   api: {
-    input: { target: "../api-spec/openapi.yaml" },
+    input: { target: "../api-spec/openapi.gen.yaml" },
     output: {
       target: "src/gen/api.ts",
       client: "react-query",

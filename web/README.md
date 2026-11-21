@@ -10,7 +10,7 @@ npm test           # Vitest (mise run web:test, entra en mise run ci)
 npm run e2e        # Playwright contra la API local (mise run web:e2e; en CI, el job e2e)
 npm run routes     # genera src/routeTree.gen.ts con la CLI de TanStack Router (tsr)
 npm run build      # routes, luego tsc -b, luego vite build
-npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.yaml
+npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.yaml
 ```
 
 ## Plataforma y app
@@ -52,7 +52,8 @@ npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.yaml
   (orval, cliente react-query), y los tipos salen de ahí. No hay librería de formularios
   ni de validación.
 - `src/gen/` no se edita: lo genera `npm run generate` (`mise run generate`) desde el
-  contrato. `api.ts` es orval; `routeSecurity.ts`, `scripts/gen-route-security.ts`, que lee
+  contrato unido, `api-spec/openapi.gen.yaml` (`platform.yaml` + `app.yaml`; ejecuta
+  `mise run generate`, no `npm run generate` solo, para que la unión esté al día). `api.ts` es orval; `routeSecurity.ts`, `scripts/gen-route-security.ts`, que lee
   el `security` de cada operación como lo hace `routegen` en la API.
 - **El fetcher** (`platform/api/fetcher.ts`, mutator de orval) antepone
   `VITE_API_BASE_URL`, envía la cookie (`credentials: "include"`), pone `X-Tenant-ID` con el

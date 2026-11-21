@@ -4,7 +4,7 @@ Plantilla base para SaaS: monolito modular en Go + frontend React. Desarrollador
 
 ## Stack
 - Backend: Go, `net/http` (ServeMux), pgx/v5, sqlc, goose, `log/slog` (JSON).
-- Contrato: OpenAPI 3.1 en `api-spec/openapi.yaml` → oapi-codegen (Go, strict server) y orval (TS).
+- Contrato: OpenAPI 3.1 en `api-spec/platform.yaml` (plantilla) y `api-spec/app.yaml` (app), unidos por `api/tools/specmerge` en `api-spec/openapi.gen.yaml` → oapi-codegen (Go, strict server, un paquete por módulo con `codegen.yaml`) y orval (TS).
 - Frontend: React + TypeScript + Vite, Biome.
 - Datos: PostgreSQL 18 (`compose.yaml`). Colas: River (aún no). Secretos: SOPS + age.
 - Observabilidad: OpenTelemetry (OTLP/HTTP; `otelhttp`, `otelpgx`) y Sentry (API y front), en `api/platform/kit/telemetry` y `web/src/platform/telemetry`; en local, `grafana/otel-lgtm` (`docs/runbooks/observability.md`).
@@ -21,12 +21,12 @@ Plantilla base para SaaS: monolito modular en Go + frontend React. Desarrollador
 | `migrate` | Aplica las migraciones de plataforma (`api/platform/migrations/`) y después las de app (`api/app/migrations/`) como `app_owner` con `api migrate` (el mismo subcomando que usa el despliegue) |
 | `migration:new <nombre>` | Crea una migración de app en `api/app/migrations/` |
 | `migration:new:platform <nombre>` | Crea una migración de plataforma en `api/platform/migrations/` (solo en factory-template) |
-| `generate` | sqlc + oapi-codegen + orval (+ la seguridad por ruta del front) |
+| `generate` | sqlc + unión del contrato (`specmerge`) + oapi-codegen por cada `codegen.yaml` + orval (+ la seguridad por ruta del front) |
 | `dev` | Arranca la API en `:8080` |
 | `test` | Tests Go con `-race` (incluye integración con Testcontainers; requiere Docker) |
 | `arch` | Tests de arquitectura (límites entre módulos y fixtures de las reglas de lint) |
 | `lint` / `fmt` | golangci-lint + actionlint + Biome + tsc / formateo |
-| `generate:check` | Regenera y falla si el código generado no coincide con lo commiteado |
+| `generate:check` | Regenera y falla si el código generado o `api-spec/openapi.gen.yaml` no coinciden con lo commiteado |
 | `web:test` | Tests unitarios del front (Vitest), incluida la regla `[platform-imports-app]` |
 | `web:e2e` | Recorrido en navegador (Playwright) contra la API local (necesita `up`, `migrate` y `dev`); en CI lo ejecuta el job `e2e` |
 | `security` | govulncheck + gitleaks + trivy |
@@ -41,6 +41,7 @@ api/platform/kit/         config, db, httpx, logx, pii, apperr, telemetry… (tr
 api/platform/migrations/  migraciones goose de plataforma (tabla `goose_db_version`); solo las cambia la plantilla
 api/platform/<m>/         módulos de plataforma (identity, health)
   module.go               API pública del módulo: New(Deps) + Register(mux)
+  codegen.yaml            qué genera oapi-codegen para el módulo: include-tags [<m>], package <m>api (solo si tiene endpoints)
   domain/                 entidades y reglas; NO importa infraestructura (depguard lo impide)
   usecases/               casos de uso + puertos (interfaces) que necesitan
   adapters/http/          implementa la interfaz strict generada desde OpenAPI
@@ -50,7 +51,10 @@ api/app/app.go            único enganche de la app: app.Roles (catálogo de rol
 api/app/modules/<m>/      módulos de la app, con la misma forma que platform/<m>
 api/app/migrations/       migraciones goose de la app (tabla `goose_app_db_version`), nuevas con `mise run migration:new <nombre>`
 api/gen/                  código generado (openapi/<m>, sqlc/<m>, routes)
-api-spec/openapi.yaml     contrato HTTP
+api/tools/                routegen (seguridad por ruta) y specmerge (unión del contrato)
+api-spec/platform.yaml    contrato HTTP de la plantilla (una app no lo edita)
+api-spec/app.yaml         contrato HTTP de la app
+api-spec/openapi.gen.yaml los dos unidos (generado); de aquí leen todos los generadores
 web/src/gen/              cliente TS generado (orval) y seguridad por ruta (scripts/gen-route-security.ts)
 web/src/platform/         front de la plantilla: shell, auth, tenant, MFA, miembros, invitaciones, errores, fetcher, ui (shadcn)
 web/src/app/              lo propio de cada app: rutas bajo /t/$tenantId, registry.ts, theme.css, brand/
@@ -64,7 +68,8 @@ Ejemplo vivo: `api/platform/health`.
 - Un módulo no importa el interior de otro módulo (ni su código en `gen/`); solo su `module.go`. Lo comprueba `mise run arch`.
 - `platform/kit` no importa ningún módulo de plataforma (`platform/<m>`, depguard `[platform-no-modules]`); `platform/kit/apperr` y `platform/kit/authctx` solo importan la stdlib; el dominio solo importa la stdlib y `platform/kit/apperr` (depguard).
 - Nada bajo `api/platform/` importa `api/app` ni nada debajo, y solo `package main` (`api/`) importa `app` (`[platform-imports-app]`, `mise run arch`; en el front, la regla del mismo nombre). `app/` importa solo `platform/kit/*` y el `module.go` de un módulo de plataforma; un módulo de app, además, su propio interior y el `module.go` de otros módulos de app (`[module-boundaries]`).
-- El código generado (`api/gen/`, `web/src/gen/`) no se edita: cambia el contrato o la query y ejecuta `mise run generate`.
+- El código generado (`api/gen/`, `web/src/gen/`, `api-spec/openapi.gen.yaml`) no se edita: cambia el contrato (`platform.yaml` o `app.yaml`) o la query y ejecuta `mise run generate`.
+- El tag de una operación es la clave de su módulo: cada operación tiene exactamente un tag, el nombre de la carpeta del módulo, cuyo `codegen.yaml` lo incluye solo a él y genera `gen/openapi/<m>/` (paquete `<m>api`). `app.yaml` no redefine nada de `platform.yaml` (rutas, `operationId`, componentes, tags, `securitySchemes`, la seguridad raíz ni la cabecera de tenant): referencia sus componentes con `platform.yaml#/components/…`. Lo comprueba `specmerge` en `mise run generate` (`[contract-duplicate]`, `[contract-platform-owned]`, `[contract-module-key]`).
 - Un GET nunca modifica datos: SameSite=Lax envía la cookie en navegaciones GET entre sitios y la protección CSRF por Origin no lo cubriría.
 - Los permisos se comprueban en el caso de uso con `Authorizer.Require` (`platform/kit/authz`), en cualquier punto, también dentro de su transacción: la denegación se audita en una transacción propia que sobrevive al rollback. Nunca en `adapters/http` (depguard, `[authz-in-use-cases]`). Los roles y sus permisos son el catálogo de `app.Roles` (`api/app/app.go`); la validación del owner la hace `authz.NewCatalog` y la app no puede saltársela.
 - Errores de negocio con `apperr` (`NotFound`, `Validation`, `Wrap`…). Los handlers nunca escriben errores a mano: usan `httpx.WriteProblem` (RFC 9457).
@@ -112,12 +117,12 @@ Ejemplo vivo: `api/platform/health`.
 - Una exclusión (`//nolint:<linter>`) solo con un comentario que explique por qué: `//nolint:wrapcheck // motivo`.
 
 ## Añadir un endpoint
-1. Defínelo en `api-spec/openapi.yaml` con el `tag` del módulo. Los cuerpos JSON llevan `additionalProperties: false`: así un campo desconocido da `400 unknown_field` (`httpx.KnownBodyFields`) en vez de ignorarse. Por defecto exige sesión y `X-Tenant-ID`; si no necesita tenant, `security: [{session: []}]`, y si es público, `security: []`. Los middlewares lo leen de `api/gen/routes` (nunca de una lista de rutas a mano).
-2. `mise run generate` e implementa el método en `adapters/http`.
+1. Defínelo en `api-spec/app.yaml` con el `tag` de su módulo (los de plataforma, en `api-spec/platform.yaml`; nunca en `openapi.gen.yaml`, que se regenera). Los componentes de plataforma se referencian sin copiarlos: `$ref: "platform.yaml#/components/responses/InternalError"`. Los cuerpos JSON llevan `additionalProperties: false`: así un campo desconocido da `400 unknown_field` (`httpx.KnownBodyFields`) en vez de ignorarse. Por defecto exige sesión y `X-Tenant-ID`; si no necesita tenant, `security: [{session: []}]`, y si es público, `security: []`. Los middlewares lo leen de `api/gen/routes` (nunca de una lista de rutas a mano).
+2. `mise run generate` (genera `api/gen/openapi/<m>/` desde el `codegen.yaml` del módulo, sin tocar `mise.toml`) e implementa el método en `adapters/http`.
 3. Lógica en `usecases/`, puertos en `usecases/`, implementación en `adapters/`.
 
 ## Añadir un módulo de app
-1. Carpeta `api/app/modules/<m>/` con la forma de `api/platform/health`: `module.go` (`New(Deps) (*Module, error)` + `Register(mux)`), `domain/`, `usecases/`, `adapters/`, `queries/`. Sus `Deps` salen de `app.Deps` (`DB`, `Logger`, `Authorizer`, `Telemetry`).
+1. Carpeta `api/app/modules/<m>/` con la forma de `api/platform/health`: `module.go` (`New(Deps) (*Module, error)` + `Register(mux)`), `domain/`, `usecases/`, `adapters/`, `queries/`, y `codegen.yaml` si tiene endpoints (copia el de `api/platform/health` cambiando `health` por `<m>`). Sus `Deps` salen de `app.Deps` (`DB`, `Logger`, `Authorizer`, `Telemetry`).
 2. Regístralo en `app.Modules` (`api/app/app.go`), en el orden en que debe montarse. `main.go` no cambia.
 3. Si necesita permisos nuevos, añádelos a los roles de `app.Roles`.
 4. Sus endpoints, como en "Añadir un endpoint", con el `tag` del módulo.

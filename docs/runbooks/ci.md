@@ -15,7 +15,7 @@ los jobs pesados se saltan (ver [Cambios que solo tocan documentación](#cambios
 | `changes` | Se ejecuta primero y decide si el cambio toca código (`code=true`) o solo documentación (`code=false`) con `.github/scripts/changes.sh` | `.github/scripts/changes.sh push <base> <head>` |
 | `lint` | golangci-lint (incluye las reglas de arquitectura de depguard y forbidigo), actionlint + shellcheck sobre los workflows y los tests de arquitectura | `mise run lint:go`, `mise run lint:actions`, `mise run arch` |
 | `test` | `go test -race -cover ./...`; la integración de `/readyz` arranca Postgres con Testcontainers en el Docker del runner | `mise run test` (Docker arrancado) |
-| `generate` | Regenera sqlc, oapi-codegen, orval y la seguridad por ruta del front (`web/src/gen/routeSecurity.ts`) y falla si cambia algo en `api/gen` o `web/src/gen` | `mise run generate:check` |
+| `generate` | Une el contrato (`api-spec/platform.yaml` + `api-spec/app.yaml` → `api-spec/openapi.gen.yaml`, con `api/tools/specmerge`), regenera sqlc, oapi-codegen (un paquete por `codegen.yaml` de módulo), orval y la seguridad por ruta del front (`web/src/gen/routeSecurity.ts`) y falla si cambia algo en `api/gen`, `web/src/gen` o `api-spec/openapi.gen.yaml` | `mise run generate:check` |
 | `security` | govulncheck y `trivy fs` (dependencias y Dockerfile), fallando con HIGH o CRITICAL | `mise run security:govulncheck`, `mise run security:trivy` |
 | `gitleaks` | gitleaks sobre todo el historial. Se ejecuta siempre, también si solo cambia documentación | `mise run security:gitleaks` |
 | `web` | `npm ci`, Biome, `npm run build` (genera `web/src/routeTree.gen.ts` con la CLI de TanStack Router, luego `tsc -b` y `vite build`; falla si el árbol no coincide con el commit) y los tests unitarios con Vitest, incluido el de arquitectura del front | `mise run web:check`, `mise run web:test` |
@@ -94,6 +94,9 @@ añadas filtros de rutas al `on:` de `ci.yml`.
 | `[domain-pure]`: `domain` solo importa la stdlib y `platform/kit/apperr` | depguard | `…/testdata/lint/domain-pure` |
 | `[module-boundaries]`: un módulo es `platform/<x>` (salvo `kit`) o `app/modules/<x>`; fuera de él solo se importa su paquete raíz; `gen/openapi/<x>` y `gen/sqlc/<x>` son privados de `<x>` | `api/archtest/boundaries_test.go` | `…/testdata/arch` |
 | `[platform-imports-app]` (back): nada bajo `api/platform/` importa `api/app` ni nada debajo; solo `package main` importa `app` | `api/archtest/appimports_test.go` | `…/testdata/arch` |
+| `[contract-platform-owned]`: `app.yaml` no define seguridad raíz, `servers` ni `securitySchemes`, ni la cabecera de tenant; usa la misma versión de OpenAPI; sus `$ref` son locales o `platform.yaml#/…` y resuelven | `api/tools/specmerge` (en `mise run generate`) | `api/tools/specmerge/main_test.go` |
+| `[contract-duplicate]`: `app.yaml` no repite una ruta (aunque cambien los nombres de parámetro), un `operationId`, un nombre de componente ni un tag de plataforma | `api/tools/specmerge` | `api/tools/specmerge/main_test.go` |
+| `[contract-module-key]`: cada operación tiene un solo tag, declarado y con módulo en su zona (`platform/<m>` o `app/modules/<m>`); cada `codegen.yaml` tiene `include-tags: [<m>]`, `package: <m>api` y `output: gen/openapi/<m>/<m>.gen.go`, y alguna operación con su tag | `api/tools/specmerge` | `api/tools/specmerge/main_test.go` |
 | `[platform-imports-app]` (front): `web/src/platform` no importa `web/src/app` salvo en `platform/app-registry.ts` | `web/src/platform/architecture.test.ts` (Vitest, `mise run web:test`) | El propio test, con cada forma de importar |
 
 Los fixtures son mini-módulos con el mismo module path que `api/`, para que las reglas les

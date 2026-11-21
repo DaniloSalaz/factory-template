@@ -90,13 +90,23 @@ run = "test -d node_modules || npm ci"
 hide = true
 
 [tasks.generate]
-description = "Generate code from SQL queries and the OpenAPI contract"
+description = "Generate code from SQL queries and the OpenAPI contract (platform.yaml + app.yaml, merged)"
 depends = ["web:install"]
 run = [
   "cd api && sqlc generate",
-  "cd api && oapi-codegen -config oapi-codegen.yaml ../api-spec/openapi.yaml",
-  "cd api && oapi-codegen -config oapi-codegen.identity.yaml ../api-spec/openapi.yaml",
-  "cd api && go run ./tools/routegen -spec ../api-spec/openapi.yaml -out gen/routes/routes.gen.go",
+  # platform.yaml + app.yaml -> openapi.gen.yaml, the only contract the generators read.
+  "cd api && go run ./tools/specmerge -platform ../api-spec/platform.yaml -app ../api-spec/app.yaml -out ../api-spec/openapi.gen.yaml",
+  # One package per module that has a codegen.yaml, found by the glob (alphabetical,
+  # platform first): adding a module never edits this file. specmerge has checked that
+  # each one generates exactly its folder's tag.
+  """
+  cd api
+  for config in platform/*/codegen.yaml app/modules/*/codegen.yaml; do
+    [ -e "$config" ] || continue # the glob stays literal when app/modules has none yet
+    oapi-codegen -config "$config" ../api-spec/openapi.gen.yaml || exit 1
+  done
+  """,
+  "cd api && go run ./tools/routegen -spec ../api-spec/openapi.gen.yaml -out gen/routes/routes.gen.go",
   "cd web && npm run generate",
 ]
 
@@ -162,11 +172,13 @@ description = "Regenerate code and fail if it differs from what is checked in"
 run = [
   { task = "generate" },
   """
-  dirty=$(git status --porcelain -- api/gen web/src/gen)
+  # openapi.gen.yaml included: an edit by hand is overwritten by the merge, so it shows here.
+  dirty=$(git status --porcelain -- api/gen web/src/gen api-spec/openapi.gen.yaml)
   if [ -n "$dirty" ]; then
-    echo "Generated code is out of date. Run 'mise run generate' and commit the result:" >&2
+    echo "Generated code or api-spec/openapi.gen.yaml is out of date (never edit it by hand; change platform.yaml or app.yaml)." >&2
+    echo "Run 'mise run generate' and commit the result:" >&2
     echo "$dirty" >&2
-    git --no-pager diff --stat -- api/gen web/src/gen >&2
+    git --no-pager diff --stat -- api/gen web/src/gen api-spec/openapi.gen.yaml >&2
     exit 1
   fi
   echo "Generated code is up to date."
