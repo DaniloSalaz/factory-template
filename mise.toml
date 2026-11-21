@@ -101,6 +101,9 @@ run = [
   # each one generates exactly its folder's tag.
   """
   cd api
+  # From scratch, so that a module whose codegen.yaml is gone leaves no package behind:
+  # generate:check then sees its committed files as deleted.
+  rm -rf gen/openapi
   for config in platform/*/codegen.yaml app/modules/*/codegen.yaml; do
     [ -e "$config" ] || continue # the glob stays literal when app/modules has none yet
     oapi-codegen -config "$config" ../api-spec/openapi.gen.yaml || exit 1

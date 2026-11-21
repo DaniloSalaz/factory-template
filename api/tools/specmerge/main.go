@@ -304,9 +304,20 @@ func (m *merger) checkComponents() {
 			m.fail(ruleOwned, "%s:%d: components.securitySchemes is defined in %s; refer to its schemes by name in `security` (session, tenant)", m.app, sec.key.Line, m.platform)
 			continue
 		}
+		taken := map[string]string{} // nameKey -> where the name is defined
+		for _, c := range pairs(get(pc, sec.key.Value)) {
+			taken[nameKey(c.key.Value)] = m.platform
+		}
 		for _, c := range pairs(sec.value) {
-			if get(get(pc, sec.key.Value), c.key.Value) != nil {
+			k := nameKey(c.key.Value)
+			other, dup := taken[k]
+			switch {
+			case dup && other == m.platform && get(get(pc, sec.key.Value), c.key.Value) != nil:
 				m.fail(ruleDuplicate, "%s:%d: components.%s.%s already exists in %s; rename it, or reference the platform one as %s#/components/%s/%s", m.app, c.key.Line, sec.key.Value, c.key.Value, m.platform, m.platform, sec.key.Value, c.key.Value)
+			case dup:
+				m.fail(ruleDuplicate, "%s:%d: components.%s.%s collides with a name of the same section in %s: generated type names ignore case, `_` and `-`; rename it", m.app, c.key.Line, sec.key.Value, c.key.Value, other)
+			default:
+				taken[k] = m.app
 			}
 		}
 	}
@@ -340,26 +351,28 @@ func (m *merger) checkRefs() {
 			m.fail(ruleOwned, "%s:%d: $ref %q leads nowhere", m.platform, ref.Line, ref.Value)
 		}
 	})
-	external := m.platform + "#"
+	// Only components: a reference to anything else of the platform (a path item, say)
+	// would copy a platform route into the app, out of reach of the checks below.
+	external := m.platform + "#/components/"
 	walk(m.a, func(n *yaml.Node) {
 		ref := get(n, "$ref")
 		if n.Kind != yaml.MappingNode || ref == nil {
 			return
 		}
 		switch {
-		case strings.HasPrefix(ref.Value, external+"/"):
+		case strings.HasPrefix(ref.Value, external):
 			local := strings.TrimPrefix(ref.Value, m.platform)
 			if resolve(m.p, local) == nil {
 				m.fail(ruleOwned, "%s:%d: $ref %q: %s has no %s", m.app, ref.Line, ref.Value, m.platform, local)
 				return
 			}
 			ref.Value = local
-		case strings.HasPrefix(ref.Value, "#/"):
+		case strings.HasPrefix(ref.Value, "#/components/"):
 			if resolve(m.a, ref.Value) == nil {
 				m.fail(ruleOwned, "%s:%d: $ref %q leads nowhere in %s; a platform component is referenced as %s%s", m.app, ref.Line, ref.Value, m.app, m.platform, ref.Value)
 			}
 		default:
-			m.fail(ruleOwned, "%s:%d: $ref %q: the app contract references only itself (#/...) and %s (%s/...)", m.app, ref.Line, ref.Value, m.platform, external)
+			m.fail(ruleOwned, "%s:%d: $ref %q: the app contract references only components, its own (#/components/...) or the platform's (%s...)", m.app, ref.Line, ref.Value, external)
 		}
 	})
 }
@@ -401,6 +414,18 @@ func (m *merger) checkTagModule(where, tag string, z zone) {
 	if !ok || mod.zone != z {
 		m.fail(ruleModuleKey, "%s: tag %q has no module: there is no api/%s; every tag is the key of exactly one module, so create it or use the tag of an existing one", where, tag, want)
 	}
+}
+
+// nameKey is how generators see a name: oapi-codegen and orval change its case and
+// drop separators, so `getMe`, `GetMe` and `get_me` end as the same identifier.
+func nameKey(s string) string {
+	var b strings.Builder
+	for _, c := range strings.ToLower(s) {
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+			b.WriteRune(c)
+		}
+	}
+	return b.String()
 }
 
 // pathShape is the template with its parameter names erased: ServeMux treats
@@ -451,16 +476,19 @@ func (m *merger) checkOperations(ptags map[string]bool) {
 			declared[scalar(get(t, "name"))] = true
 		}
 		for _, item := range pairs(get(f.root, "paths")) {
+			if ref := get(item.value, "$ref"); ref != nil {
+				m.fail(ruleOwned, "%s:%d: path %s is a $ref (%s); declare its operations inline, so that their tag and operationId are checked and no route is borrowed from another module", f.file, ref.Line, item.key.Value, ref.Value)
+			}
 			for _, op := range pairs(item.value) {
 				if !slices.Contains(methods(), op.key.Value) {
 					continue // parameters, summary...
 				}
 				where := fmt.Sprintf("%s:%d: %s %s", f.file, op.key.Line, strings.ToUpper(op.key.Value), item.key.Value)
 				if id := scalar(get(op.value, "operationId")); id != "" {
-					if other, dup := ids[id]; dup {
-						m.fail(ruleDuplicate, "%s: operationId %q is already used by %s; operationIds are unique across platform and app", where, id, other)
+					if other, dup := ids[nameKey(id)]; dup {
+						m.fail(ruleDuplicate, "%s: operationId %q is already used by %s; operationIds are unique across platform and app, ignoring case, `_` and `-` (generated names would collide)", where, id, other)
 					} else {
-						ids[id] = where
+						ids[nameKey(id)] = where
 					}
 				}
 				m.checkOperationTag(where, op.value, f.zone, declared, ptags)

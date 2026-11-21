@@ -223,6 +223,29 @@ func TestMerge_Refuses(t *testing.T) {
 			[]string{"[contract-platform-owned]", `root member "security" is not allowed`}},
 		{"openapi version", func(t *testing.T) string { return app(t, "openapi: 3.1.0", "openapi: 3.0.3") }, nil,
 			[]string{"[contract-platform-owned]", `openapi is "3.0.3", want "3.1.0"`}},
+		{"operationId differing in case", func(t *testing.T) string { return app(t, "operationId: listAppointments", "operationId: GetMe") }, nil,
+			[]string{"[contract-duplicate]", `operationId "GetMe" is already used by platform.yaml`, "ignoring case"}},
+		{"operationId differing in separators", func(t *testing.T) string {
+			return app(t, "operationId: listAppointments", "operationId: remove_member")
+		}, nil,
+			[]string{"[contract-duplicate]", `operationId "remove_member" is already used by platform.yaml`}},
+		{"schema name differing in case", func(t *testing.T) string {
+			return app(t, "    Appointment:\n", "    Appointment:\n      type: object\n    problem:\n")
+		}, nil,
+			[]string{"[contract-duplicate]", "components.schemas.problem collides with a name of the same section in platform.yaml"}},
+		{"two app schemas differing in case", func(t *testing.T) string {
+			return app(t, "    Appointment:\n", "    appointment: {type: object}\n    Appointment:\n")
+		}, nil,
+			[]string{"[contract-duplicate]", "components.schemas.Appointment collides with a name of the same section in app.yaml"}},
+		{"platform path item reference", func(t *testing.T) string {
+			return app(t, "  /appointments:\n", "  /demo/me:\n    $ref: \"platform.yaml#/paths/~1me\"\n  /appointments:\n")
+		}, nil,
+			[]string{"[contract-platform-owned]", `$ref "platform.yaml#/paths/~1me": the app contract references only components`, "path /demo/me is a $ref"}},
+		{"local path item reference", func(t *testing.T) string {
+			return app(t, "  /appointments:\n", "  /demo/x:\n    $ref: \"#/components/pathItems/X\"\n  /appointments:\n") + "  pathItems:\n    X: {get: {operationId: x}}\n"
+		}, nil, []string{"[contract-platform-owned]", "path /demo/x is a $ref"}},
+		{"local reference outside components", func(t *testing.T) string { return app(t, "#/components/schemas/Appointment", "#/paths/~1appointments") }, nil,
+			[]string{"[contract-platform-owned]", "references only components"}},
 		{"dangling platform reference", func(t *testing.T) string {
 			return app(t, "platform.yaml#/components/responses/InternalError", "platform.yaml#/components/responses/Nope")
 		}, nil, []string{"[contract-platform-owned]", "platform.yaml has no #/components/responses/Nope"}},
