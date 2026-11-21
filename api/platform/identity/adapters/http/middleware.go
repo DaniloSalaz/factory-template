@@ -11,7 +11,7 @@ import (
 	"chaskicode.dev/saas/platform/kit/logx"
 )
 
-// SessionMiddleware requires a valid session (design, 5.4.1) unless the route's security,
+// SessionMiddleware requires a valid session (auth-y-tenancy §5.4.1) unless the route's security,
 // resolved by httpx.RouteSecurity from the contract, says it is public. Without that
 // security (a wiring bug) it requires one: a new route cannot forget it. It puts the
 // authctx.User and the session in the context, and user_id in the logs, the access

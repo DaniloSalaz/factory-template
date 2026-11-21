@@ -94,10 +94,10 @@ type Log struct {
 
 // Web describes the browser side: where the front end lives and who may call the API.
 type Web struct {
-	// FrontendOrigin is the origin return_to must resolve to after login (design, 5.1.1).
+	// FrontendOrigin is the origin return_to must resolve to after login (auth-y-tenancy §5.1.1).
 	FrontendOrigin string `env:"FRONTEND_ORIGIN"`
-	// FrontBaseURL is where invitation links point: FrontBaseURL/invite#token=… (design,
-	// 5.6.3). By default FrontendOrigin; it may add a path if the front end lives under one.
+	// FrontBaseURL is where invitation links point: FrontBaseURL/invite#token=… (auth-y-tenancy
+	// §5.6.3). By default FrontendOrigin; it may add a path if the front end lives under one.
 	FrontBaseURL string `env:"FRONT_BASE_URL"`
 	// AllowedOrigins are the only origins accepted by CORS and by the CSRF Origin check.
 	AllowedOrigins []string `env:"ALLOWED_ORIGINS" envSeparator:","`
@@ -107,13 +107,13 @@ type Web struct {
 	TrustedClientIPHeader string `env:"TRUSTED_CLIENT_IP_HEADER"`
 }
 
-// Auth configures sessions (design, section 6).
+// Auth configures sessions (auth-y-tenancy §6).
 type Auth struct {
 	SessionIdleTTL     time.Duration `env:"SESSION_IDLE_TTL"     envDefault:"168h"`
 	SessionAbsoluteTTL time.Duration `env:"SESSION_ABSOLUTE_TTL" envDefault:"720h"`
 }
 
-// Tenancy configures tenant creation (design, 5.5).
+// Tenancy configures tenant creation (auth-y-tenancy §5.5).
 type Tenancy struct {
 	// MaxTenantsPerUser is how many tenants a user may create (POST /tenants), counting
 	// those they later left.
@@ -168,7 +168,7 @@ const (
 	SMTPImplicitTLS SMTPTLS = "implicit"
 )
 
-// SMTP configures the invitation email (design, 5.6.7). It is required outside
+// SMTP configures the invitation email (auth-y-tenancy §5.6.7). It is required outside
 // development; in development, without SMTP_HOST, invitation links go to the log.
 type SMTP struct {
 	Host     string     `env:"SMTP_HOST"`
@@ -190,7 +190,7 @@ type SMTP struct {
 func (s SMTP) Enabled() bool { return s.Host != "" }
 
 // DefaultDeployedClientIPHeader is the client IP header in staging and production, where
-// the API is reachable only through Cloudflare Tunnel (design, section 3). Without it,
+// the API is reachable only through Cloudflare Tunnel (auth-y-tenancy §3). Without it,
 // every request would carry the tunnel's address: one rate-limit quota for everyone and
 // the wrong ip_prefix in sessions and the audit log.
 const DefaultDeployedClientIPHeader = "CF-Connecting-IP"

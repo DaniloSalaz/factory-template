@@ -1,6 +1,6 @@
 package db
 
-// The rules of the design for tables with tenant_id (section 7.3), outside the _test
+// The rules of the design for tables with tenant_id (auth-y-tenancy §7.3), outside the _test
 // files so that other packages' tests can hold their own tables to them: the example
 // tables of platform/kit/db live only in that package's test database.
 
@@ -21,7 +21,7 @@ type querier interface {
 }
 
 // ----------------------------------------------------------------------------------
-// Tables with tenant_id, and tenants itself (design, section 7.3)
+// Tables with tenant_id, and tenants itself (auth-y-tenancy §7.3)
 // ----------------------------------------------------------------------------------
 
 type tableInfo struct {
@@ -111,7 +111,7 @@ func loadPolicies(ctx context.Context, q querier) ([]policyInfo, error) {
 	return policies, nil
 }
 
-// tableViolations applies the rules of section 7.3 to one table. Messages say what is
+// tableViolations applies the rules of auth-y-tenancy §7.3 to one table. Messages say what is
 // wrong and how to fix it.
 func tableViolations(t tableInfo, policies []policyInfo, rules exprRules) []string {
 	var out []string
@@ -182,7 +182,7 @@ func tableViolations(t tableInfo, policies []policyInfo, rules exprRules) []stri
 			}
 		}
 	case !shared:
-		add("no declared scope: add COMMENT ON TABLE %s IS '%s' or a RESTRICTIVE FOR ALL own_scope policy (design, section 7.3)", t.Name, tenantSharedComment)
+		add("no declared scope: add COMMENT ON TABLE %s IS '%s' or a RESTRICTIVE FOR ALL own_scope policy (auth-y-tenancy §7.3)", t.Name, tenantSharedComment)
 	}
 
 	if t.Comment == accessComment {
@@ -270,7 +270,7 @@ func loadTenantForeignKeys(ctx context.Context, q querier) ([]foreignKeyInfo, er
 
 // foreignKeyViolation reports a key that does not pair tenant_id with tenant_id. RLS
 // filters what is read, but a key on the parent's id alone lets a row of one tenant
-// point at another tenant's row (design, 7.3; docs/platform/patterns.md).
+// point at another tenant's row (auth-y-tenancy §7.3; docs/platform/patterns.md).
 func foreignKeyViolation(fk foreignKeyInfo) string {
 	i := slices.Index(fk.Columns, "tenant_id")
 	if len(fk.Columns) > 1 && i >= 0 && i < len(fk.RefColumns) && fk.RefColumns[i] == "tenant_id" {
@@ -282,7 +282,7 @@ func foreignKeyViolation(fk foreignKeyInfo) string {
 		fk.Table, fk.Name, strings.Join(fk.Columns, ", "), fk.RefTable, strings.Join(fk.RefColumns, ", "), fk.RefTable, fk.RefTable)
 }
 
-// TenantTableViolations applies the rules of section 7.3 to every table with tenant_id
+// TenantTableViolations applies the rules of auth-y-tenancy §7.3 to every table with tenant_id
 // (and tenants) that q can see, keyed by table. Each message names the rule and the fix.
 func TenantTableViolations(ctx context.Context, q querier) (map[string][]string, error) {
 	tables, err := loadTenantTables(ctx, q)

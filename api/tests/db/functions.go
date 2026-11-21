@@ -1,6 +1,6 @@
 package db
 
-// The rules of the design for SECURITY DEFINER functions (section 7.4), outside the
+// The rules of the design for SECURITY DEFINER functions (auth-y-tenancy §7.4), outside the
 // _test files so that schema_test.go (package db_test) can hold the platform's and the
 // app's functions to them.
 
@@ -78,7 +78,7 @@ func functionViolations(f functionInfo) []string {
 	return out
 }
 
-// SecurityDefinerViolations applies the rules of section 7.4 to every SECURITY DEFINER
+// SecurityDefinerViolations applies the rules of auth-y-tenancy §7.4 to every SECURITY DEFINER
 // function of the public schema that q can see. It returns their names (empty means the
 // discovery query is broken) and the violations, each naming the rule and the fix.
 func SecurityDefinerViolations(ctx context.Context, q querier) (names, violations []string, err error) {

@@ -18,7 +18,6 @@ import (
 
 var _ identityapi.StrictServerInterface = (*Handler)(nil)
 
-// Handler implements the generated strict server interface.
 type Handler struct {
 	login       *usecases.Login
 	sessions    *usecases.Sessions
@@ -49,7 +48,7 @@ func NewHandler(uc UseCases, logger *slog.Logger) *Handler {
 	}
 }
 
-// AuthLogin starts a login (design, 5.1.1 and 5.1.2).
+// AuthLogin starts a login (auth-y-tenancy §5.1.1 and §5.1.2).
 func (h *Handler) AuthLogin(ctx context.Context, req identityapi.AuthLoginRequestObject) (identityapi.AuthLoginResponseObject, error) {
 	r := requestFrom(ctx)
 	started, err := h.login.Start(deref(req.Params.ReturnTo), storedIntents(r))
@@ -63,7 +62,7 @@ func (h *Handler) AuthLogin(ctx context.Context, req identityapi.AuthLoginReques
 	return redirect{location: started.RedirectURL, cookies: cookies}, nil
 }
 
-// AuthCallback completes the login named by state (design, 5.1.3 to 5.1.10).
+// AuthCallback completes the login named by state (auth-y-tenancy §5.1.3 to §5.1.10).
 func (h *Handler) AuthCallback(ctx context.Context, req identityapi.AuthCallbackRequestObject) (identityapi.AuthCallbackResponseObject, error) {
 	r := requestFrom(ctx)
 	state := deref(req.Params.State)
@@ -90,7 +89,7 @@ func (h *Handler) AuthCallback(ctx context.Context, req identityapi.AuthCallback
 	return redirect{location: done.ReturnTo, cookies: cookies}, nil
 }
 
-// AuthLogout ends the current session (design, 5.5).
+// AuthLogout ends the current session (auth-y-tenancy §5.5).
 func (h *Handler) AuthLogout(ctx context.Context, _ identityapi.AuthLogoutRequestObject) (identityapi.AuthLogoutResponseObject, error) {
 	cur, ok := usecases.CurrentFrom(ctx)
 	if !ok {
@@ -116,7 +115,7 @@ func (h *Handler) AuthLogoutAll(ctx context.Context, _ identityapi.AuthLogoutAll
 	return loggedOut{logoutURL: logoutURL}, nil
 }
 
-// GetMe returns the current user, their memberships and their MFA (design, section 10).
+// GetMe returns the current user, their memberships and their MFA (auth-y-tenancy §10).
 func (h *Handler) GetMe(ctx context.Context, _ identityapi.GetMeRequestObject) (identityapi.GetMeResponseObject, error) {
 	cur, ok := usecases.CurrentFrom(ctx)
 	if !ok {
@@ -163,7 +162,7 @@ func (h *Handler) GetMe(ctx context.Context, _ identityapi.GetMeRequestObject) (
 	return out, nil
 }
 
-// EnrollTOTP enrolls a TOTP factor (design, 5.2).
+// EnrollTOTP enrolls a TOTP factor (auth-y-tenancy §5.2).
 func (h *Handler) EnrollTOTP(ctx context.Context, _ identityapi.EnrollTOTPRequestObject) (identityapi.EnrollTOTPResponseObject, error) {
 	cur, ok := usecases.CurrentFrom(ctx)
 	if !ok {

@@ -22,7 +22,7 @@ import { formatDateTime, texts } from "@/platform/texts";
 import { Badge } from "@/platform/ui/badge";
 import { Button } from "@/platform/ui/button";
 
-// The members of the tenant (design 5.7): GET /tenant/members by cursor, the role change
+// The members of the tenant (auth-y-tenancy §5.7): GET /tenant/members by cursor, the role change
 // limited to the roles GET /tenant/roles says the caller may assign, removal and leaving.
 // Hiding by permission is only UX: the API judges every change again.
 export const Route = createFileRoute("/_shell/t/$tenantId/members")({

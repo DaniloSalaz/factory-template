@@ -21,7 +21,6 @@ import (
 	"chaskicode.dev/saas/platform/kit/pii"
 )
 
-// TenantStore implements usecases.TenantStore.
 type TenantStore struct {
 	db *db.DB
 }
@@ -33,7 +32,6 @@ func NewTenantStore(database *db.DB) *TenantStore {
 	return &TenantStore{db: database}
 }
 
-// AsUser implements usecases.TenantStore with db.WithUserTx.
 func (s *TenantStore) AsUser(ctx context.Context, userID string, fn func(context.Context, usecases.TenantRepo) error) error {
 	ctx, err := asUser(ctx, userID)
 	if err != nil {
@@ -45,7 +43,6 @@ func (s *TenantStore) AsUser(ctx context.Context, userID string, fn func(context
 	return db.MapError(err)
 }
 
-// InTenant implements usecases.TenantStore with db.WithTenantTx.
 func (s *TenantStore) InTenant(ctx context.Context, p authctx.Principal, fn func(context.Context, usecases.TenantRepo) error) error {
 	err := s.db.WithTenantTx(inTenant(ctx, p), func(ctx context.Context, q db.Querier) error {
 		return fn(ctx, tenantRepo{repo{q: identitydb.New(q)}})

@@ -32,13 +32,13 @@ const (
 )
 
 // MFA verification attempts per user and per session, and enrollments and challenges per
-// user, in 15 minutes (design, 5.2).
+// user, in 15 minutes (auth-y-tenancy §5.2).
 const (
 	mfaRateLimit  = 5
 	mfaRateWindow = 15 * time.Minute
 )
 
-// Requests per user (design, section 6): creating a tenant, five an hour; inviting and
+// Requests per user (auth-y-tenancy §6): creating a tenant, five an hour; inviting and
 // resending together, twenty an hour; accepting, ten in 15 minutes, which also bounds
 // guessing tokens.
 const (
@@ -105,7 +105,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		}
 	}()
 
-	// An invalid catalog stops the start-up before anything else (design, section 8).
+	// An invalid catalog stops the start-up before anything else (auth-y-tenancy §8).
 	catalog, err := app.Roles()
 	if err != nil {
 		return err
@@ -120,7 +120,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		return err
 	}
 
-	// Email by SMTP; only development may log the links instead (design, 5.6.7).
+	// Email by SMTP; only development may log the links instead (auth-y-tenancy §5.6.7).
 	sender, err := identity.NewInvitationSender(cfg.Env, cfg.SMTP, tel, logger)
 	if err != nil {
 		return fmt.Errorf("invitation sender: %w", err)

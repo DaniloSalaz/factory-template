@@ -7,8 +7,8 @@ import (
 )
 
 // ResolveReturnTo resolves raw against frontendOrigin with a URL parser and returns the
-// absolute URL to redirect to after login, which must have exactly that origin (design,
-// 5.1.1). An empty raw means the front end's root.
+// absolute URL to redirect to after login, which must have exactly that origin (auth-y-tenancy
+// §5.1.1). An empty raw means the front end's root.
 //
 // Backslashes, whitespace and control characters are refused before parsing: browsers
 // read "/\evil.com" as "//evil.com" and drop tabs and newlines, so the URL they would

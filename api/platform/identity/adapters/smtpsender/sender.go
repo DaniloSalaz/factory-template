@@ -1,4 +1,4 @@
-// Package smtpsender is the SMTP adapter of usecases.InvitationSender (design, 5.6.7): a
+// Package smtpsender is the SMTP adapter of usecases.InvitationSender (auth-y-tenancy §5.6.7): a
 // plain SMTP relay, of whatever provider, over TLS only. It is the sender outside
 // development, where devsender may not run.
 package smtpsender
@@ -43,7 +43,7 @@ func New(cfg config.SMTP, rootCAs *x509.CertPool, tracers trace.TracerProvider) 
 	return &Sender{cfg: cfg, rootCAs: rootCAs, html: html, tracers: tracers}, nil
 }
 
-// Send implements usecases.InvitationSender. The link travels only in the message body: no
+// The link travels only in the message body: no
 // error it returns names the link, the token or the recipient.
 func (s *Sender) Send(ctx context.Context, msg usecases.InvitationMessage) (err error) {
 	ctx, end := telemetry.ClientSpan(ctx, s.tracers, "smtp", "send")

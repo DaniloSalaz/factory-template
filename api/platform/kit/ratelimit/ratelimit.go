@@ -1,4 +1,4 @@
-// Package ratelimit is the port for request quotas (design, section 6) and its
+// Package ratelimit is the port for request quotas (auth-y-tenancy §6) and its
 // in-memory implementation. A shared store (Redis, Postgres) can implement the same port
 // once the API runs more than one replica.
 package ratelimit
@@ -15,7 +15,7 @@ type Limiter interface {
 }
 
 // Decision is a Limiter's answer. RetryAfter, when the request is refused, is how long
-// until the quota allows another one: the 429's Retry-After (design, section 6).
+// until the quota allows another one: the 429's Retry-After (auth-y-tenancy §6).
 type Decision struct {
 	Allowed    bool
 	RetryAfter time.Duration

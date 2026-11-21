@@ -13,7 +13,7 @@ import (
 )
 
 // Tenancy turns an authenticated user and the tenant a request names into the request's
-// Principal (design, 5.4.2 to 5.4.4).
+// Principal (auth-y-tenancy §5.4.2 to §5.4.4).
 type Tenancy struct {
 	store   Store
 	catalog *authz.Catalog

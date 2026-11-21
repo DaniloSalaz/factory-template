@@ -1036,7 +1036,7 @@ func TestLogin_RateLimited(t *testing.T) {
 	}
 }
 
-// A login never gives the session MFA, whatever the method (design, 5.2).
+// A login never gives the session MFA, whatever the method (auth-y-tenancy §5.2).
 func TestLogin_NeverSetsMFA(t *testing.T) {
 	e := newEnv(t, options{})
 	who := e.person()
@@ -1122,8 +1122,7 @@ func (e *env) logRecords(msg string) []map[string]any {
 	return out
 }
 
-// tenant creates an active tenant as the superuser (POST /tenants arrives in step 5)
-// and returns its id.
+// tenant creates an active tenant as the superuser and returns its id.
 func (e *env) tenant() string {
 	e.t.Helper()
 	seq.mu.Lock()
@@ -1623,7 +1622,7 @@ func TestMe_OnlyTheCurrentUsersMemberships(t *testing.T) {
 	}
 }
 
-// The first real route with a tenant (design 11, isolation): user A gets the same 403
+// The first real route with a tenant (auth-y-tenancy §11, isolation): user A gets the same 403
 // with tenant B as with any tenant they cannot use.
 func TestCurrentTenant(t *testing.T) {
 	e := newEnv(t, options{})

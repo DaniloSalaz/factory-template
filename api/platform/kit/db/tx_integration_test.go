@@ -25,7 +25,7 @@ import (
 // the superuser, outside RLS.
 
 // A query under RLS without the variables fails, typically with 42704 in a new session
-// and 22P02 in a reused one (design, 7.2). Which of the two is not the contract.
+// and 22P02 in a reused one (auth-y-tenancy §7.2). Which of the two is not the contract.
 var failClosed = []string{"42704", "22P02"}
 
 // newDB returns a DB over its own app_runtime pool. maxConns 1 pins every transaction
@@ -127,7 +127,7 @@ func (f fixtures) document(tenant, caseID string) string {
 // Helpers
 // ----------------------------------------------------------------------------------
 
-// principalCtx is what the session and tenant middlewares will leave in the context: a
+// principalCtx is what the session and tenant middlewares leave in the context: a
 // User and the Principal of that same user.
 func principalCtx(t *testing.T, user, tenant string, perms ...authctx.Permission) context.Context {
 	t.Helper()
@@ -373,7 +373,7 @@ func TestWithTenantTx_RequiresPrincipal(t *testing.T) {
 }
 
 // set_config(..., true) scopes the variables to the transaction: the pool hands the same
-// connection to the next caller without them (design, 7.2 and 11).
+// connection to the next caller without them (auth-y-tenancy §7.2 and §11).
 func TestVariablesDoNotOutliveTheTransaction(t *testing.T) {
 	t.Parallel()
 
@@ -451,7 +451,7 @@ func TestVariablesDoNotOutliveTheTransaction(t *testing.T) {
 }
 
 // Scope own (no scope:tenant) sees its own notes and only the cases, access rows and
-// documents it has access to; scope tenant sees them all (design, 7.3).
+// documents it has access to; scope tenant sees them all (auth-y-tenancy §7.3).
 func TestWithTenantTx_OwnScope(t *testing.T) {
 	t.Parallel()
 

@@ -16,7 +16,7 @@ import (
 	"chaskicode.dev/saas/tests/testkit/migrationsets"
 )
 
-// The rules of the schema (design, sections 7.3 and 7.4) and the snapshot of
+// The rules of the schema (auth-y-tenancy §7.3 and §7.4) and the snapshot of
 // app_runtime's privileges, applied to the database `api migrate` builds: the
 // platform's migrations and the app's. Package db holds the rules and proves each one
 // catches a misbuilt object.

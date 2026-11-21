@@ -10,7 +10,7 @@ import (
 )
 
 // DenialAuditor records authz.denied in the principal's tenant, with the principal as
-// the actor (design, section 9). It implements authz.Auditor.
+// the actor (auth-y-tenancy §9). It implements authz.Auditor.
 type DenialAuditor struct {
 	store Store
 }

@@ -17,7 +17,7 @@ import (
 	"chaskicode.dev/saas/platform/identity/usecases"
 )
 
-// Tenants and members over HTTP (design 5.5 and 5.7, migration 00005), with the real
+// Tenants and members over HTTP (auth-y-tenancy §5.5 and §5.7, migration 00005), with the real
 // middlewares and database.
 
 // tenantJSON calls path as the browser in tenant (X-Tenant-ID) with body as JSON.

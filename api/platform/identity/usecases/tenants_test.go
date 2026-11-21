@@ -379,7 +379,7 @@ func TestTenants_Rename(t *testing.T) {
 }
 
 // A role change tells the database which roles the new role may still offer: it keeps
-// those pending invitations and revokes the rest (design, 5.6.4).
+// those pending invitations and revokes the rest (auth-y-tenancy §5.6.4).
 func TestMembers_ChangeRoleNamesTheOfferableRoles(t *testing.T) {
 	t.Parallel()
 

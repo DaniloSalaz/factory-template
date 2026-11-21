@@ -1,5 +1,5 @@
 // Package authctx carries the request's identity through context.Context, at the two
-// levels that exist at different moments of a request (design, sections 5.4 and 7.5):
+// levels that exist at different moments of a request (auth-y-tenancy §5.4 and §7.5):
 //
 //   - User: the authenticated user, set by the session middleware before any tenant is
 //     known;
@@ -29,13 +29,13 @@ const PermScopeTenant Permission = "scope:tenant"
 // Scope is the row scope a principal has inside its tenant; platform/kit/db hands it to RLS.
 type Scope string
 
-// The two scopes of the design (section 7.2).
+// The two scopes of the design (auth-y-tenancy §7.2).
 const (
 	ScopeTenant Scope = "tenant"
 	ScopeOwn    Scope = "own"
 )
 
-// SystemUserID is the reserved, disabled user that system jobs act as (design, 4.1).
+// SystemUserID is the reserved, disabled user that system jobs act as (auth-y-tenancy §4.1).
 const SystemUserID = "00000000-0000-7000-8000-000000000001"
 
 // SystemRole is the role of SystemPrincipal. NewPrincipal refuses it, so a system
@@ -96,7 +96,7 @@ func NewPrincipal(userID, tenantID, role string, perms ...Permission) (Principal
 	return p, nil
 }
 
-// SystemPrincipal builds the principal of a system job in a tenant (design, 7.6): the
+// SystemPrincipal builds the principal of a system job in a tenant (auth-y-tenancy §7.6): the
 // system user, the system role, the tenant scope and exactly the permissions given.
 func SystemPrincipal(tenantID string, perms ...Permission) (Principal, error) {
 	return newPrincipal(SystemUserID, tenantID, SystemRole, append(slices.Clone(perms), PermScopeTenant))

@@ -1,5 +1,5 @@
 // Package authz holds the permissions of the platform, the app's role catalog and the
-// check that use cases make before acting (design, section 8). Only Go code decides
+// check that use cases make before acting (auth-y-tenancy §8). Only Go code decides
 // permissions: the database stores roles as text and never evaluates them.
 package authz
 

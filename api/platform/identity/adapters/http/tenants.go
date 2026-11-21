@@ -10,7 +10,7 @@ import (
 	"chaskicode.dev/saas/platform/kit/authctx"
 )
 
-// Tenants and members (design, 5.5 and 5.7). Permissions are checked in the use cases,
+// Tenants and members (auth-y-tenancy §5.5 and §5.7). Permissions are checked in the use cases,
 // never here.
 
 func errBodyRequired() error {

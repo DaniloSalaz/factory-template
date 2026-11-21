@@ -7,8 +7,8 @@ import (
 	"chaskicode.dev/saas/platform/kit/authz"
 )
 
-// UnknownRolesInUse returns the roles stored in memberships that catalog lacks (design,
-// section 8). Their members act with no permissions until the role is added back or
+// UnknownRolesInUse returns the roles stored in memberships that catalog lacks (auth-y-tenancy
+// §8). Their members act with no permissions until the role is added back or
 // they are given another one.
 func UnknownRolesInUse(ctx context.Context, store Store, catalog *authz.Catalog) ([]string, error) {
 	var inUse []string

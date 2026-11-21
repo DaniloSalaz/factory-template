@@ -15,7 +15,7 @@ import (
 	"chaskicode.dev/saas/platform/kit/telemetry"
 )
 
-// MFA is the second factor the app verifies itself (design, 5.2; ADR 0002): enrolling a
+// MFA is the second factor the app verifies itself (auth-y-tenancy §5.2; ADR 0002): enrolling a
 // TOTP factor, challenging it, verifying a code, and removing a factor. A verified code
 // replaces the session with a new one, with a new token and its MFA time set.
 type MFA struct {

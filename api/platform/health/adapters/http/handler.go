@@ -11,7 +11,7 @@ import (
 
 var _ healthapi.StrictServerInterface = (*Handler)(nil)
 
-// Handler implements the generated strict server interface. Errors are returned, not
+// Errors are returned, not
 // written: the strict server hands them to httpx.WriteProblem.
 type Handler struct {
 	readiness *usecases.CheckReadiness

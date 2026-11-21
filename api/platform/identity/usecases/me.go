@@ -10,7 +10,7 @@ import (
 	"chaskicode.dev/saas/platform/kit/authz"
 )
 
-// Accounts answers what a user may know about their own account (design, section 10).
+// Accounts answers what a user may know about their own account (auth-y-tenancy §10).
 type Accounts struct {
 	store   Store
 	catalog *authz.Catalog

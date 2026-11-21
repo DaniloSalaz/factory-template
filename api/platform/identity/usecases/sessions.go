@@ -10,7 +10,7 @@ import (
 	"chaskicode.dev/saas/platform/kit/apperr"
 )
 
-// Sessions checks the session of each request (design, 5.4.1) and ends sessions (5.5).
+// Sessions checks the session of each request (auth-y-tenancy §5.4.1) and ends sessions (auth-y-tenancy §5.5).
 type Sessions struct {
 	idp    IdentityProvider
 	store  Store

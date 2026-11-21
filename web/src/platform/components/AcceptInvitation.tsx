@@ -9,7 +9,7 @@ import { texts } from "@/platform/texts";
 export type AcceptOutcome = "missing" | "failed";
 
 /**
- * AcceptInvitation is the second half of /invite (design 5.6.3): the token is already in
+ * AcceptInvitation is the second half of /invite (auth-y-tenancy §5.6.3): the token is already in
  * storage (invite-token.ts). GET /me checks the session first, so without one the error
  * handler sends to /login with return_to=/invite (the URL has no fragment by then) and
  * the token waits. With a session, the token leaves storage and goes to POST

@@ -1,4 +1,4 @@
-// Members and invitations (design 5.6 and 5.7) against the real API, with sessions seeded
+// Members and invitations (auth-y-tenancy §5.6 and §5.7) against the real API, with sessions seeded
 // by SQL. owner requires MFA in the example catalog, so owners get a session with MFA.
 import {
   cleanup,

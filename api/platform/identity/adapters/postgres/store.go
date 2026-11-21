@@ -23,7 +23,6 @@ import (
 	"chaskicode.dev/saas/platform/kit/pii"
 )
 
-// Store implements usecases.Store.
 type Store struct {
 	db *db.DB
 }
@@ -35,7 +34,6 @@ func NewStore(database *db.DB) *Store {
 	return &Store{db: database}
 }
 
-// Anon implements usecases.Store with db.WithAnonTx.
 func (s *Store) Anon(ctx context.Context, fn func(context.Context, usecases.Repo) error) error {
 	err := s.db.WithAnonTx(ctx, func(ctx context.Context, q db.Querier) error {
 		return fn(ctx, repo{q: identitydb.New(q)})
@@ -43,7 +41,6 @@ func (s *Store) Anon(ctx context.Context, fn func(context.Context, usecases.Repo
 	return db.MapError(err)
 }
 
-// AsUser implements usecases.Store with db.WithUserTx.
 func (s *Store) AsUser(ctx context.Context, userID string, fn func(context.Context, usecases.Repo) error) error {
 	ctx, err := asUser(ctx, userID)
 	if err != nil {
@@ -55,7 +52,6 @@ func (s *Store) AsUser(ctx context.Context, userID string, fn func(context.Conte
 	return db.MapError(err)
 }
 
-// InTenant implements usecases.Store with db.WithTenantTx.
 func (s *Store) InTenant(ctx context.Context, p authctx.Principal, fn func(context.Context, usecases.Repo) error) error {
 	err := s.db.WithTenantTx(inTenant(ctx, p), func(ctx context.Context, q db.Querier) error {
 		return fn(ctx, repo{q: identitydb.New(q)})

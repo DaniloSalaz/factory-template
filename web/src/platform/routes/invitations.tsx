@@ -23,7 +23,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/pla
 import { Input } from "@/platform/ui/input";
 import { Label } from "@/platform/ui/label";
 
-// The tenant's invitations (design 5.6): pending and expired ones by cursor, inviting
+// The tenant's invitations (auth-y-tenancy §5.6): pending and expired ones by cursor, inviting
 // with a role GET /tenant/roles says the caller may offer, resending (a new token and
 // expiry) and revoking. The link only ever goes to the invitee's email.
 export const Route = createFileRoute("/_shell/t/$tenantId/invitations")({

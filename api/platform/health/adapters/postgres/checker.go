@@ -11,7 +11,6 @@ import (
 
 var _ usecases.DBChecker = (*Checker)(nil)
 
-// Checker implements usecases.DBChecker with a trivial query.
 type Checker struct {
 	queries healthdb.Querier
 }

@@ -34,8 +34,8 @@ const (
 	corsExposeHeaders = "Retry-After, X-Request-ID"
 )
 
-// CORS lets exactly the allowed origins call the API with credentials (design, section
-// 6). There are no wildcards: the response names the caller's origin only when it is in
+// CORS lets exactly the allowed origins call the API with credentials (auth-y-tenancy
+// §6). There are no wildcards: the response names the caller's origin only when it is in
 // the list. Preflights are answered here and never reach the routes or the session.
 func CORS(allowedOrigins []string) Middleware {
 	allowed := slices.Clone(allowedOrigins)
@@ -65,7 +65,7 @@ func CORS(allowedOrigins []string) Middleware {
 }
 
 // CSRF refuses, with 403, any request with a method that can modify data unless its
-// Origin header is one of the allowed origins (design, section 6). A missing Origin is
+// Origin header is one of the allowed origins (auth-y-tenancy §6). A missing Origin is
 // refused as well: browsers always send it on those methods.
 func CSRF(allowedOrigins []string, logger *slog.Logger) Middleware {
 	allowed := slices.Clone(allowedOrigins)

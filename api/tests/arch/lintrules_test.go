@@ -70,6 +70,23 @@ func TestLintRules(t *testing.T) {
 			},
 			allowed: []string{"domain/allowed.go"},
 		},
+		{
+			fixture: "doc-comments",
+			want: []string{
+				"platform/kit/foo/foo.go", "exported function Undocumented should have comment",
+				"comment on exported function Misnamed should be of the form",
+				"app/modules/bar/adapters/postgres/store.go", "should have a package comment",
+			},
+			allowed: []string{"platform/foo/adapters/postgres/store.go", "app/modules/bar/adapters/http/handler.go"},
+		},
+		{
+			fixture: "nolint-explained",
+			want: []string{
+				"unexplained.go", "`//nolint:wrapcheck` should provide explanation",
+				"unspecific.go", "should mention specific linter",
+			},
+			allowed: []string{"foo/explained.go"},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.fixture, func(t *testing.T) {

@@ -14,7 +14,7 @@ type tnError struct {
 	msg  string
 }
 
-// tnErrors maps the SQLSTATEs raised by the SECURITY DEFINER functions (design, 7.4) to
+// tnErrors maps the SQLSTATEs raised by the SECURITY DEFINER functions (auth-y-tenancy §7.4) to
 // stable application errors. TN030 and TN031 mean the code recorded an audit event for
 // the wrong tenant: a bug, never the client's fault.
 func tnErrors() map[string]tnError {

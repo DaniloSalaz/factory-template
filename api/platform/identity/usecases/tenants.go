@@ -19,7 +19,7 @@ type Authorizer interface {
 	Require(ctx context.Context, perm authctx.Permission) error
 }
 
-// Tenants creates and renames tenants (design, 5.5).
+// Tenants creates and renames tenants (auth-y-tenancy §5.5).
 type Tenants struct {
 	store      TenantStore
 	authz      Authorizer
@@ -28,7 +28,7 @@ type Tenants struct {
 }
 
 // NewTenants builds Tenants. maxPerUser is how many tenants a user may create in all;
-// limiter caps how often they may try (design, section 6).
+// limiter caps how often they may try (auth-y-tenancy §6).
 func NewTenants(store TenantStore, authorizer Authorizer, maxPerUser int, limiter ratelimit.Limiter) *Tenants {
 	return &Tenants{store: store, authz: authorizer, maxPerUser: maxPerUser, limiter: limiter}
 }
@@ -99,7 +99,7 @@ func (t *Tenants) Rename(ctx context.Context, name string) (Tenant, error) {
 	return out, nil
 }
 
-// Members lists and manages the members of the principal's tenant (design, 5.7).
+// Members lists and manages the members of the principal's tenant (auth-y-tenancy §5.7).
 type Members struct {
 	store   TenantStore
 	authz   Authorizer
@@ -181,7 +181,7 @@ func (m *Members) ChangeRole(ctx context.Context, userID, role string) (Member, 
 			return err
 		}
 		// The member keeps the pending invitations their new role could still issue; the
-		// database revokes the rest in the same transaction (design, 5.6.4).
+		// database revokes the rest in the same transaction (auth-y-tenancy §5.6.4).
 		if err := r.ChangeMemberRole(ctx, target.UserID, role, actor.Role, target.Role, m.offerable(role), ipPrefix(ctx)); err != nil {
 			return err
 		}

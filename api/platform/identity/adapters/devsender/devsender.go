@@ -1,7 +1,7 @@
 // Package devsender is the development adapter of usecases.InvitationSender: it writes the
 // invitation link to the log instead of emailing it. It is the only place where a
 // token reaches a log, so it refuses to exist outside development, where the SMTP
-// adapter sends real email (design, 5.6.7).
+// adapter sends real email (auth-y-tenancy §5.6.7).
 package devsender
 
 import (
@@ -32,7 +32,7 @@ func New(env config.Environment, logger *slog.Logger) (*Sender, error) {
 	return &Sender{logger: logger}, nil
 }
 
-// Send implements usecases.InvitationSender. The email stays masked (pii.Email); the link is
+// The email stays masked (pii.Email); the link is
 // revealed on purpose: reading it from the log is how invitations work in development.
 func (s *Sender) Send(ctx context.Context, msg usecases.InvitationMessage) error {
 	s.logger.InfoContext(ctx, LogMessage,

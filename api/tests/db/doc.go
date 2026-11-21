@@ -3,7 +3,7 @@
 // app's migrations (testkit/migrationsets): it lives under api/tests, which may import
 // the app, unlike anything under platform/.
 //
-//   - rules.go (tables with tenant_id, section 7.3), functions.go (SECURITY DEFINER
+//   - rules.go (tables with tenant_id, auth-y-tenancy §7.3), functions.go (SECURITY DEFINER
 //     functions, 7.4) and privileges.go (the snapshot of app_runtime's privileges) hold
 //     the rules; schema_test.go applies them to the whole schema;
 //   - structure_test.go and privileges_test.go prove each rule catches a misbuilt

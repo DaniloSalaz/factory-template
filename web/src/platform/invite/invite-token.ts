@@ -1,6 +1,6 @@
 import { paths } from "@/platform/paths";
 
-// The token of an invitation link (/invite#token=…, design 5.6.3). The fragment never
+// The token of an invitation link (/invite#token=…, auth-y-tenancy §5.6.3). The fragment never
 // reaches a server nor a Referer, and it must not stay in the URL either: the history,
 // a shared screenshot or return_to would carry it. So it moves to sessionStorage (this
 // tab only, gone when it closes) before the router or any request starts, and leaves it

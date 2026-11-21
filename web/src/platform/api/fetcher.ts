@@ -1,7 +1,7 @@
 import { ApiError, parseProblem, parseRetryAfter } from "./problem";
 import { requiresTenant } from "./route-security";
 
-// Base URL of the API (design, section 10): "/api" in development, where the Vite proxy
+// Base URL of the API (auth-y-tenancy §10): "/api" in development, where the Vite proxy
 // strips it, and the API's own origin in production. The backend has no /api prefix.
 const baseUrl = import.meta.env.VITE_API_BASE_URL.replace(/\/$/, "");
 

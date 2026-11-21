@@ -8,7 +8,7 @@ import { ErrorText } from "./ErrorText";
 
 /**
  * CodeForm asks for a TOTP code and verifies it. Each attempt uses up its challenge, right
- * or wrong (design, 5.2.4), so `challenge` gives a fresh one for every attempt. On success
+ * or wrong (auth-y-tenancy §5.2.4), so `challenge` gives a fresh one for every attempt. On success
  * the session is replaced and the query cache invalidated (platform/api/query-client.ts).
  */
 export function CodeForm(props: { challenge: () => Promise<string>; onVerified: () => void }) {

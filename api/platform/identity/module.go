@@ -1,6 +1,6 @@
 // Package identity is the module's public API: login with the identity provider,
-// sessions, the session and tenant middlewares, and tenants and their members (design,
-// sections 5.1, 5.4, 5.5 and 5.7).
+// sessions, the session and tenant middlewares, and tenants and their members (auth-y-tenancy
+// §5.1, §5.4, §5.5 and §5.7).
 package identity
 
 import (
@@ -50,17 +50,17 @@ type Deps struct {
 	// RateLimiter limits /auth/login and /auth/callback per client IP.
 	RateLimiter ratelimit.Limiter
 	// MFARateLimiter limits MFA verification attempts, per user and per session, and
-	// enrollments and challenges per user (design, 5.2).
+	// enrollments and challenges per user (auth-y-tenancy §5.2).
 	MFARateLimiter ratelimit.Limiter
 	// Catalog is the app's validated role catalog. A catalog where no role requires MFA
 	// is valid: MFA is then optional for everyone.
 	Catalog *authz.Catalog
 	// Tenancy limits how many tenants a user may create.
 	Tenancy config.Tenancy
-	// TenantRateLimiter limits POST /tenants per user (design, section 6).
+	// TenantRateLimiter limits POST /tenants per user (auth-y-tenancy §6).
 	TenantRateLimiter ratelimit.Limiter
 	// InvitationRateLimiter limits POST /invitations and their resends per user;
-	// AcceptRateLimiter, POST /invitations/accept (design, section 6).
+	// AcceptRateLimiter, POST /invitations/accept (auth-y-tenancy §6).
 	InvitationRateLimiter ratelimit.Limiter
 	AcceptRateLimiter     ratelimit.Limiter
 	// InvitationSender delivers invitation links: NewInvitationSender picks it from the
@@ -190,7 +190,7 @@ func (m *Module) TenantMiddleware() httpx.Middleware {
 }
 
 // CheckRolesInUse logs an error for every role stored in a membership that the catalog
-// lacks (design, section 8): those members act with no permissions. It never stops the
+// lacks (auth-y-tenancy §8): those members act with no permissions. It never stops the
 // start-up, not even when the query fails.
 func (m *Module) CheckRolesInUse(ctx context.Context) {
 	unknown, err := usecases.UnknownRolesInUse(ctx, m.store, m.catalog)
