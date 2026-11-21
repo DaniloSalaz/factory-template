@@ -14,7 +14,7 @@ describe("start-up on an invitation link", () => {
     vi.stubGlobal("fetch", fetch);
     window.history.replaceState(null, "", "/invite#token=secret-token");
 
-    const { router } = await import("./router");
+    const { router } = await import("@/router");
 
     expect(window.location.href).not.toContain("secret-token");
     expect(window.location.hash).toBe("");

@@ -3,7 +3,7 @@ import { createPlatform } from "@/platform/bootstrap";
 import { RouteErrorScreen } from "@/platform/components/ErrorScreen";
 import { captureInviteToken } from "@/platform/invite/invite-token";
 import { initSentry } from "@/platform/telemetry/sentry";
-import { routeTree } from "./routeTree.gen";
+import { routeTree } from "./gen/routeTree.gen";
 
 // Before anything reads the URL: an invitation's token leaves the fragment (design 5.6.3).
 captureInviteToken(window);

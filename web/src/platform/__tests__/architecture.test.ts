@@ -5,9 +5,9 @@ import { describe, expect, it } from "vitest";
 
 // [platform-imports-app] src/platform is template code: apps never edit it, so it must
 // not depend on them. It reads the app only through app-registry.ts.
-const src = resolve(import.meta.dirname, "..");
+const src = resolve(import.meta.dirname, "../..");
 const allowed = "platform/app-registry.ts";
-const self = "platform/architecture.test.ts"; // its fixtures name src/app on purpose
+const self = "platform/__tests__/architecture.test.ts"; // its fixtures name src/app on purpose
 
 const specifiers = (code: string): string[] =>
   [...code.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)["']([^"']+)["']/g)].flatMap((m) =>

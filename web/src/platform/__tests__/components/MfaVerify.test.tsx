@@ -4,8 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Me } from "@/gen/api";
 import { createQueryClient } from "@/platform/api/query-client";
+import { MfaVerify } from "@/platform/components/MfaVerify";
 import { texts } from "@/platform/texts";
-import { MfaVerify } from "./MfaVerify";
 
 const factor = "0190a1b2-0000-7000-8000-0000000000f1";
 const me: Me = {

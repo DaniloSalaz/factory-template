@@ -221,12 +221,12 @@ dir = "web"
 run = [
   "npm ci",
   "npm run lint",
-  # The build generates src/routeTree.gen.ts with the router CLI, then runs tsc -b and
+  # The build generates src/gen/routeTree.gen.ts with the router CLI, then runs tsc -b and
   # vite build. The generated tree must match the commit.
   "npm run build",
   """
-  if ! git diff --quiet -- src/routeTree.gen.ts; then
-    echo "src/routeTree.gen.ts is out of date. Run 'npm run routes' in web/ and commit it." >&2
+  if ! git diff --quiet -- src/gen/routeTree.gen.ts; then
+    echo "src/gen/routeTree.gen.ts is out of date. Run 'npm run routes' in web/ and commit it." >&2
     exit 1
   fi
   """,
