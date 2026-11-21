@@ -149,6 +149,8 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	// Telemetry is outermost, so its span covers the whole request (ADR 0004; the probes
 	// get none).
 	handler := tel.HTTP(httpx.Chain(httpx.WithRouteFallback(mux, logger),
+		// Before Recover, so that a recovered panic reaches Sentry too.
+		httpx.ReportErrors(tel),
 		httpx.RequestID(),
 		httpx.AccessLog(logger, "/healthz", "/readyz"),
 		httpx.Recover(logger),

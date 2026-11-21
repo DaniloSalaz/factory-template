@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/getsentry/sentry-go"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
@@ -33,6 +34,8 @@ type Settings struct {
 	Env     config.Environment
 	Version string
 	Logger  *slog.Logger
+	// SentryTransport replaces Sentry's HTTP transport: only tests set it.
+	SentryTransport sentry.Transport
 }
 
 // Telemetry holds the process's tracer and meter providers. Without an OTLP endpoint
@@ -42,6 +45,7 @@ type Telemetry struct {
 	meters     metric.MeterProvider
 	propagator propagation.TextMapPropagator
 	metrics    *Metrics
+	sentry     *sentry.Hub
 	shutdown   []func(context.Context) error
 }
 
@@ -62,6 +66,12 @@ func New(ctx context.Context, s Settings) (*Telemetry, error) {
 	t, err := NewWith(tracenoop.NewTracerProvider(), metricnoop.NewMeterProvider())
 	if err != nil {
 		return nil, err
+	}
+	if s.Config.SentryDSN != "" {
+		if t.sentry, err = newSentry(s); err != nil {
+			return nil, err
+		}
+		t.shutdown = append(t.shutdown, flushSentry(t.sentry))
 	}
 	if !s.Config.TracesEnabled() && !s.Config.MetricsEnabled() {
 		return t, nil
