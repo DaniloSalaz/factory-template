@@ -1,6 +1,12 @@
 import * as Sentry from "@sentry/react";
 import { describe, expect, it } from "vitest";
-import { initSentry, redactText, scrubBreadcrumb, scrubEvent, stripUrl } from "./sentry";
+import {
+  initSentry,
+  redactText,
+  scrubBreadcrumb,
+  scrubEvent,
+  stripUrl,
+} from "@/platform/telemetry/sentry";
 
 // Values ADR 0004 forbids; none may leave the browser.
 const forbidden = [

@@ -8,20 +8,20 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from './platform/routes/root'
-import { Route as platformRoutesShellRouteImport } from './platform/routes/shell'
-import { Route as platformRoutesInviteRouteImport } from './platform/routes/invite'
-import { Route as platformRoutesLoginRouteImport } from './platform/routes/login'
-import { Route as platformRoutesHomeRouteImport } from './platform/routes/home'
-import { Route as platformRoutesTenantsRouteImport } from './platform/routes/tenants'
-import { Route as platformRoutesTenantRouteImport } from './platform/routes/tenant'
-import { Route as platformRoutesMfaRouteImport } from './platform/routes/mfa'
-import { Route as platformRoutesMfaEnrollRouteImport } from './platform/routes/mfa-enroll'
-import { Route as platformRoutesMfaVerifyRouteImport } from './platform/routes/mfa-verify'
-import { Route as platformRoutesTenantHomeRouteImport } from './platform/routes/tenant-home'
-import { Route as ExampleRouteImport } from './app/routes/example'
-import { Route as platformRoutesInvitationsRouteImport } from './platform/routes/invitations'
-import { Route as platformRoutesMembersRouteImport } from './platform/routes/members'
+import { Route as rootRouteImport } from './../platform/routes/root'
+import { Route as platformRoutesShellRouteImport } from './../platform/routes/shell'
+import { Route as platformRoutesInviteRouteImport } from './../platform/routes/invite'
+import { Route as platformRoutesLoginRouteImport } from './../platform/routes/login'
+import { Route as platformRoutesHomeRouteImport } from './../platform/routes/home'
+import { Route as platformRoutesTenantsRouteImport } from './../platform/routes/tenants'
+import { Route as platformRoutesTenantRouteImport } from './../platform/routes/tenant'
+import { Route as platformRoutesMfaRouteImport } from './../platform/routes/mfa'
+import { Route as platformRoutesMfaEnrollRouteImport } from './../platform/routes/mfa-enroll'
+import { Route as platformRoutesMfaVerifyRouteImport } from './../platform/routes/mfa-verify'
+import { Route as platformRoutesTenantHomeRouteImport } from './../platform/routes/tenant-home'
+import { Route as ExampleRouteImport } from './../app/routes/example'
+import { Route as platformRoutesInvitationsRouteImport } from './../platform/routes/invitations'
+import { Route as platformRoutesMembersRouteImport } from './../platform/routes/members'
 
 const platformRoutesShellRoute = platformRoutesShellRouteImport.update({
   id: '/_shell',

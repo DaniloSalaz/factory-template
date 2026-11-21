@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { getGetCurrentTenantQueryKey, getGetMeQueryKey, getVerifyTOTPMutationKey } from "@/gen/api";
-import { ApiError } from "./problem";
-import { createQueryClient, tenantScopedHash } from "./query-client";
+import { ApiError } from "@/platform/api/problem";
+import { createQueryClient, tenantScopedHash } from "@/platform/api/query-client";
 
 describe("tenantScopedHash", () => {
   it("keeps each tenant's cache of tenant operations apart", () => {

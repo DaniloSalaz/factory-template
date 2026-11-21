@@ -4,10 +4,10 @@ import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Me } from "@/gen/api";
 import { createQueryClient } from "@/platform/api/query-client";
+import { AcceptInvitation } from "@/platform/components/AcceptInvitation";
 import { actionFor } from "@/platform/errors/handle";
 import { inviteTokenKey } from "@/platform/invite/invite-token";
 import { texts } from "@/platform/texts";
-import { AcceptInvitation } from "./AcceptInvitation";
 
 const me: Me = {
   user: { id: "u", email: "ana@example.test", display_name: "Ana" },
