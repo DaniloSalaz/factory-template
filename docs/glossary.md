@@ -9,3 +9,5 @@
 - **Contrato**: `api-spec/openapi.yaml`, fuente de verdad de la API HTTP.
 - **Liveness (`/healthz`)**: el proceso está vivo. **Readiness (`/readyz`)**: puede recibir tráfico (sus dependencias responden).
 - **Problem details**: formato de error HTTP de RFC 9457 (`application/problem+json`).
+
+<!-- PR de prueba de CI: no fusionar. -->
