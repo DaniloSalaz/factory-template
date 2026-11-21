@@ -7,7 +7,14 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["**", "!src/gen", "!dist"]
+    "includes": [
+      "**",
+      "!src/gen",
+      "!src/routeTree.gen.ts",
+      "!dist",
+      "!test-results",
+      "!playwright-report"
+    ]
   },
   "formatter": {
     "enabled": true,
@@ -25,6 +32,9 @@
       "style": {
         "noNonNullAssertion": "error",
         "useImportType": "error"
+      },
+      "complexity": {
+        "useLiteralKeys": "off"
       }
     }
   },
@@ -39,6 +49,11 @@
       "source": {
         "organizeImports": "on"
       }
+    }
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
     }
   }
 }

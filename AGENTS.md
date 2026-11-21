@@ -15,12 +15,14 @@ Plantilla base para SaaS: monolito modular en Go + frontend React. Desarrollador
 | `hooks:install` | Instala el hook de pre-commit (rechaza commits en `main`); una vez por clon |
 | `up` / `down` | Arranca / para Postgres local |
 | `migrate` | Aplica migraciones de `migrations/` con goose |
-| `generate` | sqlc + oapi-codegen + orval |
+| `generate` | sqlc + oapi-codegen + orval (+ la seguridad por ruta del front) |
 | `dev` | Arranca la API en `:8080` |
 | `test` | Tests Go con `-race` (incluye integración con Testcontainers; requiere Docker) |
 | `arch` | Tests de arquitectura (límites entre módulos y fixtures de las reglas de lint) |
 | `lint` / `fmt` | golangci-lint + actionlint + Biome + tsc / formateo |
 | `generate:check` | Regenera y falla si el código generado no coincide con lo commiteado |
+| `web:test` | Tests unitarios del front (Vitest), incluida la regla `[platform-imports-app]` |
+| `web:e2e` | Recorrido en navegador (Playwright) contra la API local; solo local (necesita `up`, `migrate` y `dev`) |
 | `security` | govulncheck + gitleaks + trivy |
 | `ci` | Todo lo que ejecuta el CI, en el mismo orden (ver `docs/runbooks/ci.md`) |
 
@@ -40,7 +42,9 @@ api/internal/modules/<m>/
 api/gen/                  código generado (openapi/<m>, sqlc/<m>, routes)
 api-spec/openapi.yaml     contrato HTTP
 migrations/               migraciones goose (NNNNN_nombre.sql)
-web/src/gen/              cliente TS generado
+web/src/gen/              cliente TS generado (orval) y seguridad por ruta (scripts/gen-route-security.ts)
+web/src/platform/         front de la plantilla: shell, auth, tenant, MFA, errores, fetcher, ui (shadcn)
+web/src/app/              lo propio de cada app: rutas bajo /t/$tenantId, registry.ts, theme.css, brand/
 ```
 Ejemplo vivo: `api/internal/modules/health`.
 
@@ -72,6 +76,15 @@ Ejemplo vivo: `api/internal/modules/health`.
 - Usuario de sistema reservado: `00000000-0000-7000-8000-000000000001` (deshabilitado, sin login). Úsalo solo para trabajos de sistema.
 - Cada cambio va con su test (unitario con fakes de puertos; integración con Testcontainers).
 - Comentarios solo para explicar el porqué, no el qué.
+
+## Reglas del front (`web/`, detalle en `web/README.md`)
+- `web/src/platform` es código de la plantilla y no importa `web/src/app`, salvo su registro en `platform/app-registry.ts` (`[platform-imports-app]`, `mise run web:test`). Una app añade pantallas en `app/routes/`, entradas de navegación en `app/registry.ts` y su marca en `app/theme.css` y `app/brand/`; no edita `platform`.
+- Sin `fetch` a mano: se usa el cliente generado (`web/src/gen/api.ts`) y sus tipos. Sin librerías de formularios ni de validación.
+- Los errores de la API se tratan en un solo sitio (`platform/errors/handle.ts`): `401`, `403 auth.mfa_required`, `auth.mfa_enrollment_required`, `auth.tenant_forbidden` y `429` nunca los decide un componente. Las pantallas muestran el resto por su `code` con `ErrorText`.
+- El tenant actual vive en la URL (`/t/$tenantId`); el fetcher pone `X-Tenant-ID` solo en las operaciones cuyo contrato lo exige. Nada de tenant en estado global ni en `localStorage`, salvo el último usado (solo para redirigir desde `/`).
+- Ocultar acciones según los permisos de `GET /tenant` es solo UX; el servidor decide.
+- Textos en español en `platform/texts.ts` (los de la app, en `app/texts.ts`). Versiones de npm exactas, sin `^`.
+- El secret y el URI de MFA no se guardan en ningún almacenamiento ni se registran.
 
 ## Antes de empezar una tarea
 - Comprueba la rama (`git status -sb`): nunca se trabaja en `main`. Si estás en `main`, o en la rama de un PR ya fusionado, actualiza `main` y crea una rama nueva (`git switch -c <tipo>/<tema>`) antes de tocar nada. El hook de pre-commit (`mise run hooks:install`, una vez por clon) rechaza los commits en `main`; `--no-verify` no se usa para saltárselo.

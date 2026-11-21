@@ -5,11 +5,17 @@ export default defineConfig({
     input: { target: "../api-spec/openapi.yaml" },
     output: {
       target: "src/gen/api.ts",
-      client: "fetch",
+      client: "react-query",
+      httpClient: "fetch",
       mode: "single",
       clean: true,
-      // Prepends VITE_API_BASE_URL to every path (design, section 10).
-      override: { mutator: { path: "src/api/fetcher.ts", name: "apiFetch" } },
+      override: {
+        // Prepends VITE_API_BASE_URL, adds X-Tenant-ID where the contract asks for it and
+        // turns every non-2xx answer into an ApiError (web/README.md).
+        mutator: { path: "src/platform/api/fetcher.ts", name: "apiFetch" },
+        // apiFetch throws on errors, so a call resolves only with a success.
+        fetch: { includeHttpResponseReturnType: false },
+      },
     },
   },
 });

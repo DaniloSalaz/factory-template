@@ -125,9 +125,10 @@ jobs:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
           restore-keys: npm-${{ runner.os }}-
-      # npm ci, Biome, tsc (noEmit is set in tsconfig) and the production build.
-      # There are no web tests yet; add `npm test` to web:check when there are.
+      # npm ci, Biome, tsc (noEmit is set in tsconfig), the production build and the
+      # unit tests. The Playwright journey (web:e2e) is local only for now.
       - run: mise run web:check
+      - run: mise run web:test
 
   docker:
     name: docker

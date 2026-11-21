@@ -1,0 +1,11 @@
+{
+  // Unit tests: the app's options plus Node (the architecture test reads files) and the
+  // jest-dom matchers. Kept apart so that browser code cannot use Node's globals.
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
+    "types": ["vite/client", "node", "@testing-library/jest-dom/vitest"]
+  },
+  "include": ["src"],
+  "exclude": []
+}
