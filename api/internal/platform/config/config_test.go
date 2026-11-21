@@ -72,6 +72,7 @@ func TestLoad_Valid(t *testing.T) {
 		{
 			name: "staging trusts CF-Connecting-IP by default",
 			environ: with(map[string]string{
+				"FRONTEND_ORIGIN": "https://app.example.com", "ALLOWED_ORIGINS": "https://app.example.com",
 				"APP_ENV": "staging", "WORKOS_REDIRECT_URI": "https://api.example.com/auth/callback",
 			}),
 			want: func(c Config) bool { return c.Web.TrustedClientIPHeader == "CF-Connecting-IP" },
@@ -79,6 +80,7 @@ func TestLoad_Valid(t *testing.T) {
 		{
 			name: "production trusts CF-Connecting-IP by default",
 			environ: with(map[string]string{
+				"FRONTEND_ORIGIN": "https://app.example.com", "ALLOWED_ORIGINS": "https://app.example.com",
 				"APP_ENV": "production", "WORKOS_REDIRECT_URI": "https://api.example.com/auth/callback",
 			}),
 			want: func(c Config) bool { return c.Web.TrustedClientIPHeader == "CF-Connecting-IP" },
@@ -102,6 +104,7 @@ func TestLoad_Valid(t *testing.T) {
 		{
 			name: "overrides",
 			environ: with(map[string]string{
+				"FRONTEND_ORIGIN": "https://app.example.com", "ALLOWED_ORIGINS": "https://app.example.com",
 				"APP_ENV": "production", "HTTP_PORT": "9090", "HTTP_WRITE_TIMEOUT": "30s",
 				"LOG_LEVEL": "debug", "LOG_FORMAT": "text", "DATABASE_URL": "postgresql://db.internal/app",
 				"WORKOS_REDIRECT_URI": "https://api.example.com/auth/callback", "TENANT_MAX_PER_USER": "20",
@@ -180,8 +183,38 @@ func TestLoad_Invalid(t *testing.T) {
 			name: "WorkOS values",
 			environ: with(map[string]string{
 				"APP_ENV": "staging", "WORKOS_CLIENT_ID": "wrong", "WORKOS_REDIRECT_URI": "http://api.example.com/auth/callback",
+				"FRONTEND_ORIGIN": "https://app.example.com", "ALLOWED_ORIGINS": "https://app.example.com",
 			}),
 			wantVars: []string{"WORKOS_CLIENT_ID must start with client_", "WORKOS_REDIRECT_URI must use https outside development"},
+		},
+		{
+			name: "every browser-facing URL must be https outside development",
+			environ: with(map[string]string{
+				"APP_ENV": "production", "FRONTEND_ORIGIN": "http://app.example.com",
+				"ALLOWED_ORIGINS": "http://app.example.com", "FRONT_BASE_URL": "http://app.example.com/app",
+				"WORKOS_REDIRECT_URI": "http://app.example.com/auth/callback",
+			}),
+			wantVars: []string{
+				"FRONTEND_ORIGIN must use https outside development", "ALLOWED_ORIGINS must use https outside development",
+				"FRONT_BASE_URL must use https outside development", "WORKOS_REDIRECT_URI must use https outside development",
+			},
+		},
+		{
+			name: "one http origin among the allowed ones is enough to refuse",
+			environ: with(map[string]string{
+				"APP_ENV": "staging", "FRONTEND_ORIGIN": "https://app.example.com",
+				"ALLOWED_ORIGINS":     "https://app.example.com,http://admin.example.com",
+				"WORKOS_REDIRECT_URI": "https://app.example.com/auth/callback",
+			}),
+			wantVars: []string{"ALLOWED_ORIGINS must use https outside development"},
+		},
+		{
+			name: "a default front base url reports its http once, on FRONTEND_ORIGIN",
+			environ: with(map[string]string{
+				"APP_ENV": "staging", "FRONTEND_ORIGIN": "http://app.example.com",
+				"ALLOWED_ORIGINS": "https://app.example.com", "WORKOS_REDIRECT_URI": "https://app.example.com/auth/callback",
+			}),
+			wantVars: []string{"FRONTEND_ORIGIN must use https outside development"},
 		},
 		{
 			name:     "front base url with a fragment",

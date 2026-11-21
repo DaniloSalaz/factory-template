@@ -258,6 +258,13 @@ func (c Config) validate() []*VarError {
 	return errs
 }
 
+// httpsOnly reports whether every URL the browser and the identity provider use must be
+// https: in staging and production. Only development, where the front end runs on
+// http://localhost, allows http; an unknown APP_ENV is already refused on its own.
+func (c Config) httpsOnly() bool { return c.Env == EnvStaging || c.Env == EnvProduction }
+
+func isHTTPS(s string) bool { return strings.HasPrefix(s, "https://") }
+
 func (c Config) validateWeb(add func(v, reason string)) {
 	frontendOK := false
 	switch {
@@ -265,6 +272,8 @@ func (c Config) validateWeb(add func(v, reason string)) {
 		add("FRONTEND_ORIGIN", "is required")
 	case !isOrigin(c.Web.FrontendOrigin):
 		add("FRONTEND_ORIGIN", "must be an origin such as https://app.example.com, without path")
+	case c.httpsOnly() && !isHTTPS(c.Web.FrontendOrigin):
+		add("FRONTEND_ORIGIN", "must use https outside development")
 	default:
 		frontendOK = true
 	}
@@ -274,6 +283,8 @@ func (c Config) validateWeb(add func(v, reason string)) {
 		add("ALLOWED_ORIGINS", "is required")
 	case !all(c.Web.AllowedOrigins, isOrigin):
 		add("ALLOWED_ORIGINS", "must be a comma-separated list of origins, without wildcards or paths")
+	case c.httpsOnly() && !all(c.Web.AllowedOrigins, isHTTPS):
+		add("ALLOWED_ORIGINS", "must use https outside development, every origin")
 	case frontendOK && !slices.Contains(c.Web.AllowedOrigins, c.Web.FrontendOrigin):
 		add("ALLOWED_ORIGINS", "must include FRONTEND_ORIGIN")
 	}
@@ -284,6 +295,9 @@ func (c Config) validateWeb(add func(v, reason string)) {
 	case err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") ||
 		u.User != nil || u.RawQuery != "" || u.Fragment != "" || strings.HasSuffix(u.Path, "/invite"):
 		add("FRONT_BASE_URL", "must be an absolute http(s) URL without credentials, query or fragment")
+	case c.httpsOnly() && u.Scheme != "https" && c.Web.FrontBaseURL != c.Web.FrontendOrigin:
+		// When it is the default (FRONTEND_ORIGIN), that variable's error says it already.
+		add("FRONT_BASE_URL", "must use https outside development")
 	}
 
 	h := c.Web.TrustedClientIPHeader
@@ -323,7 +337,7 @@ func (c Config) validateWorkOS(add func(v, reason string)) {
 		add("WORKOS_REDIRECT_URI", "is required")
 	case err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http"):
 		add("WORKOS_REDIRECT_URI", "must be an absolute http(s) URL")
-	case u.Scheme != "https" && (c.Env == EnvStaging || c.Env == EnvProduction):
+	case c.httpsOnly() && u.Scheme != "https":
 		add("WORKOS_REDIRECT_URI", "must use https outside development")
 	}
 }
