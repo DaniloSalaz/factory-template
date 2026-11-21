@@ -22,7 +22,7 @@ Plantilla base para SaaS: monolito modular en Go + frontend React. Desarrollador
 | `lint` / `fmt` | golangci-lint + actionlint + Biome + tsc / formateo |
 | `generate:check` | Regenera y falla si el código generado no coincide con lo commiteado |
 | `web:test` | Tests unitarios del front (Vitest), incluida la regla `[platform-imports-app]` |
-| `web:e2e` | Recorrido en navegador (Playwright) contra la API local; solo local (necesita `up`, `migrate` y `dev`) |
+| `web:e2e` | Recorrido en navegador (Playwright) contra la API local (necesita `up`, `migrate` y `dev`); en CI lo ejecuta el job `e2e` |
 | `security` | govulncheck + gitleaks + trivy |
 | `ci` | Todo lo que ejecuta el CI, en el mismo orden (ver `docs/runbooks/ci.md`) |
 
@@ -43,7 +43,7 @@ api/gen/                  código generado (openapi/<m>, sqlc/<m>, routes)
 api-spec/openapi.yaml     contrato HTTP
 migrations/               migraciones goose (NNNNN_nombre.sql)
 web/src/gen/              cliente TS generado (orval) y seguridad por ruta (scripts/gen-route-security.ts)
-web/src/platform/         front de la plantilla: shell, auth, tenant, MFA, errores, fetcher, ui (shadcn)
+web/src/platform/         front de la plantilla: shell, auth, tenant, MFA, miembros, invitaciones, errores, fetcher, ui (shadcn)
 web/src/app/              lo propio de cada app: rutas bajo /t/$tenantId, registry.ts, theme.css, brand/
 ```
 Ejemplo vivo: `api/internal/modules/health`.
@@ -87,7 +87,8 @@ Ejemplo vivo: `api/internal/modules/health`.
 - El secret y el URI de MFA no se guardan en ningún almacenamiento ni se registran.
 
 ## Antes de empezar una tarea
-- Comprueba la rama (`git status -sb`): nunca se trabaja en `main`. Si estás en `main`, o en la rama de un PR ya fusionado, actualiza `main` y crea una rama nueva (`git switch -c <tipo>/<tema>`) antes de tocar nada. El hook de pre-commit (`mise run hooks:install`, una vez por clon) rechaza los commits en `main`; `--no-verify` no se usa para saltárselo.
+- Comprueba la rama (`git status -sb`): nunca se trabaja en `main`. Si estás en `main`, o en la rama de un PR ya fusionado, actualiza `main` y crea una rama nueva (`git switch -c <tipo>/<tema>`) antes de tocar nada. El hook de pre-commit (`mise run hooks:install`, una vez por clon) rechaza los commits en `main`.
+- Nunca te saltes un hook ni una comprobación: ni con `--no-verify` ni creando commits por debajo (`git commit-tree`, `update-ref`…) ni desactivándolos. Si uno impide algo legítimo, para y pregunta.
 
 ## Antes de dar una tarea por terminada
 - `mise run ci` en verde (necesita Docker). Es lo mismo que exige el CI para fusionar en `main`.

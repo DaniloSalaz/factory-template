@@ -125,10 +125,100 @@ jobs:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
           restore-keys: npm-${{ runner.os }}-
-      # npm ci, Biome, tsc (noEmit is set in tsconfig), the production build and the
-      # unit tests. The Playwright journey (web:e2e) is local only for now.
+      # npm ci, Biome, the route tree, tsc (noEmit is set in tsconfig), the production
+      # build and the unit tests. The Playwright journey runs in the e2e job.
       - run: mise run web:check
       - run: mise run web:test
+
+  # The Playwright journey (web/e2e) against the real API: Postgres as a service, the
+  # migrations, the API and Vite. Sessions are seeded with SQL and the MFA screens answer
+  # with simulated responses, so WorkOS is never called: the API key is a placeholder that
+  # start-up only checks is set. See docs/runbooks/ci.md.
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: factory
+          POSTGRES_PASSWORD: factory
+          POSTGRES_DB: factory
+          APP_OWNER_PASSWORD: app_owner
+          APP_RUNTIME_PASSWORD: app_runtime
+          APP_ADMIN_PASSWORD: app_admin
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U factory -d factory"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: go node aqua:pressly/goose
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.npm
+          key: e2e-${{ runner.os }}-${{ hashFiles('api/go.sum', 'web/package-lock.json') }}
+          restore-keys: e2e-${{ runner.os }}-
+      # A service starts before the checkout, so it cannot mount infra/db like
+      # compose.yaml does: the same bootstrap is copied in and run.
+      - name: Bootstrap the database roles
+        env:
+          PG: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$PG" mkdir -p /bootstrap
+          docker cp infra/db/bootstrap.sql "$PG:/bootstrap/bootstrap.sql"
+          docker cp infra/db/initdb.sh "$PG:/bootstrap/initdb.sh"
+          docker exec "$PG" bash /bootstrap/initdb.sh
+      - run: mise run migrate
+      - name: Start the API
+        env:
+          WORKOS_API_KEY: sk_test_ci_placeholder_never_sent
+        run: |
+          cd api
+          go build -o "$RUNNER_TEMP/api" ./cmd/api
+          mise exec -- "$RUNNER_TEMP/api" > "$RUNNER_TEMP/api.log" 2>&1 &
+          curl --silent --show-error --fail --retry 30 --retry-delay 1 --retry-all-errors \
+            http://localhost:8080/readyz
+      - name: Install the browser
+        working-directory: web
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      # Playwright starts Vite (playwright.config.ts).
+      - name: Playwright
+        working-directory: web
+        env:
+          E2E_PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: npm run e2e
+      - name: Upload screenshots and traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-screenshots-and-traces
+          path: |
+            web/e2e-screenshots/
+            web/test-results/
+          if-no-files-found: warn
+          retention-days: 14
+      # The development invitation sender writes links to this log: tokens of this
+      # throwaway database, uploaded only to debug a failure.
+      - name: Upload the API log
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-api-log
+          path: ${{ runner.temp }}/api.log
+          retention-days: 7
 
   docker:
     name: docker
@@ -149,7 +239,7 @@ jobs:
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [lint, test, generate, security, web, docker]
+    needs: [lint, test, generate, security, web, e2e, docker]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
