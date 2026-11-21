@@ -43,7 +43,6 @@ func allowedKeys() []attribute.Key {
 	}
 }
 
-// keySet is a set of attribute keys.
 type keySet map[attribute.Key]struct{}
 
 func allowedSet() keySet {

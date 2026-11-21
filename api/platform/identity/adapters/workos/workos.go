@@ -74,10 +74,9 @@ func New(cfg Config, logger *slog.Logger) *Provider {
 	return &Provider{um: client.UserManagement(), mfa: client.MultiFactorAuth(), redirectURI: cfg.RedirectURI, tracers: cfg.Tracers, logger: logger}
 }
 
-// Name implements usecases.IdentityProvider.
 func (*Provider) Name() string { return ProviderName }
 
-// AuthorizationURL implements usecases.IdentityProvider. max_age=0 forces a fresh
+// Max_age=0 forces a fresh
 // authentication even when AuthKit has a session, so auth_time is always the time of
 // this login (design, 5.2 and 13); WorkOS supports it only with provider=authkit, and
 // SDK v7 has no field for it.
@@ -98,7 +97,6 @@ func (p *Provider) AuthorizationURL(state, codeChallenge string) (string, error)
 	return u.String(), nil
 }
 
-// ExchangeCode implements usecases.IdentityProvider.
 func (p *Provider) ExchangeCode(ctx context.Context, code, codeVerifier string) (_ usecases.Authentication, err error) {
 	ctx, end := telemetry.ClientSpan(ctx, p.tracers, "workos", "authenticate_with_code")
 	defer func() { end(err) }()
@@ -142,7 +140,7 @@ func (p *Provider) ExchangeCode(ctx context.Context, code, codeVerifier string) 
 	}, nil
 }
 
-// LogoutURL implements usecases.IdentityProvider. Without return_to, WorkOS sends the
+// Without return_to, WorkOS sends the
 // browser to the dashboard's default Sign-out URI.
 func (p *Provider) LogoutURL(providerSessionID string) (string, error) {
 	if providerSessionID == "" {
@@ -151,7 +149,7 @@ func (p *Provider) LogoutURL(providerSessionID string) (string, error) {
 	return p.um.GetLogoutURL(&sdk.UserManagementGetLogoutURLParams{SessionID: providerSessionID}), nil
 }
 
-// EnrollTOTP implements usecases.MFAProvider. Issuer and account name are left to WorkOS: its
+// Issuer and account name are left to WorkOS: its
 // team name and the user's email.
 func (p *Provider) EnrollTOTP(ctx context.Context, subject string) (_ usecases.TOTPEnrollment, err error) {
 	ctx, end := telemetry.ClientSpan(ctx, p.tracers, "workos", "create_auth_factor")
@@ -170,7 +168,6 @@ func (p *Provider) EnrollTOTP(ctx context.Context, subject string) (_ usecases.T
 	}, nil
 }
 
-// Challenge implements usecases.MFAProvider.
 func (p *Provider) Challenge(ctx context.Context, providerFactorID string) (_ string, err error) {
 	ctx, end := telemetry.ClientSpan(ctx, p.tracers, "workos", "challenge_factor")
 	defer func() { end(err) }()
@@ -184,7 +181,7 @@ func (p *Provider) Challenge(ctx context.Context, providerFactorID string) (_ st
 	return c.ID, nil
 }
 
-// Verify implements usecases.MFAProvider: only valid: true counts.
+// Only valid: true counts.
 func (p *Provider) Verify(ctx context.Context, providerChallengeID, code string) (_ bool, err error) {
 	ctx, end := telemetry.ClientSpan(ctx, p.tracers, "workos", "verify_challenge")
 	defer func() { end(err) }()
@@ -195,7 +192,7 @@ func (p *Provider) Verify(ctx context.Context, providerChallengeID, code string)
 	return res != nil && res.Valid, nil
 }
 
-// DeleteFactor implements usecases.MFAProvider. A factor WorkOS no longer has is already gone.
+// A factor WorkOS no longer has is already gone.
 func (p *Provider) DeleteFactor(ctx context.Context, providerFactorID string) (err error) {
 	ctx, end := telemetry.ClientSpan(ctx, p.tracers, "workos", "delete_factor")
 	defer func() { end(err) }()

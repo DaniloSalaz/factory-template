@@ -35,6 +35,11 @@ type Provider struct {
 	failNext      bool              // see FailNextMFACall
 }
 
+var (
+	_ usecases.IdentityProvider = (*Provider)(nil)
+	_ usecases.MFAProvider      = (*Provider)(nil)
+)
+
 type pending struct {
 	state string
 	authn usecases.Authentication
@@ -94,7 +99,7 @@ func (p *Provider) id(prefix string) string {
 	return fmt.Sprintf("%s_%d_%s", prefix, p.nextID, hex.EncodeToString(b))
 }
 
-// EnrollTOTP implements usecases.MFAProvider. The new factor accepts "000000" until SetCode.
+// The new factor accepts "000000" until SetCode.
 func (p *Provider) EnrollTOTP(_ context.Context, subject string) (usecases.TOTPEnrollment, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -109,7 +114,6 @@ func (p *Provider) EnrollTOTP(_ context.Context, subject string) (usecases.TOTPE
 	}, nil
 }
 
-// Challenge implements usecases.MFAProvider.
 func (p *Provider) Challenge(_ context.Context, providerFactorID string) (string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -124,7 +128,6 @@ func (p *Provider) Challenge(_ context.Context, providerFactorID string) (string
 	return c, nil
 }
 
-// Verify implements usecases.MFAProvider.
 func (p *Provider) Verify(_ context.Context, providerChallengeID, code string) (bool, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -139,7 +142,6 @@ func (p *Provider) Verify(_ context.Context, providerChallengeID, code string) (
 	return exists && p.factorCode[f] == code, nil
 }
 
-// DeleteFactor implements usecases.MFAProvider.
 func (p *Provider) DeleteFactor(_ context.Context, providerFactorID string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -150,10 +152,9 @@ func (p *Provider) DeleteFactor(_ context.Context, providerFactorID string) erro
 	return nil
 }
 
-// Name implements usecases.IdentityProvider.
 func (*Provider) Name() string { return "fake" }
 
-// AuthorizationURL implements usecases.IdentityProvider. The URL carries the state, the
+// The URL carries the state, the
 // challenge and max_age=0, like the real one.
 func (p *Provider) AuthorizationURL(state, codeChallenge string) (string, error) {
 	p.mu.Lock()
@@ -171,7 +172,7 @@ func (p *Provider) Authenticate(state, code string, authn usecases.Authenticatio
 	p.codes[code] = pending{state: state, authn: authn}
 }
 
-// ExchangeCode implements usecases.IdentityProvider. Codes are single-use.
+// Codes are single-use.
 func (p *Provider) ExchangeCode(_ context.Context, code, codeVerifier string) (usecases.Authentication, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -183,7 +184,6 @@ func (p *Provider) ExchangeCode(_ context.Context, code, codeVerifier string) (u
 	return pend.authn, nil
 }
 
-// LogoutURL implements usecases.IdentityProvider.
 func (*Provider) LogoutURL(providerSessionID string) (string, error) {
 	return "https://idp.test/logout?" + url.Values{"session_id": {providerSessionID}}.Encode(), nil
 }

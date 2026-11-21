@@ -43,7 +43,7 @@ func New(cfg config.SMTP, rootCAs *x509.CertPool, tracers trace.TracerProvider) 
 	return &Sender{cfg: cfg, rootCAs: rootCAs, html: html, tracers: tracers}, nil
 }
 
-// Send implements usecases.InvitationSender. The link travels only in the message body: no
+// The link travels only in the message body: no
 // error it returns names the link, the token or the recipient.
 func (s *Sender) Send(ctx context.Context, msg usecases.InvitationMessage) (err error) {
 	ctx, end := telemetry.ClientSpan(ctx, s.tracers, "smtp", "send")

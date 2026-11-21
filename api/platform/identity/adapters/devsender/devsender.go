@@ -32,7 +32,7 @@ func New(env config.Environment, logger *slog.Logger) (*Sender, error) {
 	return &Sender{logger: logger}, nil
 }
 
-// Send implements usecases.InvitationSender. The email stays masked (pii.Email); the link is
+// The email stays masked (pii.Email); the link is
 // revealed on purpose: reading it from the log is how invitations work in development.
 func (s *Sender) Send(ctx context.Context, msg usecases.InvitationMessage) error {
 	s.logger.InfoContext(ctx, LogMessage,

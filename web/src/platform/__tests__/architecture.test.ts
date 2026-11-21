@@ -44,8 +44,7 @@ function filesUnder(dir: string): string[] {
 describe("[platform-imports-app]", () => {
   it("platform imports src/app only in app-registry.ts", () => {
     const files = filesUnder("platform").filter((f) => f !== self);
-    // An empty list would pass without looking at anything (src resolved wrong, say after
-    // moving this test again).
+    // An empty list would pass without looking at anything (src resolved wrong).
     expect(files.length, "no file under src/platform: is src right?").toBeGreaterThan(0);
     const offenders = files.flatMap((f) =>
       appImports(f, readFileSync(join(src, f), "utf8")).map((s) => `${f}: ${s}`),

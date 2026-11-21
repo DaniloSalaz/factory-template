@@ -13,7 +13,7 @@ import (
 )
 
 // Behavior tests: SQL run as app_runtime, the role the application uses, with the
-// variables set the way WithTenantTx, WithUserTx and WithAnonTx will set them
+// variables set the way WithTenantTx, WithUserTx and WithAnonTx set them
 // (set_config(..., true), so they last only for the transaction). Fixtures are created
 // with the superuser, outside RLS, and every test uses its own tenants and users.
 

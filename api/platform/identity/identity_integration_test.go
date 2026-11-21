@@ -1122,8 +1122,7 @@ func (e *env) logRecords(msg string) []map[string]any {
 	return out
 }
 
-// tenant creates an active tenant as the superuser (POST /tenants arrives in step 5)
-// and returns its id.
+// tenant creates an active tenant as the superuser and returns its id.
 func (e *env) tenant() string {
 	e.t.Helper()
 	seq.mu.Lock()

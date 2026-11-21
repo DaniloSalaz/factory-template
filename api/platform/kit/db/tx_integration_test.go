@@ -127,7 +127,7 @@ func (f fixtures) document(tenant, caseID string) string {
 // Helpers
 // ----------------------------------------------------------------------------------
 
-// principalCtx is what the session and tenant middlewares will leave in the context: a
+// principalCtx is what the session and tenant middlewares leave in the context: a
 // User and the Principal of that same user.
 func principalCtx(t *testing.T, user, tenant string, perms ...authctx.Permission) context.Context {
 	t.Helper()

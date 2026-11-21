@@ -18,7 +18,6 @@ import (
 
 var _ identityapi.StrictServerInterface = (*Handler)(nil)
 
-// Handler implements the generated strict server interface.
 type Handler struct {
 	login       *usecases.Login
 	sessions    *usecases.Sessions
