@@ -21,13 +21,44 @@ env:
   MISE_VERSION: 2026.11.10
 
 jobs:
-  image:
-    name: image
+  # A push that only changed documentation builds nothing new. CI already decided that for
+  # this commit: with ci-ok green, `docker` is skipped only when `changes` said code=false.
+  # The workflow_run payload has no `before`, so the range is not recomputed here. When the
+  # answer is unknown (API error, job missing), it publishes.
+  decide:
+    name: decide
     # CI also runs on pull requests; only a push to main that passed every job publishes.
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read # the jobs of the CI run
+    outputs:
+      publish: ${{ steps.decide.outputs.publish }}
+    steps:
+      - name: Was the CI docker job skipped?
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          docker=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" \
+            --jq '.jobs[] | select(.name == "docker") | .conclusion' || echo "unknown")
+          echo "CI docker job: ${docker:-missing}"
+          if [ "$docker" = "skipped" ]; then
+            echo "Documentation only: nothing to publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  image:
+    name: image
+    needs: decide
+    if: needs.decide.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
