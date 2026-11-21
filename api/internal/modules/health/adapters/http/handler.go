@@ -15,16 +15,18 @@ var _ healthapi.StrictServerInterface = (*Handler)(nil)
 // written: the strict server hands them to httpx.WriteProblem.
 type Handler struct {
 	readiness *app.CheckReadiness
+	version   string
 }
 
-// NewHandler builds a Handler.
-func NewHandler(readiness *app.CheckReadiness) *Handler {
-	return &Handler{readiness: readiness}
+// NewHandler builds a Handler; version is the running build.
+func NewHandler(readiness *app.CheckReadiness, version string) *Handler {
+	return &Handler{readiness: readiness, version: version}
 }
 
-// GetHealthz reports that the process is alive; it deliberately checks no dependencies.
+// GetHealthz reports that the process is alive, and which build it runs; it deliberately
+// checks no dependencies.
 func (h *Handler) GetHealthz(context.Context, healthapi.GetHealthzRequestObject) (healthapi.GetHealthzResponseObject, error) {
-	return healthapi.GetHealthz200JSONResponse{Status: healthapi.Ok}, nil
+	return healthapi.GetHealthz200JSONResponse{Status: healthapi.LivenessStatusOk, Version: h.version}, nil
 }
 
 // GetReadyz reports whether the service and its dependencies can take traffic.
@@ -32,5 +34,5 @@ func (h *Handler) GetReadyz(ctx context.Context, _ healthapi.GetReadyzRequestObj
 	if err := h.readiness.Execute(ctx); err != nil {
 		return nil, fmt.Errorf("check readiness: %w", err)
 	}
-	return healthapi.GetReadyz200JSONResponse{Status: healthapi.Ok}, nil
+	return healthapi.GetReadyz200JSONResponse{Status: healthapi.StatusStatusOk}, nil
 }

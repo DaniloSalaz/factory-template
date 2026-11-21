@@ -51,6 +51,20 @@ const (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 
+	// `api migrate` applies the embedded migrations and exits; without arguments, the
+	// HTTP server.
+	switch args := os.Args[1:]; {
+	case len(args) == 0:
+	case len(args) == 1 && args[0] == "migrate":
+		code := migrateCommand(ctx)
+		stop()
+		os.Exit(code)
+	default:
+		fmt.Fprintln(os.Stderr, "usage: api [migrate]")
+		stop()
+		os.Exit(2)
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		// The configured logger needs the config, so this one error uses a plain JSON logger.
@@ -58,7 +72,7 @@ func main() {
 		stop()
 		os.Exit(1)
 	}
-	logger := logx.New(os.Stdout, cfg.Log).With(slog.String("env", string(cfg.Env)))
+	logger := logx.New(os.Stdout, cfg.Log).With(slog.String("env", string(cfg.Env)), slog.String("version", version()))
 
 	if err := run(ctx, cfg, logger); err != nil {
 		logger.ErrorContext(ctx, "api stopped with error", slog.Any("error", err))
@@ -84,9 +98,8 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 	defer pool.Close()
 
-	// Only a development sender exists: outside development the API does not start
-	// until real email arrives with the deployment (design, 5.6.6).
-	sender, err := identity.NewDevInvitationSender(cfg.Env, logger)
+	// Email by SMTP; only development may log the links instead (design, 5.6.7).
+	sender, err := identity.NewInvitationSender(cfg.Env, cfg.SMTP, logger)
 	if err != nil {
 		return fmt.Errorf("invitation sender: %w", err)
 	}
@@ -108,7 +121,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	idm.CheckRolesInUse(ctx)
 
 	mux := http.NewServeMux()
-	health.New(health.Deps{DB: pool, Logger: logger}).Register(mux)
+	health.New(health.Deps{DB: pool, Logger: logger, Version: version()}).Register(mux)
 	idm.Register(mux)
 
 	handler := httpx.Chain(httpx.WithRouteFallback(mux, logger),

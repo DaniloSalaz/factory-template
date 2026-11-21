@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/mail"
 	"net/url"
 	"os"
 	"reflect"
@@ -61,6 +62,7 @@ type Config struct {
 	Auth    Auth
 	WorkOS  WorkOS
 	Tenancy Tenancy
+	SMTP    SMTP
 }
 
 // HTTP configures the HTTP server.
@@ -128,6 +130,39 @@ type WorkOS struct {
 	RedirectURI string     `env:"WORKOS_REDIRECT_URI"`
 }
 
+// SMTPTLS is how the SMTP connection is encrypted. There is no plain-text mode.
+type SMTPTLS string
+
+// Supported SMTP TLS modes.
+const (
+	// SMTPStartTLS upgrades a plain connection (usually port 587) and fails if the server
+	// does not offer STARTTLS.
+	SMTPStartTLS SMTPTLS = "starttls"
+	// SMTPImplicitTLS speaks TLS from the first byte (usually port 465).
+	SMTPImplicitTLS SMTPTLS = "implicit"
+)
+
+// SMTP configures the invitation email (design, 5.6.7). It is required outside
+// development; in development, without SMTP_HOST, invitation links go to the log.
+type SMTP struct {
+	Host     string     `env:"SMTP_HOST"`
+	SMTPPort int        `env:"SMTP_PORT"` // not Port: field names are unique across Config
+	Username string     `env:"SMTP_USERNAME"`
+	Password pii.Secret `env:"SMTP_PASSWORD"`
+	// From is the sender, an address of a domain with SPF, DKIM and DMARC
+	// (docs/runbooks/email.md), optionally with a display name: "Acme <no-reply@acme.com>".
+	From string  `env:"SMTP_FROM"`
+	TLS  SMTPTLS `env:"SMTP_TLS"     envDefault:"starttls"`
+	// Timeout bounds the connection and each SMTP command.
+	Timeout time.Duration `env:"SMTP_TIMEOUT" envDefault:"10s"`
+	// TLSSkipVerify accepts any server certificate: only in development, for Mailpit's
+	// self-signed one. The connection is still encrypted.
+	TLSSkipVerify bool `env:"SMTP_TLS_SKIP_VERIFY"`
+}
+
+// Enabled reports whether invitations go by SMTP.
+func (s SMTP) Enabled() bool { return s.Host != "" }
+
 // DefaultDeployedClientIPHeader is the client IP header in staging and production, where
 // the API is reachable only through Cloudflare Tunnel (design, section 3). Without it,
 // every request would carry the tunnel's address: one rate-limit quota for everyone and
@@ -154,7 +189,7 @@ func load(environ map[string]string) (Config, error) {
 	reported := map[string]bool{}
 
 	if err := env.ParseWithOptions(&cfg, env.Options{Environment: environ}); err != nil {
-		for _, e := range sanitizeParseError(err) {
+		for _, e := range sanitizeParseError(err, reflect.TypeFor[Config]()) {
 			errs = append(errs, e)
 			reported[e.Var] = true
 		}
@@ -252,11 +287,19 @@ func (c Config) validate() []*VarError {
 	c.validateWeb(add)
 	c.validateAuth(add)
 	c.validateWorkOS(add)
+	c.validateSMTP(add)
 	if n := c.Tenancy.MaxTenantsPerUser; n < 1 || n > maxTenantsPerUserCeiling {
 		add("TENANT_MAX_PER_USER", fmt.Sprintf("must be between 1 and %d", maxTenantsPerUserCeiling))
 	}
 	return errs
 }
+
+// httpsOnly reports whether every URL the browser and the identity provider use must be
+// https: in staging and production. Only development, where the front end runs on
+// http://localhost, allows http; an unknown APP_ENV is already refused on its own.
+func (c Config) httpsOnly() bool { return c.Env == EnvStaging || c.Env == EnvProduction }
+
+func isHTTPS(s string) bool { return strings.HasPrefix(s, "https://") }
 
 func (c Config) validateWeb(add func(v, reason string)) {
 	frontendOK := false
@@ -265,6 +308,8 @@ func (c Config) validateWeb(add func(v, reason string)) {
 		add("FRONTEND_ORIGIN", "is required")
 	case !isOrigin(c.Web.FrontendOrigin):
 		add("FRONTEND_ORIGIN", "must be an origin such as https://app.example.com, without path")
+	case c.httpsOnly() && !isHTTPS(c.Web.FrontendOrigin):
+		add("FRONTEND_ORIGIN", "must use https outside development")
 	default:
 		frontendOK = true
 	}
@@ -274,6 +319,8 @@ func (c Config) validateWeb(add func(v, reason string)) {
 		add("ALLOWED_ORIGINS", "is required")
 	case !all(c.Web.AllowedOrigins, isOrigin):
 		add("ALLOWED_ORIGINS", "must be a comma-separated list of origins, without wildcards or paths")
+	case c.httpsOnly() && !all(c.Web.AllowedOrigins, isHTTPS):
+		add("ALLOWED_ORIGINS", "must use https outside development, every origin")
 	case frontendOK && !slices.Contains(c.Web.AllowedOrigins, c.Web.FrontendOrigin):
 		add("ALLOWED_ORIGINS", "must include FRONTEND_ORIGIN")
 	}
@@ -284,6 +331,9 @@ func (c Config) validateWeb(add func(v, reason string)) {
 	case err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") ||
 		u.User != nil || u.RawQuery != "" || u.Fragment != "" || strings.HasSuffix(u.Path, "/invite"):
 		add("FRONT_BASE_URL", "must be an absolute http(s) URL without credentials, query or fragment")
+	case c.httpsOnly() && u.Scheme != "https" && c.Web.FrontBaseURL != c.Web.FrontendOrigin:
+		// When it is the default (FRONTEND_ORIGIN), that variable's error says it already.
+		add("FRONT_BASE_URL", "must use https outside development")
 	}
 
 	h := c.Web.TrustedClientIPHeader
@@ -323,8 +373,43 @@ func (c Config) validateWorkOS(add func(v, reason string)) {
 		add("WORKOS_REDIRECT_URI", "is required")
 	case err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http"):
 		add("WORKOS_REDIRECT_URI", "must be an absolute http(s) URL")
-	case u.Scheme != "https" && (c.Env == EnvStaging || c.Env == EnvProduction):
+	case c.httpsOnly() && u.Scheme != "https":
 		add("WORKOS_REDIRECT_URI", "must use https outside development")
+	}
+}
+
+func (c Config) validateSMTP(add func(v, reason string)) {
+	s := c.SMTP
+	if s.TLS != SMTPStartTLS && s.TLS != SMTPImplicitTLS {
+		add("SMTP_TLS", "must be one of starttls, implicit")
+	}
+	if s.TLSSkipVerify && c.Env != EnvDevelopment {
+		add("SMTP_TLS_SKIP_VERIFY", "is only allowed in development")
+	}
+	if !s.Enabled() {
+		if c.Env != EnvDevelopment && c.Env.Valid() {
+			// The development adapter logs working tokens: elsewhere, email is the only way.
+			add("SMTP_HOST", "is required outside development")
+		}
+		return
+	}
+	if strings.ContainsAny(s.Host, "/: ") {
+		add("SMTP_HOST", "must be a host name, without scheme or port")
+	}
+	if s.SMTPPort < 1 || s.SMTPPort > 65535 {
+		add("SMTP_PORT", "must be between 1 and 65535")
+	}
+	if addr, err := mail.ParseAddress(s.From); s.From == "" || err != nil || addr.Address == "" {
+		add("SMTP_FROM", "must be an email address, optionally with a name: Name <address>")
+	}
+	if s.Timeout <= 0 {
+		add("SMTP_TIMEOUT", "must be greater than zero")
+	}
+	switch {
+	case (s.Username == "") != (s.Password == ""):
+		add("SMTP_USERNAME", "and SMTP_PASSWORD go together")
+	case s.Username == "" && c.Env != EnvDevelopment:
+		add("SMTP_USERNAME", "and SMTP_PASSWORD are required outside development")
 	}
 }
 
@@ -365,15 +450,16 @@ func all[T any](xs []T, pred func(T) bool) bool {
 }
 
 // sanitizeParseError turns caarlos0/env errors into VarErrors using only their typed
-// fields. ParseError.Err is never used: its text can contain the raw value.
-func sanitizeParseError(err error) []*VarError {
+// fields; t is the struct that was parsed. ParseError.Err is never used: its text can
+// contain the raw value.
+func sanitizeParseError(err error, t reflect.Type) []*VarError {
 	list := []error{err}
 	var agg env.AggregateError
 	if errors.As(err, &agg) {
 		list = agg.Errors
 	}
 
-	keys := envKeysByField(reflect.TypeFor[Config]())
+	keys := envKeysByField(t)
 	out := make([]*VarError, 0, len(list))
 	for _, e := range list {
 		var (
@@ -439,11 +525,13 @@ func (c Config) String() string {
 	return fmt.Sprintf(
 		"Config{Env:%s HTTP:{Port:%d ReadHeaderTimeout:%s ReadTimeout:%s WriteTimeout:%s IdleTimeout:%s ShutdownTimeout:%s MaxHeaderBytes:%d MaxBodyBytes:%d} DB:{URL:%s} Log:{Level:%s Format:%s} "+
 			"Web:{FrontendOrigin:%s FrontBaseURL:%s AllowedOrigins:%v TrustedClientIPHeader:%s} Auth:{SessionIdleTTL:%s SessionAbsoluteTTL:%s} "+
-			"WorkOS:{ClientID:%s APIKey:%s RedirectURI:%s} Tenancy:{MaxTenantsPerUser:%d}}",
+			"WorkOS:{ClientID:%s APIKey:%s RedirectURI:%s} Tenancy:{MaxTenantsPerUser:%d} "+
+			"SMTP:{Host:%s Port:%d Username:%s Password:%s From:%s TLS:%s Timeout:%s TLSSkipVerify:%t}}",
 		c.Env, c.HTTP.Port, c.HTTP.ReadHeaderTimeout, c.HTTP.ReadTimeout, c.HTTP.WriteTimeout,
 		c.HTTP.IdleTimeout, c.HTTP.ShutdownTimeout, c.HTTP.MaxHeaderBytes, c.HTTP.MaxBodyBytes, c.DB.URL, c.Log.Level, c.Log.Format,
 		c.Web.FrontendOrigin, c.Web.FrontBaseURL, c.Web.AllowedOrigins, c.Web.TrustedClientIPHeader, c.Auth.SessionIdleTTL, c.Auth.SessionAbsoluteTTL,
 		c.WorkOS.ClientID, c.WorkOS.APIKey, c.WorkOS.RedirectURI, c.Tenancy.MaxTenantsPerUser,
+		c.SMTP.Host, c.SMTP.SMTPPort, c.SMTP.Username, c.SMTP.Password, c.SMTP.From, c.SMTP.TLS, c.SMTP.Timeout, c.SMTP.TLSSkipVerify,
 	)
 }
 
@@ -482,7 +570,67 @@ func (c Config) LogValue() slog.Value {
 			slog.String("redirect_uri", c.WorkOS.RedirectURI),
 		),
 		slog.Group("tenancy", slog.Int("max_tenants_per_user", c.Tenancy.MaxTenantsPerUser)),
+		slog.Group("smtp",
+			slog.String("host", c.SMTP.Host),
+			slog.Int("port", c.SMTP.SMTPPort),
+			slog.String("username", c.SMTP.Username),
+			slog.Any("password", c.SMTP.Password),
+			slog.String("from", c.SMTP.From),
+			slog.String("tls", string(c.SMTP.TLS)),
+			slog.Duration("timeout", c.SMTP.Timeout),
+			slog.Bool("tls_skip_verify", c.SMTP.TLSSkipVerify),
+		),
 	)
+}
+
+// Migrate is the configuration of `api migrate`: only what applying the migrations
+// needs, so a deployment can run it with the owner's credentials and nothing else.
+type Migrate struct {
+	Env Environment `env:"APP_ENV"`
+	// URL is app_owner's connection: migrations own the schema (docs/runbooks/database.md).
+	URL DatabaseURL `env:"MIGRATIONS_DATABASE_URL"`
+	Log Log
+}
+
+// LoadMigrate reads and validates the configuration of `api migrate`.
+func LoadMigrate() (Migrate, error) {
+	return loadMigrate(env.ToMap(os.Environ()))
+}
+
+func loadMigrate(environ map[string]string) (Migrate, error) {
+	var cfg Migrate
+	var errs []error
+	reported := map[string]bool{}
+	if err := env.ParseWithOptions(&cfg, env.Options{Environment: environ}); err != nil {
+		for _, e := range sanitizeParseError(err, reflect.TypeFor[Migrate]()) {
+			errs = append(errs, e)
+			reported[e.Var] = true
+		}
+	}
+	add := func(v, reason string) {
+		if !reported[v] {
+			errs = append(errs, &VarError{Var: v, Reason: reason})
+		}
+	}
+	switch {
+	case cfg.Env == "":
+		add("APP_ENV", "is required")
+	case !cfg.Env.Valid():
+		add("APP_ENV", "must be one of development, staging, production")
+	}
+	switch {
+	case cfg.URL == "":
+		add("MIGRATIONS_DATABASE_URL", "is required")
+	case !cfg.URL.valid():
+		add("MIGRATIONS_DATABASE_URL", "must be a postgres:// or postgresql:// URL with a host")
+	}
+	if !cfg.Log.Format.Valid() {
+		add("LOG_FORMAT", "must be one of json, text")
+	}
+	if len(errs) > 0 {
+		return Migrate{}, fmt.Errorf("invalid configuration: %w", errors.Join(errs...))
+	}
+	return cfg, nil
 }
 
 // DatabaseURL is a connection URL that hides its credentials and query when printed.

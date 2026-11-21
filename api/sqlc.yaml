@@ -1,7 +1,7 @@
 version: "2"
 sql:
   - engine: postgresql
-    schema: ../migrations
+    schema: migrations
     queries: internal/modules/health/queries
     gen:
       go:
@@ -13,7 +13,7 @@ sql:
         # queries use, so module code never depends on another module's models.
         omit_unused_structs: true
   - engine: postgresql
-    schema: ../migrations
+    schema: migrations
     queries: internal/modules/identity/queries
     gen:
       go:

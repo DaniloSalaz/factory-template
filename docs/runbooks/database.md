@@ -66,3 +66,17 @@ su migración dice quién la usa y cómo. En la misma migración que crea la tab
 
 Las funciones sí tienen un default: `00001_init.sql` revoca el `EXECUTE` que Postgres
 concede a `PUBLIC` en cada función nueva. Cada función se concede explícitamente.
+
+## Migraciones
+
+Viven en `api/migrations/` (`NNNNN_nombre.sql`) y van **dentro del binario** (`go:embed`).
+`api migrate` aplica las pendientes con `MIGRATIONS_DATABASE_URL` (`app_owner`) y nada más
+de la configuración de la API; no arranca el servidor y sale con código distinto de 0 si
+falla. `mise run migrate` ejecuta lo mismo en local (`go run ./cmd/api migrate`), y los
+tests de integración (`dbtest`) aplican las mismas migraciones embebidas. Una nueva:
+
+```sh
+goose -dir api/migrations create <nombre> sql
+```
+
+Una migración fusionada en `main` es inmutable; los cambios van en una nueva.

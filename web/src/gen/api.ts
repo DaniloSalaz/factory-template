@@ -253,6 +253,19 @@ export interface Status {
   status: StatusStatus;
 }
 
+export type LivenessStatus = typeof LivenessStatus[keyof typeof LivenessStatus];
+
+
+export const LivenessStatus = {
+  ok: 'ok',
+} as const;
+
+export interface Liveness {
+  status: LivenessStatus;
+  /** The build: the git commit the image was built from, or "dev" for a local build without that information. */
+  version: string;
+}
+
 export interface FieldError {
   field: string;
   code: string;
@@ -426,11 +439,11 @@ export const getGetHealthzUrl = () => {
 }
 
 /**
- * @summary Liveness probe
+ * @summary Liveness probe, with the version of the running build
  */
-export const getHealthz = async ( options?: Parameters<typeof apiFetch>[1]): Promise<Status> => {
+export const getHealthz = async ( options?: Parameters<typeof apiFetch>[1]): Promise<Liveness> => {
 
-  return apiFetch<Status>(getGetHealthzUrl(),
+  return apiFetch<Liveness>(getGetHealthzUrl(),
   {
     ...options,
     method: 'GET'
@@ -472,7 +485,7 @@ export type GetHealthzQueryResult = NonNullable<Awaited<ReturnType<typeof getHea
 export type GetHealthzQueryError = ErrorType<InternalErrorResponse>
 
 
-/** @summary Liveness probe */
+/** @summary Liveness probe, with the version of the running build */
 export function useGetHealthz<TData = Awaited<ReturnType<typeof getHealthz>>, TError = ErrorType<InternalErrorResponse>>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHealthz>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
@@ -483,7 +496,7 @@ export function useGetHealthz<TData = Awaited<ReturnType<typeof getHealthz>>, TE
       >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/** @summary Liveness probe */
+/** @summary Liveness probe, with the version of the running build */
 export function useGetHealthz<TData = Awaited<ReturnType<typeof getHealthz>>, TError = ErrorType<InternalErrorResponse>>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHealthz>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
@@ -494,12 +507,12 @@ export function useGetHealthz<TData = Awaited<ReturnType<typeof getHealthz>>, TE
       >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/** @summary Liveness probe */
+/** @summary Liveness probe, with the version of the running build */
 export function useGetHealthz<TData = Awaited<ReturnType<typeof getHealthz>>, TError = ErrorType<InternalErrorResponse>>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHealthz>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/** @summary Liveness probe */
+/** @summary Liveness probe, with the version of the running build */
 export function useGetHealthz<TData = Awaited<ReturnType<typeof getHealthz>>, TError = ErrorType<InternalErrorResponse>>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHealthz>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient

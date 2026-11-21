@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/adapters/devsender"
+	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/config"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/logx"
 	"github.com/DaniloSalaz/factory-template/api/internal/platform/pii"
@@ -30,7 +31,10 @@ func TestSend_LogsTheLinkWithTheEmailMasked(t *testing.T) {
 		t.Fatal(err)
 	}
 	const link = "http://localhost:5173/invite#token=abc"
-	if err := s.Send(t.Context(), pii.Email("ana@example.com"), pii.Secret(link), "Acme", "admin"); err != nil {
+	msg := app.InvitationMessage{
+		To: pii.Email("ana@example.com"), Link: pii.Secret(link), TenantName: "Acme", Role: "admin", InviterName: "Bea",
+	}
+	if err := s.Send(t.Context(), msg); err != nil {
 		t.Fatal(err)
 	}
 	var rec map[string]any

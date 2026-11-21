@@ -22,7 +22,8 @@ type captureSender struct {
 	links map[string][]string // email -> links, oldest first
 }
 
-func (s *captureSender) Send(_ context.Context, email pii.Email, link pii.Secret, _, _ string) error {
+func (s *captureSender) Send(_ context.Context, msg app.InvitationMessage) error {
+	email, link := msg.To, msg.Link
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.links == nil {

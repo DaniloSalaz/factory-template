@@ -1,7 +1,8 @@
 # Runbook: despliegue
 
-Todavía no hay despliegue automatizado (llega con el email real de las invitaciones, diseño
-5.6.7). Esta página reúne lo que el hosting debe cumplir cuando exista.
+Todavía no hay despliegue automatizado (servidor, Cloudflare y copias llegan en S2 a S4).
+La imagen ya se publica (`docs/runbooks/release.md`). Esta página reúne lo que el hosting
+debe cumplir.
 
 ## Front (`web/dist`)
 
@@ -16,6 +17,11 @@ navegador (TanStack Router).
 
 ## API
 
+- La imagen de `ghcr.io/<owner>/factory-template-api:<sha>`; antes de cambiar de versión,
+  `api migrate` (`docs/runbooks/release.md`).
+- `APP_ENV=staging` o `production`. Con cualquiera de los dos, la API no arranca si
+  `FRONTEND_ORIGIN`, `FRONT_BASE_URL`, `WORKOS_REDIRECT_URI` o algún origen de
+  `ALLOWED_ORIGINS` no es `https`, ni sin SMTP (`docs/runbooks/email.md`).
 - Solo por Cloudflare Tunnel, con `TRUSTED_CLIENT_IP_HEADER` (diseño, sección 3).
 - `ALLOWED_ORIGINS` con el origen exacto del front: CORS expone `Retry-After` y
   `X-Request-ID` para que el front, en otro origen, pueda leerlas.

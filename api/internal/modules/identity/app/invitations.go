@@ -84,9 +84,10 @@ func (in *Invitations) Create(ctx context.Context, rawEmail, role string) (Invit
 
 	var created Invitation
 	var tenant Tenant
+	var actor Member
 	err = in.store.InTenant(ctx, p, func(ctx context.Context, r TenantRepo) error {
 		var err error
-		if tenant, err = in.lockAsActor(ctx, r, p); err != nil {
+		if tenant, actor, err = in.lockAsActor(ctx, r, p); err != nil {
 			return err
 		}
 		member, err := r.EmailIsMember(ctx, p.TenantID(), pii.Email(email))
@@ -120,7 +121,7 @@ func (in *Invitations) Create(ctx context.Context, rawEmail, role string) (Invit
 	if err != nil {
 		return Invitation{}, fmt.Errorf("create invitation: %w", err)
 	}
-	in.send(ctx, created, token, tenant.Name)
+	in.send(ctx, created, token, tenant.Name, actor)
 	return created, nil
 }
 
@@ -144,8 +145,9 @@ func (in *Invitations) Resend(ctx context.Context, id string) (Invitation, error
 	}
 	var inv Invitation
 	var tenant Tenant
-	err = in.pending(ctx, p, id, func(ctx context.Context, r TenantRepo, t Tenant, found Invitation) error {
-		inv, tenant = found, t
+	var actor Member
+	err = in.pending(ctx, p, id, func(ctx context.Context, r TenantRepo, t Tenant, a Member, found Invitation) error {
+		inv, tenant, actor = found, t, a
 		inv.ExpiresAt = in.now().Add(domain.InvitationTTL)
 		if err := r.RotateInvitation(ctx, inv.ID, domain.HashToken(token), inv.ExpiresAt); err != nil {
 			return err
@@ -155,7 +157,7 @@ func (in *Invitations) Resend(ctx context.Context, id string) (Invitation, error
 	if err != nil {
 		return Invitation{}, fmt.Errorf("resend invitation: %w", err)
 	}
-	in.send(ctx, inv, token, tenant.Name)
+	in.send(ctx, inv, token, tenant.Name, actor)
 	return inv, nil
 }
 
@@ -169,7 +171,7 @@ func (in *Invitations) Revoke(ctx context.Context, id string) error {
 	if err := in.authz.Require(ctx, authz.PermMembersInvite); err != nil {
 		return fmt.Errorf("revoke invitation: %w", err)
 	}
-	err := in.pending(ctx, p, id, func(ctx context.Context, r TenantRepo, _ Tenant, inv Invitation) error {
+	err := in.pending(ctx, p, id, func(ctx context.Context, r TenantRepo, _ Tenant, _ Member, inv Invitation) error {
 		return in.revoke(ctx, r, p, inv, revokedByMember)
 	})
 	if err != nil {
@@ -249,14 +251,14 @@ func (in *Invitations) Accept(ctx context.Context, user authctx.User, token stri
 // pending runs fn on the tenant's pending invitation id, with the tenant locked and the
 // actor checked as in Create.
 func (in *Invitations) pending(ctx context.Context, p authctx.Principal, id string,
-	fn func(context.Context, TenantRepo, Tenant, Invitation) error,
+	fn func(context.Context, TenantRepo, Tenant, Member, Invitation) error,
 ) error {
 	invID, err := authctx.ParseID(id)
 	if err != nil {
 		return domain.ErrInvitationNotFound()
 	}
 	return in.store.InTenant(ctx, p, func(ctx context.Context, r TenantRepo) error {
-		tenant, err := in.lockAsActor(ctx, r, p)
+		tenant, actor, err := in.lockAsActor(ctx, r, p)
 		if err != nil {
 			return err
 		}
@@ -274,32 +276,33 @@ func (in *Invitations) pending(ctx context.Context, p authctx.Principal, id stri
 		if err := in.canOffer(p, inv.Role); err != nil {
 			return err
 		}
-		return fn(ctx, r, tenant, inv)
+		return fn(ctx, r, tenant, actor, inv)
 	})
 }
 
 // lockAsActor share-locks the tenant and checks that the actor's role is still the one
 // the request started with: a demotion in progress either finishes first (and this
-// request is refused) or waits for this transaction (and revokes what it writes).
-func (in *Invitations) lockAsActor(ctx context.Context, r TenantRepo, p authctx.Principal) (Tenant, error) {
+// request is refused) or waits for this transaction (and revokes what it writes). It
+// returns the tenant and the actor's membership.
+func (in *Invitations) lockAsActor(ctx context.Context, r TenantRepo, p authctx.Principal) (Tenant, Member, error) {
 	if err := r.ShareLockTenant(ctx, p.TenantID()); err != nil {
-		return Tenant{}, err
+		return Tenant{}, Member{}, err
 	}
 	actor, found, err := r.MemberByUser(ctx, p.TenantID(), p.UserID())
 	if err != nil {
-		return Tenant{}, err
+		return Tenant{}, Member{}, err
 	}
 	if !found || actor.Role != p.Role() {
-		return Tenant{}, domain.ErrMembershipChanged()
+		return Tenant{}, Member{}, domain.ErrMembershipChanged()
 	}
 	t, found, err := r.TenantByID(ctx, p.TenantID())
 	if err != nil {
-		return Tenant{}, err
+		return Tenant{}, Member{}, err
 	}
 	if !found {
-		return Tenant{}, domain.ErrTenantForbidden()
+		return Tenant{}, Member{}, domain.ErrTenantForbidden()
 	}
-	return t, nil
+	return t, actor, nil
 }
 
 func (in *Invitations) canOffer(p authctx.Principal, role string) error {
@@ -334,9 +337,17 @@ func (in *Invitations) audit(ctx context.Context, r TenantRepo, p authctx.Princi
 
 // send delivers the link after the commit. A failure only logs: the invitation exists
 // and resending it is the remedy; there is no queue to retry from yet.
-func (in *Invitations) send(ctx context.Context, inv Invitation, token, tenantName string) {
-	link := pii.Secret(domain.InvitationLink(in.frontBase, token))
-	if err := in.sender.Send(ctx, inv.Email, link, tenantName, inv.Role); err != nil {
+func (in *Invitations) send(ctx context.Context, inv Invitation, token, tenantName string, inviter Member) {
+	name := inviter.DisplayName
+	if name == "" {
+		// The invitee should know who invites them; an email is all some users have.
+		name = inviter.Email.Reveal()
+	}
+	msg := InvitationMessage{
+		To: inv.Email, Link: pii.Secret(domain.InvitationLink(in.frontBase, token)),
+		TenantName: tenantName, Role: inv.Role, InviterName: name,
+	}
+	if err := in.sender.Send(ctx, msg); err != nil {
 		in.logger.ErrorContext(ctx, "send invitation: resend it to retry",
 			slog.String("invitation_id", inv.ID), slog.Any("error", err))
 	}

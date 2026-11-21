@@ -32,6 +32,21 @@ func validEnv() map[string]string {
 	}
 }
 
+// testSMTPPassword must never appear in an error or a rendering.
+const testSMTPPassword = "smtp-hunter2-password"
+
+// deployed adds what staging and production require besides development: SMTP.
+func deployed(overrides map[string]string) map[string]string {
+	m := map[string]string{
+		"SMTP_HOST": "smtp.example.com", "SMTP_PORT": "587", "SMTP_USERNAME": "apikey",
+		"SMTP_PASSWORD": testSMTPPassword, "SMTP_FROM": "Acme <no-reply@example.com>",
+	}
+	for k, v := range overrides {
+		m[k] = v
+	}
+	return with(m)
+}
+
 func with(overrides map[string]string) map[string]string {
 	m := validEnv()
 	for k, v := range overrides {
@@ -71,14 +86,16 @@ func TestLoad_Valid(t *testing.T) {
 		},
 		{
 			name: "staging trusts CF-Connecting-IP by default",
-			environ: with(map[string]string{
+			environ: deployed(map[string]string{
+				"FRONTEND_ORIGIN": "https://app.example.com", "ALLOWED_ORIGINS": "https://app.example.com",
 				"APP_ENV": "staging", "WORKOS_REDIRECT_URI": "https://api.example.com/auth/callback",
 			}),
 			want: func(c Config) bool { return c.Web.TrustedClientIPHeader == "CF-Connecting-IP" },
 		},
 		{
 			name: "production trusts CF-Connecting-IP by default",
-			environ: with(map[string]string{
+			environ: deployed(map[string]string{
+				"FRONTEND_ORIGIN": "https://app.example.com", "ALLOWED_ORIGINS": "https://app.example.com",
 				"APP_ENV": "production", "WORKOS_REDIRECT_URI": "https://api.example.com/auth/callback",
 			}),
 			want: func(c Config) bool { return c.Web.TrustedClientIPHeader == "CF-Connecting-IP" },
@@ -101,7 +118,8 @@ func TestLoad_Valid(t *testing.T) {
 		},
 		{
 			name: "overrides",
-			environ: with(map[string]string{
+			environ: deployed(map[string]string{
+				"FRONTEND_ORIGIN": "https://app.example.com", "ALLOWED_ORIGINS": "https://app.example.com",
 				"APP_ENV": "production", "HTTP_PORT": "9090", "HTTP_WRITE_TIMEOUT": "30s",
 				"LOG_LEVEL": "debug", "LOG_FORMAT": "text", "DATABASE_URL": "postgresql://db.internal/app",
 				"WORKOS_REDIRECT_URI": "https://api.example.com/auth/callback", "TENANT_MAX_PER_USER": "20",
@@ -178,10 +196,40 @@ func TestLoad_Invalid(t *testing.T) {
 		},
 		{
 			name: "WorkOS values",
-			environ: with(map[string]string{
+			environ: deployed(map[string]string{
 				"APP_ENV": "staging", "WORKOS_CLIENT_ID": "wrong", "WORKOS_REDIRECT_URI": "http://api.example.com/auth/callback",
+				"FRONTEND_ORIGIN": "https://app.example.com", "ALLOWED_ORIGINS": "https://app.example.com",
 			}),
 			wantVars: []string{"WORKOS_CLIENT_ID must start with client_", "WORKOS_REDIRECT_URI must use https outside development"},
+		},
+		{
+			name: "every browser-facing URL must be https outside development",
+			environ: deployed(map[string]string{
+				"APP_ENV": "production", "FRONTEND_ORIGIN": "http://app.example.com",
+				"ALLOWED_ORIGINS": "http://app.example.com", "FRONT_BASE_URL": "http://app.example.com/app",
+				"WORKOS_REDIRECT_URI": "http://app.example.com/auth/callback",
+			}),
+			wantVars: []string{
+				"FRONTEND_ORIGIN must use https outside development", "ALLOWED_ORIGINS must use https outside development",
+				"FRONT_BASE_URL must use https outside development", "WORKOS_REDIRECT_URI must use https outside development",
+			},
+		},
+		{
+			name: "one http origin among the allowed ones is enough to refuse",
+			environ: deployed(map[string]string{
+				"APP_ENV": "staging", "FRONTEND_ORIGIN": "https://app.example.com",
+				"ALLOWED_ORIGINS":     "https://app.example.com,http://admin.example.com",
+				"WORKOS_REDIRECT_URI": "https://app.example.com/auth/callback",
+			}),
+			wantVars: []string{"ALLOWED_ORIGINS must use https outside development"},
+		},
+		{
+			name: "a default front base url reports its http once, on FRONTEND_ORIGIN",
+			environ: deployed(map[string]string{
+				"APP_ENV": "staging", "FRONTEND_ORIGIN": "http://app.example.com",
+				"ALLOWED_ORIGINS": "https://app.example.com", "WORKOS_REDIRECT_URI": "https://app.example.com/auth/callback",
+			}),
+			wantVars: []string{"FRONTEND_ORIGIN must use https outside development"},
 		},
 		{
 			name:     "front base url with a fragment",
@@ -237,7 +285,7 @@ func TestLoad_Invalid(t *testing.T) {
 					t.Errorf("error does not contain %q:\n%s", want, msg)
 				}
 			}
-			for _, secret := range append(tc.secrets, testDBPassword, testAPIKey) {
+			for _, secret := range append(tc.secrets, testDBPassword, testAPIKey, testSMTPPassword) {
 				if strings.Contains(msg, secret) {
 					t.Errorf("error leaks a value: %q", secret)
 				}
@@ -266,7 +314,11 @@ func TestLoad_ReadsProcessEnvironment(t *testing.T) {
 func TestConfig_RenderingsMaskSecrets(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := load(validEnv())
+	cfg, err := load(deployed(map[string]string{
+		"APP_ENV": "production", "FRONTEND_ORIGIN": "https://app.example.com", "ALLOWED_ORIGINS": "https://app.example.com",
+		"WORKOS_REDIRECT_URI": "https://app.example.com/auth/callback",
+		"DATABASE_URL":        "postgres://app:" + testDBPassword + "@localhost:5432/app?sslmode=disable&password=" + testDBPassword,
+	}))
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -295,6 +347,9 @@ func TestConfig_RenderingsMaskSecrets(t *testing.T) {
 			}
 			if strings.Contains(out, testAPIKey) {
 				t.Fatalf("leaks the WorkOS API key: %s", out)
+			}
+			if strings.Contains(out, testSMTPPassword) {
+				t.Fatalf("leaks the SMTP password: %s", out)
 			}
 			if !strings.Contains(out, "postgres://app:***@localhost:5432/app") {
 				t.Fatalf("masked URL missing: %s", out)
@@ -381,7 +436,7 @@ func TestSanitizeParseError(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := sanitizeParseError(tc.err)
+			got := sanitizeParseError(tc.err, reflect.TypeFor[Config]())
 			if len(got) != len(tc.want) {
 				t.Fatalf("got %d errors %v, want %d", len(got), got, len(tc.want))
 			}
@@ -392,6 +447,136 @@ func TestSanitizeParseError(t *testing.T) {
 				if strings.Contains(e.Error(), raw) {
 					t.Errorf("error %d leaks the raw value: %q", i, e.Error())
 				}
+			}
+		})
+	}
+}
+
+func TestLoadMigrate(t *testing.T) {
+	t.Parallel()
+
+	ownerURL := "postgres://app_owner:" + testDBPassword + "@db.internal:5432/app"
+	cfg, err := loadMigrate(map[string]string{"APP_ENV": "production", "MIGRATIONS_DATABASE_URL": ownerURL})
+	if err != nil {
+		t.Fatalf("loadMigrate: %v", err)
+	}
+	if cfg.URL.Reveal() != ownerURL || cfg.Env != EnvProduction || cfg.Log.Format != LogFormatJSON {
+		t.Fatalf("cfg = %v", cfg)
+	}
+
+	// Nothing of the API's configuration is needed: a deployment runs it with the owner's
+	// credentials only. Problems are reported by variable, never with the value.
+	_, err = loadMigrate(map[string]string{"APP_ENV": "qa", "MIGRATIONS_DATABASE_URL": "mysql://root:" + testDBPassword + "@db/app"})
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	msg := err.Error()
+	for _, want := range []string{"APP_ENV must be one of", "MIGRATIONS_DATABASE_URL must be a postgres"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error does not contain %q: %s", want, msg)
+		}
+	}
+	if strings.Contains(msg, testDBPassword) {
+		t.Error("error leaks the password")
+	}
+	if _, err := loadMigrate(map[string]string{"APP_ENV": "development"}); err == nil ||
+		!strings.Contains(err.Error(), "MIGRATIONS_DATABASE_URL is required") {
+		t.Fatalf("without the URL: %v", err)
+	}
+}
+
+func TestLoad_SMTP(t *testing.T) {
+	t.Parallel()
+
+	https := map[string]string{
+		"FRONTEND_ORIGIN": "https://app.example.com", "ALLOWED_ORIGINS": "https://app.example.com",
+		"WORKOS_REDIRECT_URI": "https://app.example.com/auth/callback",
+	}
+	merge := func(ms ...map[string]string) map[string]string {
+		out := map[string]string{}
+		for _, m := range ms {
+			for k, v := range m {
+				out[k] = v
+			}
+		}
+		return out
+	}
+
+	t.Run("development without SMTP_HOST logs links instead", func(t *testing.T) {
+		t.Parallel()
+		cfg, err := load(validEnv())
+		if err != nil || cfg.SMTP.Enabled() {
+			t.Fatalf("load = %v, enabled = %v", err, cfg.SMTP.Enabled())
+		}
+	})
+
+	t.Run("development may use Mailpit: no credentials, any certificate", func(t *testing.T) {
+		t.Parallel()
+		cfg, err := load(with(map[string]string{
+			"SMTP_HOST": "localhost", "SMTP_PORT": "1025", "SMTP_FROM": "dev@localhost.test", "SMTP_TLS_SKIP_VERIFY": "true",
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !cfg.SMTP.Enabled() || cfg.SMTP.TLS != SMTPStartTLS || cfg.SMTP.Timeout != 10*time.Second || !cfg.SMTP.TLSSkipVerify {
+			t.Fatalf("smtp = %+v", cfg.SMTP)
+		}
+	})
+
+	t.Run("deployed with implicit TLS", func(t *testing.T) {
+		t.Parallel()
+		cfg, err := load(deployed(merge(https, map[string]string{"APP_ENV": "production", "SMTP_TLS": "implicit", "SMTP_PORT": "465"})))
+		if err != nil || cfg.SMTP.TLS != SMTPImplicitTLS || cfg.SMTP.SMTPPort != 465 {
+			t.Fatalf("load = %v, smtp = %+v", err, cfg.SMTP)
+		}
+	})
+
+	for _, tc := range []struct {
+		name    string
+		environ map[string]string
+		want    []string
+	}{
+		{
+			"required outside development",
+			with(merge(https, map[string]string{"APP_ENV": "staging"})),
+			[]string{"SMTP_HOST is required outside development"},
+		},
+		{
+			"credentials required outside development, certificates always verified",
+			deployed(merge(https, map[string]string{
+				"APP_ENV": "production", "SMTP_USERNAME": "", "SMTP_PASSWORD": "", "SMTP_TLS_SKIP_VERIFY": "true",
+			})),
+			[]string{"SMTP_USERNAME and SMTP_PASSWORD are required outside development", "SMTP_TLS_SKIP_VERIFY is only allowed in development"},
+		},
+		{
+			"no plain-text mode, and every value checked",
+			with(map[string]string{
+				"SMTP_HOST": "smtp://mail.example.com", "SMTP_PORT": "0", "SMTP_FROM": "not an address",
+				"SMTP_TLS": "none", "SMTP_TIMEOUT": "0s", "SMTP_USERNAME": "only-user",
+			}),
+			[]string{
+				"SMTP_TLS must be one of starttls, implicit", "SMTP_HOST must be a host name", "SMTP_PORT must be between",
+				"SMTP_FROM must be an email address", "SMTP_TIMEOUT must be greater than zero", "SMTP_USERNAME and SMTP_PASSWORD go together",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := load(tc.environ)
+			if err == nil {
+				t.Fatal("expected an error")
+			}
+			msg := err.Error()
+			for _, w := range tc.want {
+				if !strings.Contains(msg, w) {
+					t.Errorf("error does not contain %q:\n%s", w, msg)
+				}
+			}
+			if n := strings.Count(msg, "\n") + 1; n != len(tc.want) {
+				t.Errorf("got %d errors, want %d:\n%s", n, len(tc.want), msg)
+			}
+			if strings.Contains(msg, testSMTPPassword) {
+				t.Error("error leaks the SMTP password")
 			}
 		})
 	}

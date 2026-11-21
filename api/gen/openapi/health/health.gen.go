@@ -13,15 +13,30 @@ import (
 	"net/http"
 )
 
+// Defines values for LivenessStatus.
+const (
+	LivenessStatusOk LivenessStatus = "ok"
+)
+
+// Valid indicates whether the value is a known member of the LivenessStatus enum.
+func (e LivenessStatus) Valid() bool {
+	switch e {
+	case LivenessStatusOk:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for StatusStatus.
 const (
-	Ok StatusStatus = "ok"
+	StatusStatusOk StatusStatus = "ok"
 )
 
 // Valid indicates whether the value is a known member of the StatusStatus enum.
 func (e StatusStatus) Valid() bool {
 	switch e {
-	case Ok:
+	case StatusStatusOk:
 		return true
 	default:
 		return false
@@ -34,6 +49,17 @@ type FieldError struct {
 	Field   string `json:"field"`
 	Message string `json:"message"`
 }
+
+// Liveness defines model for Liveness.
+type Liveness struct {
+	Status LivenessStatus `json:"status"`
+
+	// Version The build: the git commit the image was built from, or "dev" for a local build without that information.
+	Version string `json:"version"`
+}
+
+// LivenessStatus defines model for Liveness.Status.
+type LivenessStatus string
 
 // Problem RFC 9457 problem details with this API's extension members.
 type Problem struct {
@@ -68,7 +94,7 @@ type ServiceUnavailable = Problem
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
-	// GetHealthz Liveness probe
+	// GetHealthz Liveness probe, with the version of the running build
 	// (GET /healthz)
 	GetHealthz(w http.ResponseWriter, r *http.Request)
 	// GetReadyz Readiness probe (checks dependencies such as the database)
@@ -250,7 +276,7 @@ type GetHealthzResponseObject interface {
 	VisitGetHealthzResponse(w http.ResponseWriter) error
 }
 
-type GetHealthz200JSONResponse Status
+type GetHealthz200JSONResponse Liveness
 
 func (response GetHealthz200JSONResponse) VisitGetHealthzResponse(w http.ResponseWriter) error {
 
@@ -335,7 +361,7 @@ func (response GetReadyz503ApplicationProblemPlusJSONResponse) VisitGetReadyzRes
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
-	// GetHealthz Liveness probe
+	// GetHealthz Liveness probe, with the version of the running build
 	// (GET /healthz)
 	GetHealthz(ctx context.Context, request GetHealthzRequestObject) (GetHealthzResponseObject, error)
 	// GetReadyz Readiness probe (checks dependencies such as the database)

@@ -112,12 +112,14 @@ func (r memTenantRepo) AcceptInvitation(_ context.Context, tokenHash []byte, _ n
 
 // memSender records what it was asked to send, and fails if fail is set.
 type memSender struct {
-	sent []string // email role link
-	fail error
+	sent     []string // email role link
+	messages []app.InvitationMessage
+	fail     error
 }
 
-func (s *memSender) Send(_ context.Context, email pii.Email, link pii.Secret, _, role string) error {
-	s.sent = append(s.sent, email.Reveal()+" "+role+" "+link.Reveal())
+func (s *memSender) Send(_ context.Context, msg app.InvitationMessage) error {
+	s.sent = append(s.sent, msg.To.Reveal()+" "+msg.Role+" "+msg.Link.Reveal())
+	s.messages = append(s.messages, msg)
 	return s.fail
 }
 
@@ -427,5 +429,38 @@ func TestInvitations_RateLimits(t *testing.T) {
 	}
 	if _, err := f.in.Accept(t.Context(), u, "x"); apperr.KindOf(err) != apperr.KindRateLimited {
 		t.Fatalf("11th accept = %v", err)
+	}
+}
+
+// The email says who invites: the member who sent it, by display name, or by email when
+// they have none. The tenant's name and the role come along for the adapter to render.
+func TestInvitations_MessageNamesTheInviter(t *testing.T) {
+	t.Parallel()
+
+	f := newInvFixture(t)
+	admin := f.store.members[tenantA][adminID]
+	admin.DisplayName, admin.Email = "Bea <b>", pii.Email("bea@example.com")
+	f.store.members[tenantA][adminID] = admin
+	owner := f.store.members[tenantA][ownerID]
+	owner.Email = pii.Email("owner@example.com")
+	f.store.members[tenantA][ownerID] = owner
+
+	inv, err := f.in.Create(actingAs(t, f.c, adminID, "admin"), "new@example.com", "member")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.in.Resend(actingAs(t, f.c, ownerID, "owner"), inv.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.sender.messages) != 2 {
+		t.Fatalf("messages = %+v", f.sender.messages)
+	}
+	first, resent := f.sender.messages[0], f.sender.messages[1]
+	if first.InviterName != "Bea <b>" || first.Role != "member" || first.To.Reveal() != "new@example.com" ||
+		first.TenantName == "" {
+		t.Fatalf("message = %+v", first)
+	}
+	if resent.InviterName != "owner@example.com" {
+		t.Fatalf("resent by %q, want the owner who resent it, by email", resent.InviterName)
 	}
 }

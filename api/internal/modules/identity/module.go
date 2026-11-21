@@ -17,6 +17,7 @@ import (
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/adapters/devsender"
 	identityhttp "github.com/DaniloSalaz/factory-template/api/internal/modules/identity/adapters/http"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/adapters/postgres"
+	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/adapters/smtpsender"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/adapters/workos"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/app"
 	"github.com/DaniloSalaz/factory-template/api/internal/modules/identity/domain"
@@ -61,8 +62,8 @@ type Deps struct {
 	// AcceptRateLimiter, POST /invitations/accept (design, section 6).
 	InvitationRateLimiter ratelimit.Limiter
 	AcceptRateLimiter     ratelimit.Limiter
-	// InvitationSender delivers invitation links: NewDevInvitationSender until real
-	// email arrives with the deployment.
+	// InvitationSender delivers invitation links: NewInvitationSender picks it from the
+	// configuration.
 	InvitationSender InvitationSender
 	// Provider replaces WorkOS; only tests set it.
 	Provider Provider
@@ -79,9 +80,17 @@ type Provider interface {
 // InvitationSender delivers an invitation's link (app.InvitationSender).
 type InvitationSender = app.InvitationSender
 
-// NewDevInvitationSender returns the development sender, which writes each link to the
-// log. It fails outside development, so the API does not start with it there.
-func NewDevInvitationSender(env config.Environment, logger *slog.Logger) (InvitationSender, error) {
+// NewInvitationSender returns the SMTP sender when SMTP is configured (always, outside
+// development: config refuses to start without it), and otherwise the development one,
+// which writes each link to the log and fails outside development.
+func NewInvitationSender(env config.Environment, smtp config.SMTP, logger *slog.Logger) (InvitationSender, error) {
+	if smtp.Enabled() {
+		s, err := smtpsender.New(smtp, nil)
+		if err != nil {
+			return nil, fmt.Errorf("identity: %w", err)
+		}
+		return s, nil
+	}
 	s, err := devsender.New(env, logger)
 	if err != nil {
 		return nil, fmt.Errorf("identity: %w", err)

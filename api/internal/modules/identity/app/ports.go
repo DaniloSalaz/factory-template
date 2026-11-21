@@ -191,12 +191,26 @@ type TenantRepo interface {
 	AcceptInvitation(ctx context.Context, tokenHash []byte, ip netip.Prefix) (AcceptedInvitation, error)
 }
 
-// InvitationSender delivers an invitation's link to the invitee (design, 5.6.6). It is
+// InvitationSender delivers an invitation's link to the invitee (design, 5.6.7). It is
 // called after the transaction commits; if it fails the invitation stays, and resending
 // it is the remedy. The link carries the token: it never reaches a log, a response or
 // the audit trail, except in the development adapter, whose whole job is to log it.
 type InvitationSender interface {
-	Send(ctx context.Context, email pii.Email, link pii.Secret, tenantName, role string) error
+	Send(ctx context.Context, msg InvitationMessage) error
+}
+
+// InvitationMessage is what an invitation email says. TenantName and InviterName are
+// written by users: an adapter escapes them for its format and keeps them out of any
+// header such as the subject.
+type InvitationMessage struct {
+	To   pii.Email
+	Link pii.Secret
+	// TenantName is the tenant's name; Role, the offered role of the catalog.
+	TenantName string
+	Role       string
+	// InviterName is who sent this email: the member who invited or resent it, by their
+	// display name, or their email when they have none.
+	InviterName string
 }
 
 // NewInvitation is an invitation to create. Only the token's hash is stored.

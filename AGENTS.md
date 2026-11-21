@@ -7,14 +7,16 @@ Plantilla base para SaaS: monolito modular en Go + frontend React. Desarrollador
 - Contrato: OpenAPI 3.1 en `api-spec/openapi.yaml` → oapi-codegen (Go, strict server) y orval (TS).
 - Frontend: React + TypeScript + Vite, Biome.
 - Datos: PostgreSQL 18 (`compose.yaml`). Colas: River (aún no). Secretos: SOPS + age.
+- Email: SMTP genérico con `wneessen/go-mail` (Mailpit en desarrollo). Imagen: `ghcr.io/<owner>/factory-template-api`, publicada por `.github/workflows/release.yml`.
 - Herramientas y tareas: `mise.toml` (no Makefile ni Taskfile).
 
 ## Comandos (`mise run <tarea>`)
 | Tarea | Qué hace |
 |---|---|
 | `hooks:install` | Instala el hook de pre-commit (rechaza commits en `main`); una vez por clon |
-| `up` / `down` | Arranca / para Postgres local |
-| `migrate` | Aplica migraciones de `migrations/` con goose |
+| `up` / `down` | Arranca / para Postgres y Mailpit locales |
+| `mail` | Abre Mailpit (`http://localhost:8025`), donde llegan las invitaciones en desarrollo |
+| `migrate` | Aplica las migraciones de `api/migrations/` como `app_owner` con `api migrate` (el mismo subcomando que usa el despliegue) |
 | `generate` | sqlc + oapi-codegen + orval (+ la seguridad por ruta del front) |
 | `dev` | Arranca la API en `:8080` |
 | `test` | Tests Go con `-race` (incluye integración con Testcontainers; requiere Docker) |
@@ -41,7 +43,7 @@ api/internal/modules/<m>/
   queries/                SQL para sqlc
 api/gen/                  código generado (openapi/<m>, sqlc/<m>, routes)
 api-spec/openapi.yaml     contrato HTTP
-migrations/               migraciones goose (NNNNN_nombre.sql)
+api/migrations/           migraciones goose (NNNNN_nombre.sql), embebidas en el binario (`api migrate`); nuevas con `goose -dir api/migrations create <nombre> sql`
 web/src/gen/              cliente TS generado (orval) y seguridad por ruta (scripts/gen-route-security.ts)
 web/src/platform/         front de la plantilla: shell, auth, tenant, MFA, miembros, invitaciones, errores, fetcher, ui (shadcn)
 web/src/app/              lo propio de cada app: rutas bajo /t/$tenantId, registry.ts, theme.css, brand/
@@ -73,6 +75,9 @@ Ejemplo vivo: `api/internal/modules/health`.
 - Los permisos de `app_runtime` (de tabla, de columna y de ejecución) están fijados en `api/internal/platform/db/schematest/testdata/runtime_privileges.golden`; nunca un `UPDATE` sin columnas. Cambiar ese fichero es una decisión de seguridad: se edita a mano y el PR justifica qué permiso cambia y por qué el diseño lo necesita.
 - Una migración fusionada en main es inmutable; los cambios posteriores van en una migración nueva.
 - MFA (ADR 0002): opcional, exigida solo por los roles del catálogo que lo dicen. Una sesión solo tiene MFA por `sessions.mfa_auth_time`, que fija únicamente `mark_session_mfa` tras un `valid: true` del proveedor (y rota el token). Nunca se deduce del login ni de que el usuario tenga un factor.
+- Fuera de development (`staging`, `production`): todas las URL y orígenes del navegador y del proveedor de identidad son `https`, y el SMTP es obligatorio; config lo valida al arrancar. Una opción solo para desarrollo (como `SMTP_TLS_SKIP_VERIFY`) se rechaza fuera de él.
+- Email: nunca un texto escrito por usuarios (nombre del tenant, de una persona) en una cabecera (asunto, From); en el cuerpo, sin caracteres de control, recortado y escapado (`html/template`). El token de una invitación solo en el enlace. Los errores de envío no llevan destinatarios.
+- Las migraciones (`api/migrations`) van dentro del binario; el despliegue ejecuta `api migrate` antes de cambiar de versión. La versión del binario (`-X main.buildVersion`) sale en los logs y en `/healthz`.
 - Usuario de sistema reservado: `00000000-0000-7000-8000-000000000001` (deshabilitado, sin login). Úsalo solo para trabajos de sistema.
 - Cada cambio va con su test (unitario con fakes de puertos; integración con Testcontainers).
 - Comentarios solo para explicar el porqué, no el qué.
