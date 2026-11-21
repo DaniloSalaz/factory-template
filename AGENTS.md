@@ -55,7 +55,7 @@ api/gen/                  código generado (openapi/<m>, sqlc/<m>, routes)
 api/tests/                lo que no es unitario (los unitarios van junto a su fichero)
   arch/  (+ testdata/)    reglas de arquitectura y sus fixtures (etiqueta `arch`)
   db/    (+ testdata/)    RLS, funciones de la BD, miembros, invitaciones y foto de permisos, sobre plataforma + app
-  integration/<m>/        integración de un módulo por su API pública (`package <m>_test`)
+  integration/<p>/        integración de un paquete o módulo por su API pública (`package <p>_test`)
   testkit/                Postgres con Testcontainers; `migrationsets.All()` = plataforma + app
 api/tools/                routegen (seguridad por ruta) y specmerge (unión del contrato)
 api-spec/platform.yaml    contrato HTTP de la plantilla (una app no lo edita)
@@ -73,7 +73,7 @@ Ejemplo vivo: `api/platform/health`.
 - Sin variables globales ni `init()`; dependencias por constructor (`NewX(deps)`).
 - Un módulo no importa el interior de otro módulo (ni su código en `gen/`); solo su `module.go`. Lo comprueba `mise run arch`.
 - `platform/kit` no importa ningún módulo de plataforma (`platform/<m>`, depguard `[platform-no-modules]`); `platform/kit/apperr` y `platform/kit/authctx` solo importan la stdlib; el dominio solo importa la stdlib y `platform/kit/apperr` (depguard).
-- Nada bajo `api/platform/` importa `api/app` ni nada debajo, y solo `package main` (`api/`) importa `app` (`[platform-imports-app]`, `mise run arch`; en el front, la regla del mismo nombre). `app/` importa solo `platform/kit/*` y el `module.go` de un módulo de plataforma; un módulo de app, además, su propio interior y el `module.go` de otros módulos de app (`[module-boundaries]`).
+- Nada bajo `api/platform/` importa `api/app` ni nada debajo, tampoco de forma indirecta a través de un paquete de fuera de `platform/` (un helper de `tests/`, código generado), y solo `package main` (`api/`) importa `app` (`[platform-imports-app]`, `mise run arch`; en el front, la regla del mismo nombre). `app/` importa solo `platform/kit/*` y el `module.go` de un módulo de plataforma; un módulo de app, además, su propio interior y el `module.go` de otros módulos de app (`[module-boundaries]`).
 - El código generado (`api/gen/`, `web/src/gen/`, `api-spec/openapi.gen.yaml`) no se edita: cambia el contrato (`platform.yaml` o `app.yaml`) o la query y ejecuta `mise run generate`.
 - El tag de una operación es la clave de su módulo: cada operación tiene exactamente un tag, el nombre de la carpeta del módulo, cuyo `codegen.yaml` lo incluye solo a él y genera `gen/openapi/<m>/` (paquete `<m>api`). `app.yaml` no redefine nada de `platform.yaml` (rutas, `operationId`, componentes, tags, `securitySchemes`, la seguridad raíz ni la cabecera de tenant): referencia sus componentes con `platform.yaml#/components/…`. Lo comprueba `specmerge` en `mise run generate` (`[contract-duplicate]`, `[contract-platform-owned]`, `[contract-module-key]`).
 - Un GET nunca modifica datos: SameSite=Lax envía la cookie en navegaciones GET entre sitios y la protección CSRF por Origin no lo cubriría.
@@ -103,7 +103,7 @@ Ejemplo vivo: `api/platform/health`.
 - Usuario de sistema reservado: `00000000-0000-7000-8000-000000000001` (deshabilitado, sin login). Úsalo solo para trabajos de sistema.
 - Cada cambio va con su test (unitario con fakes de puertos; integración con Testcontainers).
 - Un test que necesita Docker lleva `//go:build integration`, esté donde esté: `mise run test` no lo compila y `mise run test:integration` sí. Los de integración, arquitectura y BD van en `api/tests/`; se quedan junto a su código solo si usan algo no exportado, son de `package main` o importan el interior de su módulo (`[module-boundaries]`).
-- Ningún fichero que no sea `_test.go` fuera de `api/tests/` importa `chaskicode.dev/saas/tests/...` (`[tests-not-in-prod]`, `mise run arch`).
+- Ningún fichero que no sea `_test.go` fuera de `api/tests/` importa `chaskicode.dev/saas/tests/...` (`[tests-not-in-prod]`, `mise run arch`). Desde `platform/`, sus tests usan `tests/testkit`, nunca `tests/testkit/migrationsets` ni nada que dependa de la app: `[platform-imports-app]` también sigue los imports indirectos.
 - Comentarios solo para explicar el porqué, no el qué.
 
 ## Reglas del front (`web/`, detalle en `web/README.md`)

@@ -42,7 +42,8 @@ func listPackages(t *testing.T, dir string) (string, []goPackage) {
 		t.Fatalf("go list -m in %s: %v", dir, err)
 	}
 	// With the integration tag, or the imports of the tests that need Docker would go
-	// unchecked: without it, go list leaves their files out.
+	// unchecked: without it, go list leaves their files out. A file behind any other tag
+	// escapes every rule fed by this list; a new tag goes here as well.
 	out, err := runGo(t, dir, "list", "-e", "-tags", "integration", "-json", "./...")
 	if err != nil {
 		t.Fatalf("go list -json in %s: %v", dir, err)

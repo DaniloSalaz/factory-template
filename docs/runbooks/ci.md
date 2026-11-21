@@ -93,7 +93,7 @@ añadas filtros de rutas al `on:` de `ci.yml`.
 | `[apperr-stdlib-only]`: `apperr` solo importa la stdlib | depguard | `…/testdata/lint/apperr-stdlib-only` |
 | `[domain-pure]`: `domain` solo importa la stdlib y `platform/kit/apperr` | depguard | `…/testdata/lint/domain-pure` |
 | `[module-boundaries]`: un módulo es `platform/<x>` (salvo `kit`) o `app/modules/<x>`; fuera de él solo se importa su paquete raíz; `gen/openapi/<x>` y `gen/sqlc/<x>` son privados de `<x>` | `api/tests/arch/boundaries_test.go` | `…/testdata/arch` |
-| `[platform-imports-app]` (back): nada bajo `api/platform/` importa `api/app` ni nada debajo; solo `package main` importa `app` | `api/tests/arch/appimports_test.go` | `…/testdata/arch` |
+| `[platform-imports-app]` (back): nada bajo `api/platform/` importa `api/app` ni nada debajo, tampoco de forma indirecta a través de un paquete de fuera de `platform/` (un helper de `api/tests/`, `gen/`); solo `package main` importa `app` | `api/tests/arch/appimports_test.go` | `…/testdata/arch` |
 | `[tests-not-in-prod]`: ningún fichero que no sea `_test.go` fuera de `api/tests/` importa `chaskicode.dev/saas/tests/...` (helpers y fixtures que nunca van en el binario) | `api/tests/arch/testsimports_test.go` | `…/testdata/arch` (también un fichero con la etiqueta `integration`) |
 | `[rls-vars-only-in-db]`: ningún fichero Go fuera de `platform/kit/db` y de `api/tests/db` llama a `set_config` ni nombra las variables de RLS | `api/tests/arch/rlsvars_test.go` | `…/testdata/rlsvars` |
 | `[contract-platform-owned]`: `app.yaml` no define seguridad raíz, `servers` ni `securitySchemes`, ni la cabecera de tenant; usa la misma versión de OpenAPI; sus `$ref` van solo a componentes, propios (`#/components/…`) o de plataforma (`platform.yaml#/components/…`), y resuelven; ningún path item es un `$ref` | `api/tools/specmerge` (en `mise run generate`) | `api/tools/specmerge/main_test.go` |
@@ -109,7 +109,8 @@ configuración del lint y una regla deja de funcionar, ese test falla.
 Los tests de arquitectura llevan el build tag `arch`: `go test ./...` no los ejecuta;
 `mise run arch` sí. Listan los paquetes con `-tags integration`, y golangci-lint usa las dos
 etiquetas (`build-tags` en `api/.golangci.yml`), para que las reglas también vean los
-ficheros de los tests de integración.
+ficheros de los tests de integración. Un fichero detrás de otra etiqueta escaparía a las
+reglas: una etiqueta nueva se añade también a `listPackages` y a `build-tags`.
 
 ## Tests unitarios y de integración
 

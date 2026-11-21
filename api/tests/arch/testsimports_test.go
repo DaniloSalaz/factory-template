@@ -12,7 +12,9 @@ import (
 // testsImportViolations lists every import of api/tests from code that ships: a package
 // outside tests/ whose non-test files (Imports, not TestImports or XTestImports) import
 // tests/ or anything below it. The helpers there start containers and hold fixtures;
-// they never go into the binary.
+// they never go into the binary. Like every rule fed by listPackages, it sees untagged
+// files and those behind the integration tag: a file behind any other build tag would
+// escape it, so a new tag must be added to listPackages too.
 func testsImportViolations(modPath string, pkgs []goPackage) []string {
 	testsRoot := modPath + "/tests"
 	var out []string

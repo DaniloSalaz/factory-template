@@ -164,4 +164,5 @@ módulos de plataforma pasan `migrations.Set()` de `api/platform/migrations`, y
 aplica sola. Los tests de `platform/kit`, que no pueden importarlo (`[platform-no-modules]`),
 pasan `testkit.PlatformFromSource()`, el mismo conjunto leído del disco (un test comprueba
 que son idénticos). `migrationsets` va aparte de `testkit` para que esos tests no importen
-la app ni de forma indirecta.
+la app ni de forma indirecta; lo comprueba `[platform-imports-app]` (`mise run arch`), que
+sigue los imports de `platform/` a través de los paquetes de fuera de él.
