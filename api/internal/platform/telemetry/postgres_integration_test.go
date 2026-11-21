@@ -27,7 +27,10 @@ func TestPgxTracer_SpansWithoutArguments(t *testing.T) {
 	pg := dbtest.Start(t)
 	spans := tracetest.NewInMemoryExporter()
 	reader := sdkmetric.NewManualReader()
-	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(telemetry.NewFilteringExporter(spans)))
+	// No filtering exporter here: the tracer itself must leave the arguments out, so a
+	// tracer that added them fails this test even though the ADR 0004 filter would
+	// still drop them (two barriers, each tested on its own).
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(spans))
 	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
 	tel, err := telemetry.NewWith(tp, mp)
 	if err != nil {
