@@ -20,6 +20,9 @@ func TestSet_MatchesPlatformFromSource(t *testing.T) {
 	if embedded.Name != source.Name || embedded.Table != source.Table {
 		t.Fatalf("embedded set %s/%s, dbtest set %s/%s", embedded.Name, embedded.Table, source.Name, source.Table)
 	}
+	if embedded.AllowEmpty || source.AllowEmpty {
+		t.Fatal("the platform's set must not allow being empty: finding no migration means a wrong path")
+	}
 	if embedded.Table != "goose_db_version" {
 		t.Fatalf("the platform's version table is %s: it must stay goose_db_version, the one existing databases have", embedded.Table)
 	}

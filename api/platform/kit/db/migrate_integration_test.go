@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"context"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -61,7 +62,7 @@ func TestMigrate_EmptySet(t *testing.T) {
 
 	conn := connectOwner(t)
 	// Like app/migrations: only the Go file that embeds the directory, which goose ignores.
-	set := db.MigrationSet{Name: "empty", FS: fstest.MapFS{"migrations.go": {Data: []byte("package migrations\n")}}, Table: "goose_test_empty_version"}
+	set := db.MigrationSet{Name: "empty", FS: fstest.MapFS{"migrations.go": {Data: []byte("package migrations\n")}}, Table: "goose_test_empty_version", AllowEmpty: true}
 	for range 2 { // the second run finds the table and does nothing
 		results, err := db.Migrate(t.Context(), testDB.OwnerURL, []db.MigrationSet{set})
 		if err != nil {
@@ -72,6 +73,31 @@ func TestMigrate_EmptySet(t *testing.T) {
 		}
 		if got := versions(t, conn, set.Table); len(got) != 1 || got[0] != 0 {
 			t.Fatalf("%s holds versions %v, want only 0", set.Table, got)
+		}
+	}
+}
+
+// Without AllowEmpty, a set with no migrations is an error: goose reports a directory
+// that does not exist the same way, and "migrating" it would leave the database without
+// its schema. Nothing is created, and the sets after it do not run.
+func TestMigrate_EmptySetNotAllowed(t *testing.T) {
+	t.Parallel()
+
+	conn := connectOwner(t)
+	sets := []db.MigrationSet{
+		{Name: "wrongpath", FS: os.DirFS("testdata/does-not-exist"), Table: "goose_test_wrongpath_version"},
+		{Name: "next", FS: fstest.MapFS{"00001_a.sql": migration("CREATE TABLE zz_mig_next (id int);")}, Table: "goose_test_next_version"},
+	}
+	results, err := db.Migrate(t.Context(), testDB.OwnerURL, sets)
+	if err == nil || !strings.Contains(err.Error(), "set wrongpath has no migrations") {
+		t.Fatalf("err = %v, want the set named as having no migrations", err)
+	}
+	if want := []db.MigrationResult{{Set: "wrongpath"}}; !equalResults(results, want) {
+		t.Fatalf("results = %+v, want %+v", results, want)
+	}
+	for _, table := range []string{"goose_test_wrongpath_version", "goose_test_next_version", "zz_mig_next"} {
+		if tableExists(t, conn, table) {
+			t.Errorf("%s was created", table)
 		}
 	}
 }

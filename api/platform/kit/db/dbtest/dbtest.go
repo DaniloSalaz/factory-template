@@ -120,8 +120,8 @@ func New(ctx context.Context, sets ...platformdb.MigrationSet) (*DB, error) {
 func PlatformFromSource() platformdb.MigrationSet {
 	root, err := repoRoot()
 	if err != nil {
-		// Only when the runtime cannot locate this file: the set then fails in Migrate
-		// with a missing directory, which names the problem.
+		// Only when the runtime cannot locate this file. The directory is then wrong and
+		// Migrate fails: the set has no migrations and does not allow being empty.
 		root = "."
 	}
 	return platformdb.MigrationSet{

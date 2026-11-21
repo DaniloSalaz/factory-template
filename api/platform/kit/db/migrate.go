@@ -19,6 +19,11 @@ type MigrationSet struct {
 	Name  string // "platform", "app": in logs and errors
 	FS    fs.FS
 	Table string // goose version table, e.g. goose_db_version
+	// AllowEmpty accepts a set without migrations: Migrate then only creates its version
+	// table. Only a set that may legitimately have none sets it (the app's, in the
+	// template); for any other, finding none means a wrong path or fs.Sub, and Migrate
+	// fails instead of leaving a database without its schema.
+	AllowEmpty bool
 }
 
 // MigrationResult is what Migrate applied from one set, in order.
@@ -86,9 +91,14 @@ func migrateSet(ctx context.Context, sqlDB *sql.DB, set MigrationSet) ([]int64, 
 		goose.WithDisableGlobalRegistry(true),
 	)
 	if errors.Is(err, goose.ErrNoMigrations) {
-		// A set may be empty (the template ships no app migration). goose refuses to
-		// build a provider for it, but the version table is still created, so the
-		// database looks the same as after a set whose migrations are all applied.
+		if !set.AllowEmpty {
+			// goose reports a missing directory the same way as an empty one.
+			return nil, fmt.Errorf("set %s has no migrations (NNNNN_name.sql at the root of its FS): "+
+				"check its path, or set AllowEmpty if it may have none", set.Name)
+		}
+		// goose refuses to build a provider for an empty set, but the version table is
+		// still created, so the database looks the same as after a set whose migrations
+		// are all applied.
 		return nil, ensureVersionTable(ctx, sqlDB, set.Table)
 	}
 	if err != nil {
@@ -114,6 +124,8 @@ func migrateSet(ctx context.Context, sqlDB *sql.DB, set MigrationSet) ([]int64, 
 
 // ensureVersionTable creates a goose version table the way goose's provider does
 // before its first migration: the table plus the version 0 row, in one transaction.
+// Like goose's provider without a locker, two runs starting at once on a new database
+// can race here: the second one fails ("relation exists") and succeeds when retried.
 func ensureVersionTable(ctx context.Context, sqlDB *sql.DB, table string) (err error) {
 	store, err := database.NewStore(database.DialectPostgres, table)
 	if err != nil {

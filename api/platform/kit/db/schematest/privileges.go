@@ -16,8 +16,9 @@ import (
 )
 
 // RuntimePrivilegesGolden lists every privilege app_runtime holds, the platform's and the
-// app's; its path is relative to api/, where package main compares it with a database
-// migrated with both sets. Changing it is a security decision that the PR justifies
+// app's. Its path is relative to api/, so it resolves only from package main, which
+// compares it with a database migrated with both sets; the move of these tests to
+// api/tests/db (reorganization, PR 6) takes the file and this path with it. Changing it is a security decision that the PR justifies
 // (AGENTS.md); there is deliberately no flag to rewrite it, so every change is a hand
 // edit visible in the diff.
 const RuntimePrivilegesGolden = "platform/kit/db/schematest/testdata/runtime_privileges.golden"

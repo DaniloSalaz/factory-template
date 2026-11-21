@@ -18,8 +18,8 @@ import (
 //go:embed *
 var files embed.FS
 
-// Set returns the app's migrations. With none, db.Migrate applies nothing and only
-// creates the version table.
+// Set returns the app's migrations. AllowEmpty because the template has none: db.Migrate
+// then applies nothing and only creates the version table.
 func Set() db.MigrationSet {
-	return db.MigrationSet{Name: "app", FS: files, Table: "goose_app_db_version"}
+	return db.MigrationSet{Name: "app", FS: files, Table: "goose_app_db_version", AllowEmpty: true}
 }
