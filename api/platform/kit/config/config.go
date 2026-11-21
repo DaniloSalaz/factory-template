@@ -176,7 +176,7 @@ type SMTP struct {
 	Username string     `env:"SMTP_USERNAME"`
 	Password pii.Secret `env:"SMTP_PASSWORD"`
 	// From is the sender, an address of a domain with SPF, DKIM and DMARC
-	// (docs/runbooks/email.md), optionally with a display name: "Acme <no-reply@acme.com>".
+	// (docs/platform/runbooks/email.md), optionally with a display name: "Acme <no-reply@acme.com>".
 	From string  `env:"SMTP_FROM"`
 	TLS  SMTPTLS `env:"SMTP_TLS"     envDefault:"starttls"`
 	// Timeout bounds the connection and each SMTP command.
@@ -644,7 +644,7 @@ func (c Config) LogValue() slog.Value {
 // needs, so a deployment can run it with the owner's credentials and nothing else.
 type Migrate struct {
 	Env Environment `env:"APP_ENV"`
-	// URL is app_owner's connection: migrations own the schema (docs/runbooks/database.md).
+	// URL is app_owner's connection: migrations own the schema (docs/platform/runbooks/database.md).
 	URL DatabaseURL `env:"MIGRATIONS_DATABASE_URL"`
 	Log Log
 }

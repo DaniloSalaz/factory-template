@@ -56,7 +56,7 @@ su migración dice quién la usa y cómo. En la misma migración que crea la tab
    `tenant_isolation` y su alcance declarado (diseño, sección 7.3). El test de esquema
    (`TestSchema` en `api/tests/db/schema_test.go`, con las reglas de
    `api/tests/db/rules.go`) falla si falta algo, también en las tablas de la app. Si es una tabla de acceso
-   o una tabla hija, sigue los patrones de `docs/patterns.md`.
+   o una tabla hija, sigue los patrones de `docs/platform/patterns.md`.
 2. `GRANT` a `app_runtime` solo de los privilegios que la aplicación necesita (por ejemplo,
    sin `DELETE` en tablas de solo inserción). `UPDATE` siempre por columnas
    (`GRANT UPDATE (col, …)`), nunca de toda la tabla. Añade los permisos nuevos a

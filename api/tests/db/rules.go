@@ -270,7 +270,7 @@ func loadTenantForeignKeys(ctx context.Context, q querier) ([]foreignKeyInfo, er
 
 // foreignKeyViolation reports a key that does not pair tenant_id with tenant_id. RLS
 // filters what is read, but a key on the parent's id alone lets a row of one tenant
-// point at another tenant's row (design, 7.3; docs/patterns.md).
+// point at another tenant's row (design, 7.3; docs/platform/patterns.md).
 func foreignKeyViolation(fk foreignKeyInfo) string {
 	i := slices.Index(fk.Columns, "tenant_id")
 	if len(fk.Columns) > 1 && i >= 0 && i < len(fk.RefColumns) && fk.RefColumns[i] == "tenant_id" {
@@ -278,7 +278,7 @@ func foreignKeyViolation(fk foreignKeyInfo) string {
 	}
 	return fmt.Sprintf("[rls] table %s: foreign key %s (%s) -> %s (%s) does not pair tenant_id with tenant_id, "+
 		"so a row can point at another tenant's row: use FOREIGN KEY (tenant_id, <parent>_id) REFERENCES %s (tenant_id, id) "+
-		"with UNIQUE (tenant_id, id) on %s (docs/patterns.md)",
+		"with UNIQUE (tenant_id, id) on %s (docs/platform/patterns.md)",
 		fk.Table, fk.Name, strings.Join(fk.Columns, ", "), fk.RefTable, strings.Join(fk.RefColumns, ", "), fk.RefTable, fk.RefTable)
 }
 

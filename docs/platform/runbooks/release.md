@@ -2,7 +2,7 @@
 
 `.github/workflows/release.yml` publica la imagen cuando un push a `main` pasa el CI
 (`ci-ok` en verde). Los pull requests no publican nada, ni un push que solo cambió
-documentación (el job `decide`; ver `docs/runbooks/ci.md`).
+documentación (el job `decide`; ver `docs/platform/runbooks/ci.md`).
 
 ## Qué publica
 

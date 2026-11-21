@@ -1,5 +1,5 @@
 # CI runs the same mise tasks as `mise run ci` locally, with the tool versions pinned in
-# mise.toml. See docs/runbooks/ci.md.
+# mise.toml. See docs/platform/runbooks/ci.md.
 #
 # No `paths`/`paths-ignore` here: a workflow that does not run never reports `ci-ok`, the
 # required check, and the PR stays blocked. Changes that only touch documentation still run
@@ -184,7 +184,7 @@ jobs:
   # The Playwright journey (web/e2e) against the real API: Postgres as a service, the
   # migrations, the API and Vite. Sessions are seeded with SQL and the MFA screens answer
   # with simulated responses, so WorkOS is never called: the API key is a placeholder that
-  # start-up only checks is set. See docs/runbooks/ci.md.
+  # start-up only checks is set. See docs/platform/runbooks/ci.md.
   e2e:
     name: e2e
     needs: changes
