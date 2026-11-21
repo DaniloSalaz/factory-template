@@ -46,20 +46,16 @@ linters:
       rules:
         # In strict mode depguard only prints the list name for imports missing from
         # `allow`, so these names carry the explanation.
-        "[platform-no-modules] platform/kit must not import any module (platform/<x>, app/): move the code into the module, or define an interface in kit that the module implements":
+        "[platform-no-modules] platform/kit must not import any platform module (platform/<x>): move the code into the module, or define an interface in kit that the module implements":
           files: ["**/platform/kit/**"]
-          # In lax mode the longest match wins: kit may import kit, nothing else below
-          # platform/ (identity, health, any future platform module) and nothing in app/.
+          # In lax mode the longest match wins: kit may import kit and nothing else below
+          # platform/ (identity, health, any future platform module). Importing app/ is
+          # [platform-imports-app], checked for all of platform/ in archtest.
           list-mode: lax
           allow:
             - chaskicode.dev/saas/platform/kit
           deny:
             - pkg: chaskicode.dev/saas/platform
-              desc: >-
-                [platform-no-modules] platform/kit is shared infrastructure without business:
-                move the code into the module, or define an interface in kit that the module
-                implements
-            - pkg: chaskicode.dev/saas/app
               desc: >-
                 [platform-no-modules] platform/kit is shared infrastructure without business:
                 move the code into the module, or define an interface in kit that the module
