@@ -18,6 +18,9 @@ import (
 	"github.com/pressly/goose/v3"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+
+	platformdb "github.com/DaniloSalaz/factory-template/api/internal/platform/db"
+	"github.com/DaniloSalaz/factory-template/api/migrations"
 )
 
 // Credentials of the throwaway container; they never leave the test process.
@@ -102,7 +105,8 @@ func New(ctx context.Context, extraMigrations ...string) (*DB, error) {
 		return db, err
 	}
 
-	if err := migrate(ctx, db.OwnerURL, filepath.Join(root, "migrations")); err != nil {
+	// The migrations the binary embeds, applied the way `api migrate` applies them.
+	if _, err := platformdb.Migrate(ctx, db.OwnerURL, migrations.FS()); err != nil {
 		return db, err
 	}
 	for i, dir := range extraMigrations {
@@ -141,7 +145,7 @@ func withUser(rawURL, user, password string) (string, error) {
 }
 
 // repoRoot locates the repository from this file, so tests in any package find
-// infra/db and migrations/.
+// infra/db.
 func repoRoot() (string, error) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {

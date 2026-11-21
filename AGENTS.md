@@ -14,7 +14,7 @@ Plantilla base para SaaS: monolito modular en Go + frontend React. Desarrollador
 |---|---|
 | `hooks:install` | Instala el hook de pre-commit (rechaza commits en `main`); una vez por clon |
 | `up` / `down` | Arranca / para Postgres local |
-| `migrate` | Aplica migraciones de `migrations/` con goose |
+| `migrate` | Aplica las migraciones de `api/migrations/` como `app_owner` con `api migrate` (el mismo subcomando que usa el despliegue) |
 | `generate` | sqlc + oapi-codegen + orval (+ la seguridad por ruta del front) |
 | `dev` | Arranca la API en `:8080` |
 | `test` | Tests Go con `-race` (incluye integración con Testcontainers; requiere Docker) |
@@ -41,7 +41,7 @@ api/internal/modules/<m>/
   queries/                SQL para sqlc
 api/gen/                  código generado (openapi/<m>, sqlc/<m>, routes)
 api-spec/openapi.yaml     contrato HTTP
-migrations/               migraciones goose (NNNNN_nombre.sql)
+api/migrations/           migraciones goose (NNNNN_nombre.sql), embebidas en el binario (`api migrate`); nuevas con `goose -dir api/migrations create <nombre> sql`
 web/src/gen/              cliente TS generado (orval) y seguridad por ruta (scripts/gen-route-security.ts)
 web/src/platform/         front de la plantilla: shell, auth, tenant, MFA, miembros, invitaciones, errores, fetcher, ui (shadcn)
 web/src/app/              lo propio de cada app: rutas bajo /t/$tenantId, registry.ts, theme.css, brand/

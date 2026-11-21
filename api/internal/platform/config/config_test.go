@@ -414,7 +414,7 @@ func TestSanitizeParseError(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := sanitizeParseError(tc.err)
+			got := sanitizeParseError(tc.err, reflect.TypeFor[Config]())
 			if len(got) != len(tc.want) {
 				t.Fatalf("got %d errors %v, want %d", len(got), got, len(tc.want))
 			}
@@ -427,5 +427,38 @@ func TestSanitizeParseError(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestLoadMigrate(t *testing.T) {
+	t.Parallel()
+
+	ownerURL := "postgres://app_owner:" + testDBPassword + "@db.internal:5432/app"
+	cfg, err := loadMigrate(map[string]string{"APP_ENV": "production", "MIGRATIONS_DATABASE_URL": ownerURL})
+	if err != nil {
+		t.Fatalf("loadMigrate: %v", err)
+	}
+	if cfg.URL.Reveal() != ownerURL || cfg.Env != EnvProduction || cfg.Log.Format != LogFormatJSON {
+		t.Fatalf("cfg = %v", cfg)
+	}
+
+	// Nothing of the API's configuration is needed: a deployment runs it with the owner's
+	// credentials only. Problems are reported by variable, never with the value.
+	_, err = loadMigrate(map[string]string{"APP_ENV": "qa", "MIGRATIONS_DATABASE_URL": "mysql://root:" + testDBPassword + "@db/app"})
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	msg := err.Error()
+	for _, want := range []string{"APP_ENV must be one of", "MIGRATIONS_DATABASE_URL must be a postgres"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error does not contain %q: %s", want, msg)
+		}
+	}
+	if strings.Contains(msg, testDBPassword) {
+		t.Error("error leaks the password")
+	}
+	if _, err := loadMigrate(map[string]string{"APP_ENV": "development"}); err == nil ||
+		!strings.Contains(err.Error(), "MIGRATIONS_DATABASE_URL is required") {
+		t.Fatalf("without the URL: %v", err)
 	}
 }

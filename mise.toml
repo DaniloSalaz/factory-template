@@ -80,8 +80,9 @@ run = [
 ]
 
 [tasks.migrate]
-description = "Apply pending database migrations as app_owner"
-run = "goose -dir migrations postgres \"$MIGRATIONS_DATABASE_URL\" up"
+description = "Apply pending database migrations as app_owner (the binary's `api migrate`)"
+dir = "api"
+run = "go run ./cmd/api migrate"
 
 [tasks."db:bootstrap"]
 description = "Re-run the role and extension bootstrap on the local Postgres (idempotent)"

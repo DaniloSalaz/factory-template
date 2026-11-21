@@ -51,6 +51,20 @@ const (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 
+	// `api migrate` applies the embedded migrations and exits; without arguments, the
+	// HTTP server.
+	switch args := os.Args[1:]; {
+	case len(args) == 0:
+	case len(args) == 1 && args[0] == "migrate":
+		code := migrateCommand(ctx)
+		stop()
+		os.Exit(code)
+	default:
+		fmt.Fprintln(os.Stderr, "usage: api [migrate]")
+		stop()
+		os.Exit(2)
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		// The configured logger needs the config, so this one error uses a plain JSON logger.

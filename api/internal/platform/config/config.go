@@ -154,7 +154,7 @@ func load(environ map[string]string) (Config, error) {
 	reported := map[string]bool{}
 
 	if err := env.ParseWithOptions(&cfg, env.Options{Environment: environ}); err != nil {
-		for _, e := range sanitizeParseError(err) {
+		for _, e := range sanitizeParseError(err, reflect.TypeFor[Config]()) {
 			errs = append(errs, e)
 			reported[e.Var] = true
 		}
@@ -379,15 +379,16 @@ func all[T any](xs []T, pred func(T) bool) bool {
 }
 
 // sanitizeParseError turns caarlos0/env errors into VarErrors using only their typed
-// fields. ParseError.Err is never used: its text can contain the raw value.
-func sanitizeParseError(err error) []*VarError {
+// fields; t is the struct that was parsed. ParseError.Err is never used: its text can
+// contain the raw value.
+func sanitizeParseError(err error, t reflect.Type) []*VarError {
 	list := []error{err}
 	var agg env.AggregateError
 	if errors.As(err, &agg) {
 		list = agg.Errors
 	}
 
-	keys := envKeysByField(reflect.TypeFor[Config]())
+	keys := envKeysByField(t)
 	out := make([]*VarError, 0, len(list))
 	for _, e := range list {
 		var (
@@ -497,6 +498,56 @@ func (c Config) LogValue() slog.Value {
 		),
 		slog.Group("tenancy", slog.Int("max_tenants_per_user", c.Tenancy.MaxTenantsPerUser)),
 	)
+}
+
+// Migrate is the configuration of `api migrate`: only what applying the migrations
+// needs, so a deployment can run it with the owner's credentials and nothing else.
+type Migrate struct {
+	Env Environment `env:"APP_ENV"`
+	// URL is app_owner's connection: migrations own the schema (docs/runbooks/database.md).
+	URL DatabaseURL `env:"MIGRATIONS_DATABASE_URL"`
+	Log Log
+}
+
+// LoadMigrate reads and validates the configuration of `api migrate`.
+func LoadMigrate() (Migrate, error) {
+	return loadMigrate(env.ToMap(os.Environ()))
+}
+
+func loadMigrate(environ map[string]string) (Migrate, error) {
+	var cfg Migrate
+	var errs []error
+	reported := map[string]bool{}
+	if err := env.ParseWithOptions(&cfg, env.Options{Environment: environ}); err != nil {
+		for _, e := range sanitizeParseError(err, reflect.TypeFor[Migrate]()) {
+			errs = append(errs, e)
+			reported[e.Var] = true
+		}
+	}
+	add := func(v, reason string) {
+		if !reported[v] {
+			errs = append(errs, &VarError{Var: v, Reason: reason})
+		}
+	}
+	switch {
+	case cfg.Env == "":
+		add("APP_ENV", "is required")
+	case !cfg.Env.Valid():
+		add("APP_ENV", "must be one of development, staging, production")
+	}
+	switch {
+	case cfg.URL == "":
+		add("MIGRATIONS_DATABASE_URL", "is required")
+	case !cfg.URL.valid():
+		add("MIGRATIONS_DATABASE_URL", "must be a postgres:// or postgresql:// URL with a host")
+	}
+	if !cfg.Log.Format.Valid() {
+		add("LOG_FORMAT", "must be one of json, text")
+	}
+	if len(errs) > 0 {
+		return Migrate{}, fmt.Errorf("invalid configuration: %w", errors.Join(errs...))
+	}
+	return cfg, nil
 }
 
 // DatabaseURL is a connection URL that hides its credentials and query when printed.
