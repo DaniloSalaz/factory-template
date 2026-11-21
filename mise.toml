@@ -81,7 +81,7 @@ run = "command -v open >/dev/null && open http://localhost:3000/d/factory-templa
 [tasks.dev]
 description = "Run the API with the secrets of secrets.env decrypted into its environment"
 dir = "api"
-run = "sops exec-env ../secrets.env 'go run ./cmd/api'"
+run = "sops exec-env ../secrets.env 'go run .'"
 
 [tasks."web:install"]
 description = "Install web dependencies if missing"
@@ -96,14 +96,14 @@ run = [
   "cd api && sqlc generate",
   "cd api && oapi-codegen -config oapi-codegen.yaml ../api-spec/openapi.yaml",
   "cd api && oapi-codegen -config oapi-codegen.identity.yaml ../api-spec/openapi.yaml",
-  "cd api && go run ./internal/tools/routegen -spec ../api-spec/openapi.yaml -out gen/routes/routes.gen.go",
+  "cd api && go run ./tools/routegen -spec ../api-spec/openapi.yaml -out gen/routes/routes.gen.go",
   "cd web && npm run generate",
 ]
 
 [tasks.migrate]
 description = "Apply pending database migrations as app_owner (the binary's `api migrate`)"
 dir = "api"
-run = "go run ./cmd/api migrate"
+run = "go run . migrate"
 
 [tasks."db:bootstrap"]
 description = "Re-run the role and extension bootstrap on the local Postgres (idempotent)"
@@ -117,7 +117,7 @@ run = "go test -race -cover ./..."
 [tasks.arch]
 description = "Run architecture tests (module boundaries and lint-rule fixtures)"
 dir = "api"
-run = "go test -tags arch -count=1 ./internal/archtest/..."
+run = "go test -tags arch -count=1 ./archtest/..."
 
 [tasks.lint]
 description = "Lint Go, GitHub workflows and web code"

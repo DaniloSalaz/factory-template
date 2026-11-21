@@ -1,5 +1,5 @@
 // Writes src/gen/routeSecurity.ts: what each operation of the contract requires, read
-// from its `security` as the API's routegen reads it (api/internal/tools/routegen). The
+// from its `security` as the API's routegen reads it (api/tools/routegen). The
 // fetcher sends X-Tenant-ID only to the operations that require a tenant.
 import { readFileSync, writeFileSync } from "node:fs";
 import { parse } from "yaml";

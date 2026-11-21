@@ -8,7 +8,7 @@ COPY . .
 # The git commit, from the release workflow; /healthz and every log line report it.
 ARG VERSION=dev
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.buildVersion=${VERSION}" -o /out/api ./cmd/api
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.buildVersion=${VERSION}" -o /out/api .
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/api /api

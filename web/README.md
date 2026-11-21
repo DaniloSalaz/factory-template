@@ -42,7 +42,7 @@ npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.yaml
   sitios, sin tocar `platform`. `src/platform/styles.css` solo conecta esas variables con
   Tailwind.
 - **Composición**: `src/router.ts` y `src/main.tsx` (fuera de las dos carpetas) unen la
-  plataforma, el árbol de rutas y los estilos, como `cmd/api` en el backend.
+  plataforma, el árbol de rutas y los estilos, como `main.go` en el backend.
 - Un componente nuevo de shadcn (`npx shadcn@4.23.0 add <x>`) va a `src/platform/ui`
   (`components.json`).
 

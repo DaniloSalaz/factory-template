@@ -21,7 +21,7 @@ Diseño: `docs/designs/auth-y-tenancy.md` (secciones 5.1, 5.2, 5.5, 5.7, 6 y 13)
 
 mise no descifra ficheros dotenv cifrados con SOPS: los cargaría con el texto cifrado
 (`ENC[…]`) como valor. Por eso `mise run dev` ejecuta la API con
-`sops exec-env ../secrets.env 'go run ./cmd/api'`, y `secrets.env` **no** se declara en
+`sops exec-env ../secrets.env 'go run .'`, y `secrets.env` **no** se declara en
 `_.file`.
 
 ```sh

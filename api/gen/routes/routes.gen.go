@@ -4,7 +4,7 @@
 // the OpenAPI contract declares and the properties its JSON body accepts.
 package routes
 
-import "github.com/DaniloSalaz/factory-template/api/internal/platform/httpx"
+import "chaskicode.dev/saas/platform/httpx"
 
 // Security returns the security of every operation of the contract.
 func Security() map[string]httpx.Security {
