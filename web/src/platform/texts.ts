@@ -149,6 +149,12 @@ export const texts = {
     enrollCode: "Después escribe el código de 6 dígitos que muestra la app.",
     enrolled: "Factor dado de alta.",
   },
+  errorScreen: {
+    title: "Algo ha fallado",
+    description: "Ha ocurrido un error inesperado. Recarga la página o vuelve al inicio.",
+    reload: "Recargar",
+    home: "Ir al inicio",
+  },
   notices: {
     rateLimited: (seconds?: number) =>
       seconds === undefined
