@@ -18,7 +18,7 @@ los jobs pesados se saltan (ver [Cambios que solo tocan documentación](#cambios
 | `generate` | Une el contrato (`api-spec/platform.yaml` + `api-spec/app.yaml` → `api-spec/openapi.gen.yaml`, con `api/tools/specmerge`), regenera sqlc, oapi-codegen (un paquete por `codegen.yaml` de módulo), orval y la seguridad por ruta del front (`web/src/gen/routeSecurity.ts`) y falla si cambia algo en `api/gen`, `web/src/gen` o `api-spec/openapi.gen.yaml` (`gen/openapi/` se regenera desde cero: el paquete de un módulo sin `codegen.yaml` aparece como borrado) | `mise run generate:check` |
 | `security` | govulncheck y `trivy fs` (dependencias y Dockerfile), fallando con HIGH o CRITICAL | `mise run security:govulncheck`, `mise run security:trivy` |
 | `gitleaks` | gitleaks sobre todo el historial. Se ejecuta siempre, también si solo cambia documentación | `mise run security:gitleaks` |
-| `web` | `npm ci`, Biome, `npm run build` (genera `web/src/routeTree.gen.ts` con la CLI de TanStack Router, luego `tsc -b` y `vite build`; falla si el árbol no coincide con el commit) y los tests unitarios con Vitest, incluido el de arquitectura del front | `mise run web:check`, `mise run web:test` |
+| `web` | `npm ci`, Biome, `npm run build` (genera `web/src/gen/routeTree.gen.ts` con la CLI de TanStack Router, luego `tsc -b` y `vite build`; falla si el árbol no coincide con el commit) y los tests unitarios con Vitest, incluido el de arquitectura del front | `mise run web:check`, `mise run web:test` |
 | `e2e` | El recorrido de Playwright (`web/e2e`) contra la API real: Postgres 18 y Mailpit (el SMTP de desarrollo de `mise.toml`) como servicios, el bootstrap de `infra/db`, `mise run migrate`, la API compilada y arrancada con una `WORKOS_API_KEY` ficticia, y Vite (lo arranca Playwright). Sube las capturas (`web/e2e-screenshots/`) y las trazas (`web/test-results/`, todas en CI) como artefacto `e2e-screenshots-and-traces`; si falla, también el log de la API (`e2e-api-log`) | `mise run up && mise run migrate`, `mise run dev` y `mise run web:e2e` |
 | `docker` | Construye la imagen de la API (sin publicarla) y la escanea con Trivy | `mise run docker:scan` |
 | `release` (otro workflow) | Tras un push a `main` con el CI en verde y que no sea solo documentación: imagen multiplataforma en GHCR, atestaciones y Trivy de la imagen publicada (`docs/runbooks/release.md`) | `mise run docker:build`, `mise run docker:scan` |
@@ -99,7 +99,8 @@ añadas filtros de rutas al `on:` de `ci.yml`.
 | `[contract-platform-owned]`: `app.yaml` no define seguridad raíz, `servers` ni `securitySchemes`, ni la cabecera de tenant; usa la misma versión de OpenAPI; sus `$ref` van solo a componentes, propios (`#/components/…`) o de plataforma (`platform.yaml#/components/…`), y resuelven; ningún path item es un `$ref` | `api/tools/specmerge` (en `mise run generate`) | `api/tools/specmerge/main_test.go` |
 | `[contract-duplicate]`: `app.yaml` no repite una ruta (aunque cambien los nombres de parámetro), un `operationId` ni un nombre de componente (comparados sin mayúsculas, `_` ni `-`, como los ven los generadores), ni un tag de plataforma | `api/tools/specmerge` | `api/tools/specmerge/main_test.go` |
 | `[contract-module-key]`: cada operación tiene un solo tag, declarado y con módulo en su zona (`platform/<m>` o `app/modules/<m>`); cada `codegen.yaml` tiene `include-tags: [<m>]`, `package: <m>api` y `output: gen/openapi/<m>/<m>.gen.go`, y alguna operación con su tag | `api/tools/specmerge` | `api/tools/specmerge/main_test.go` |
-| `[platform-imports-app]` (front): `web/src/platform` no importa `web/src/app` salvo en `platform/app-registry.ts` | `web/src/platform/architecture.test.ts` (Vitest, `mise run web:test`) | El propio test, con cada forma de importar |
+| `[platform-imports-app]` (front): `web/src/platform` no importa `web/src/app` salvo en `platform/app-registry.ts` | `web/src/platform/__tests__/architecture.test.ts` (Vitest, `mise run web:test`) | El propio test, con cada forma de importar |
+| `[feature-boundaries]` (front): un fichero de `web/src/app/features/<a>/` no importa nada de `web/src/app/features/<b>/`; lo compartido va en `web/src/app/shared/` | `web/src/platform/__tests__/architecture.test.ts` (Vitest, `mise run web:test`) | El propio test, con cada forma de importar |
 
 Los fixtures son mini-módulos con el mismo module path que `api/`, para que las reglas les
 apliquen. `TestLintRules` ejecuta golangci-lint con `api/.golangci.yml` sobre cada uno y comprueba
@@ -125,7 +126,7 @@ que usan código no exportado, son de `package main` o importan el interior de s
 - **lint / arch**: el mensaje empieza por el nombre de la regla y dice cómo arreglarlo. Se corrige
   el código; un `//nolint` solo con un comentario que explique por qué.
 - **generate**: ejecuta `mise run generate` y commitea `api/gen` y `web/src/gen`.
-- **web** con `routeTree.gen.ts`: ejecuta `npm run build` en `web/` y commitea `web/src/routeTree.gen.ts`.
+- **web** con `routeTree.gen.ts`: ejecuta `npm run build` en `web/` y commitea `web/src/gen/routeTree.gen.ts`.
   En local, `generate:check` también falla si has regenerado pero aún no has hecho `git add`.
 - **security**:
   - govulncheck: actualiza el módulo afectado (`go get <módulo>@<versión corregida>`).

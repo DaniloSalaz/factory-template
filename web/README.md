@@ -8,31 +8,39 @@ Playwright. Diseño: `docs/designs/auth-y-tenancy.md` (secciones 5, 6, 10 y 10.1
 npm run dev        # :5173; /api y /auth van por el proxy de Vite a la API (:8080)
 npm test           # Vitest (mise run web:test, entra en mise run ci)
 npm run e2e        # Playwright contra la API local (mise run web:e2e; en CI, el job e2e)
-npm run routes     # genera src/routeTree.gen.ts con la CLI de TanStack Router (tsr)
+npm run routes     # genera src/gen/routeTree.gen.ts con la CLI de TanStack Router (tsr)
 npm run build      # routes, luego tsc -b, luego vite build
-npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.yaml
+npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.yaml, y luego routes
 ```
 
 ## Plataforma y app
 
-|                | `src/platform/`                                                                                                                       | `src/app/`                                                                                                                                                       |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Qué es         | Código de la plantilla: shell y layout, login, tenant, MFA, cuenta, manejo de errores, fetcher, componentes de shadcn (`platform/ui`) | Lo propio de cada app                                                                                                                                            |
-| Quién lo edita | La plantilla. Las apps **no** lo tocan                                                                                                | Cada app                                                                                                                                                         |
-| Hoy            | Lo del paso 8a y, del 8b, miembros, invitaciones, `/invite` y el renombrado del tenant                                                | Una pantalla de ejemplo (`routes/example.tsx`), su entrada en la navegación (`registry.ts`), sus textos (`texts.ts`), el tema (`theme.css`) y el logo (`brand/`) |
+|                | `src/platform/`                                                                                                                       | `src/app/`                                                                                                                                                                                             |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Qué es         | Código de la plantilla: shell y layout, login, tenant, MFA, cuenta, manejo de errores, fetcher, componentes de shadcn (`platform/ui`) | Lo propio de cada app                                                                                                                                                                                  |
+| Quién lo edita | La plantilla. Las apps **no** lo tocan                                                                                                | Cada app                                                                                                                                                                                               |
+| Hoy            | Lo del paso 8a y, del 8b, miembros, invitaciones, `/invite` y el renombrado del tenant                                                | Una funcionalidad de ejemplo (`features/example/`, con su ruta `routes/example.tsx`), su entrada en la navegación (`registry.ts`), sus textos (`texts.ts`), el tema (`theme.css`) y el logo (`brand/`) |
 
 - **Registro**: `src/app/registry.ts` exporta el nombre de la app, su logo y las entradas
   de la navegación del tenant (con el permiso que las muestra, si lo hay). La plataforma lo
   lee solo en `src/platform/app-registry.ts`: es el único fichero de `platform` que importa
-  `app`, y `src/platform/architecture.test.ts` lo comprueba (`[platform-imports-app]`).
+  `app`, y `src/platform/__tests__/architecture.test.ts` lo comprueba (`[platform-imports-app]`).
 - **Rutas**: las de la plataforma están listadas en `src/platform/routes.ts` (rutas
   virtuales de TanStack Router, cada una en su fichero). Las de la app son rutas por
   fichero bajo `src/app/routes/` y se montan dentro de `/t/$tenantId`: `example.tsx` es
   `/t/$tenantId/example`, con el layout del tenant (navegación y `GET /tenant` ya
-  resueltos). `src/routeTree.gen.ts` lo genera la CLI (`npm run routes`, también al
-  principio de `npm run build`) y se commitea; el plugin de Vite lo mantiene al día en
+  resueltos). Cada fichero de `src/app/routes/` solo hace `createFileRoute` e importa la
+  página de su funcionalidad. `src/gen/routeTree.gen.ts` lo genera la CLI (`npm run routes`,
+  también al principio de `npm run build` y al final de `npm run generate`, porque orval vacía
+  `src/gen/`) y se commitea; el plugin de Vite lo mantiene al día en
   `npm run dev`. Los dos leen las opciones de `tsr.config.json`. `mise run web:check`
   falla si el commiteado no coincide.
+- **Funcionalidades de la app**: cada una en `src/app/features/<f>/`, con el mismo nombre
+  que su módulo del backend (`api/app/modules/<f>`): `pages/` (una por pantalla, la que
+  importa su ruta de `src/app/routes/`), `components/`, `hooks/` y `__tests__/`, solo las
+  carpetas que necesite. Una funcionalidad no importa nada de otra: lo que compartan va en
+  `src/app/shared/` (`[feature-boundaries]`, en el mismo test de arquitectura). El ejemplo
+  es `features/example/` (`pages/ExamplePage.tsx` y su test).
 - **Pantallas del tenant de la plataforma**: `/t/$tenantId/members` (`members:read`) e
   `/t/$tenantId/invitations` (`members:invite`) van en la navegación del tenant antes que
   las de la app. Los roles que se pueden asignar u ofrecer salen de `GET /tenant/roles`
@@ -104,13 +112,16 @@ npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.y
 
 ## Tests
 
-- **Unitarios** (`src/**/*.test.ts(x)`, Vitest + Testing Library, jsdom): manejo de errores
+- **Unitarios** (`src/**/__tests__/**/*.test.ts(x)`, Vitest + Testing Library, jsdom): los de
+  la plataforma en `src/platform/__tests__/`, con las subcarpetas del código que prueban; los
+  de una funcionalidad, en su `__tests__/`; siempre con imports `@/`. Cubren el manejo de errores
   por código (incluidos todos los de miembros e invitaciones), `X-Tenant-ID` según el
   contrato, último tenant, caché por tenant, verificación de MFA, el flujo de `/invite`
   (fragmento quitado antes de crear el router, token nunca en `return_to` ni en la URL,
-  `sessionStorage` vacío tras aceptar o fallar) y la regla de arquitectura. Usan `tsconfig.test.json`, que añade los tipos de Node
+  `sessionStorage` vacío tras aceptar o fallar) y las reglas de arquitectura (`[platform-imports-app]` y `[feature-boundaries]`). Usan `tsconfig.test.json`, que añade los tipos de Node
   sin dárselos al código del navegador.
-- **Playwright** (`e2e/`), contra la API real local: Postgres arrancado y migrado
+- **Playwright**: los recorridos de la plataforma en `e2e/` y los de la app en `e2e/app/`
+  (con los mismos `e2e/db.ts` y `e2e/fixtures.ts`), contra la API real local: Postgres arrancado y migrado
   (`mise run up && mise run migrate`) y la API en marcha (`mise run dev`); Playwright arranca
   Vite si no está. Las sesiones se siembran por SQL como en `docs/runbooks/auth.md`, sin
   AuthKit (`e2e/db.ts`), y se borran al acabar. Los flujos de MFA usan respuestas simuladas

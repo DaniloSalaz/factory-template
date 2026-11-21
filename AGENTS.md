@@ -61,9 +61,10 @@ api/tools/                routegen (seguridad por ruta) y specmerge (unión del 
 api-spec/platform.yaml    contrato HTTP de la plantilla (una app no lo edita)
 api-spec/app.yaml         contrato HTTP de la app
 api-spec/openapi.gen.yaml los dos unidos (generado); de aquí leen todos los generadores
-web/src/gen/              cliente TS generado (orval) y seguridad por ruta (scripts/gen-route-security.ts)
-web/src/platform/         front de la plantilla: shell, auth, tenant, MFA, miembros, invitaciones, errores, fetcher, ui (shadcn)
-web/src/app/              lo propio de cada app: rutas bajo /t/$tenantId, registry.ts, theme.css, brand/
+web/src/gen/              cliente TS generado (orval), seguridad por ruta (scripts/gen-route-security.ts) y routeTree.gen.ts (tsr)
+web/src/platform/         front de la plantilla: shell, auth, tenant, MFA, miembros, invitaciones, errores, fetcher, ui (shadcn); sus tests en __tests__/
+web/src/app/              lo propio de cada app: features/<f>/, rutas bajo /t/$tenantId (routes/), registry.ts, theme.css, brand/
+web/e2e/ (+ app/)         recorridos de Playwright de plataforma (e2e/) y de la app (e2e/app/)
 ```
 Ejemplo vivo: `api/platform/health`.
 
@@ -107,7 +108,9 @@ Ejemplo vivo: `api/platform/health`.
 - Comentarios solo para explicar el porqué, no el qué.
 
 ## Reglas del front (`web/`, detalle en `web/README.md`)
-- `web/src/platform` es código de la plantilla y no importa `web/src/app`, salvo su registro en `platform/app-registry.ts` (`[platform-imports-app]`, `mise run web:test`). Una app añade pantallas en `app/routes/`, entradas de navegación en `app/registry.ts` y su marca en `app/theme.css` y `app/brand/`; no edita `platform`.
+- `web/src/platform` es código de la plantilla y no importa `web/src/app`, salvo su registro en `platform/app-registry.ts` (`[platform-imports-app]`, `mise run web:test`). Una app añade entradas de navegación en `app/registry.ts` y su marca en `app/theme.css` y `app/brand/`; no edita `platform`.
+- Una funcionalidad de la app va en `app/features/<f>/` (`pages/`, `components/`, `hooks/`, `__tests__/`), con el mismo nombre que su módulo `api/app/modules/<f>`, y cada pantalla tiene en `app/routes/` una ruta que solo hace `createFileRoute` e importa su página. Una funcionalidad no importa nada de otra (`[feature-boundaries]`, `mise run web:test`): lo compartido va en `app/shared/`.
+- Los tests del front van en `__tests__/` (los de plataforma, en `platform/__tests__/` con las mismas subcarpetas; los de una funcionalidad, en la suya) e importan con el alias `@/`. Los recorridos de la app, en `web/e2e/app/`.
 - Sin `fetch` a mano: se usa el cliente generado (`web/src/gen/api.ts`) y sus tipos. Sin librerías de formularios ni de validación.
 - Los errores de la API se tratan en un solo sitio (`platform/errors/handle.ts`): `401`, `403 auth.mfa_required`, `auth.mfa_enrollment_required`, `auth.tenant_forbidden` y `429` nunca los decide un componente. Las pantallas muestran el resto por su `code` con `ErrorText`.
 - El tenant actual vive en la URL (`/t/$tenantId`); el fetcher pone `X-Tenant-ID` solo en las operaciones cuyo contrato lo exige. Nada de tenant en estado global ni en `localStorage`, salvo el último usado (solo para redirigir desde `/`).
