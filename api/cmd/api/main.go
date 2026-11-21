@@ -142,7 +142,9 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	health.New(health.Deps{DB: pool, Logger: logger, Version: version()}).Register(mux)
 	idm.Register(mux)
 
-	handler := httpx.Chain(httpx.WithRouteFallback(mux, logger),
+	// Telemetry is outermost, so its span covers the whole request (ADR 0004; the probes
+	// get none).
+	handler := tel.HTTP(httpx.Chain(httpx.WithRouteFallback(mux, logger),
 		httpx.RequestID(),
 		httpx.AccessLog(logger, "/healthz", "/readyz"),
 		httpx.Recover(logger),
@@ -157,7 +159,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		idm.TenantMiddleware(),
 		// After authentication, so a caller without a session gets 401, not 400.
 		httpx.KnownBodyFields(mux, routes.BodyFields(), logger),
-	)
+	), "/healthz", "/readyz")
 
 	if err := httpx.NewServer(cfg.HTTP, handler, logger).Run(ctx); err != nil {
 		return fmt.Errorf("run http server: %w", err)

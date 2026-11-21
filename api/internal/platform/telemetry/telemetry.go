@@ -41,17 +41,27 @@ type Telemetry struct {
 	tracers    trace.TracerProvider
 	meters     metric.MeterProvider
 	propagator propagation.TextMapPropagator
+	metrics    *Metrics
 	shutdown   []func(context.Context) error
+}
+
+// NewWith builds a Telemetry on the given providers, with no exporters of its own: for
+// tests, which pass in-memory SDK providers.
+func NewWith(tracers trace.TracerProvider, meters metric.MeterProvider) (*Telemetry, error) {
+	m, err := newMetrics(meters)
+	if err != nil {
+		return nil, err
+	}
+	return &Telemetry{tracers: tracers, meters: meters, propagator: propagation.TraceContext{}, metrics: m}, nil
 }
 
 // New sets up traces and metrics from s. Exporting never blocks a request: spans go out
 // in batches and metrics periodically, both in the background, and a collector that
 // does not answer only costs failed exports, which are logged.
 func New(ctx context.Context, s Settings) (*Telemetry, error) {
-	t := &Telemetry{
-		tracers:    tracenoop.NewTracerProvider(),
-		meters:     metricnoop.NewMeterProvider(),
-		propagator: propagation.TraceContext{},
+	t, err := NewWith(tracenoop.NewTracerProvider(), metricnoop.NewMeterProvider())
+	if err != nil {
+		return nil, err
 	}
 	if !s.Config.TracesEnabled() && !s.Config.MetricsEnabled() {
 		return t, nil
@@ -101,6 +111,9 @@ func New(ctx context.Context, s Settings) (*Telemetry, error) {
 		)
 		t.meters = mp
 		t.shutdown = append(t.shutdown, mp.Shutdown)
+		if t.metrics, err = newMetrics(mp); err != nil {
+			return nil, errors.Join(err, t.Shutdown(ctx))
+		}
 	}
 	return t, nil
 }
@@ -110,6 +123,9 @@ func (t *Telemetry) Tracers() trace.TracerProvider { return t.tracers }
 
 // Meters is the meter provider to hand to instrumentation.
 func (t *Telemetry) Meters() metric.MeterProvider { return t.meters }
+
+// Metrics are the API's own counters.
+func (t *Telemetry) Metrics() *Metrics { return t.metrics }
 
 // Propagator reads and writes W3C traceparent.
 func (t *Telemetry) Propagator() propagation.TextMapPropagator { return t.propagator }
