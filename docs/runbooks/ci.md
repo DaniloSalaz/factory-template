@@ -5,21 +5,24 @@ local, con las versiones fijadas en `mise.toml`. Si algo pasa en local y falla e
 revés), lo primero es comprobar que `mise install` está al día.
 
 Se ejecuta en cada `pull_request` y en cada `push` a `main`. Las ejecuciones antiguas del
-mismo PR se cancelan; las de `main` siempre terminan.
+mismo PR se cancelan; las de `main` siempre terminan. Si el cambio solo toca documentación,
+los jobs pesados se saltan (ver [Cambios que solo tocan documentación](#cambios-que-solo-tocan-documentación)).
 
 ## Jobs
 
 | Job | Qué comprueba | En local |
 |---|---|---|
+| `changes` | Se ejecuta primero y decide si el cambio toca código (`code=true`) o solo documentación (`code=false`) con `.github/scripts/changes.sh` | `.github/scripts/changes.sh push <base> <head>` |
 | `lint` | golangci-lint (incluye las reglas de arquitectura de depguard y forbidigo), actionlint + shellcheck sobre los workflows y los tests de arquitectura | `mise run lint:go`, `mise run lint:actions`, `mise run arch` |
 | `test` | `go test -race -cover ./...`; la integración de `/readyz` arranca Postgres con Testcontainers en el Docker del runner | `mise run test` (Docker arrancado) |
 | `generate` | Regenera sqlc, oapi-codegen, orval y la seguridad por ruta del front (`web/src/gen/routeSecurity.ts`) y falla si cambia algo en `api/gen` o `web/src/gen` | `mise run generate:check` |
-| `security` | govulncheck, gitleaks sobre todo el historial y `trivy fs` (dependencias y Dockerfile), fallando con HIGH o CRITICAL | `mise run security` |
+| `security` | govulncheck y `trivy fs` (dependencias y Dockerfile), fallando con HIGH o CRITICAL | `mise run security:govulncheck`, `mise run security:trivy` |
+| `gitleaks` | gitleaks sobre todo el historial. Se ejecuta siempre, también si solo cambia documentación | `mise run security:gitleaks` |
 | `web` | `npm ci`, Biome, `npm run build` (genera `web/src/routeTree.gen.ts` con la CLI de TanStack Router, luego `tsc -b` y `vite build`; falla si el árbol no coincide con el commit) y los tests unitarios con Vitest, incluido el de arquitectura del front | `mise run web:check`, `mise run web:test` |
 | `e2e` | El recorrido de Playwright (`web/e2e`) contra la API real: Postgres 18 y Mailpit (el SMTP de desarrollo de `mise.toml`) como servicios, el bootstrap de `infra/db`, `mise run migrate`, la API compilada y arrancada con una `WORKOS_API_KEY` ficticia, y Vite (lo arranca Playwright). Sube las capturas (`web/e2e-screenshots/`) y las trazas (`web/test-results/`, todas en CI) como artefacto `e2e-screenshots-and-traces`; si falla, también el log de la API (`e2e-api-log`) | `mise run up && mise run migrate`, `mise run dev` y `mise run web:e2e` |
 | `docker` | Construye la imagen de la API (sin publicarla) y la escanea con Trivy | `mise run docker:scan` |
-| `release` (otro workflow) | Tras un push a `main` con el CI en verde: imagen multiplataforma en GHCR, atestaciones y Trivy de la imagen publicada (`docs/runbooks/release.md`) | `mise run docker:build`, `mise run docker:scan` |
-| `ci-ok` | Depende de todos los anteriores y falla si alguno no terminó en `success` (también si se saltó o se canceló) | — |
+| `release` (otro workflow) | Tras un push a `main` con el CI en verde y que no sea solo documentación: imagen multiplataforma en GHCR, atestaciones y Trivy de la imagen publicada (`docs/runbooks/release.md`) | `mise run docker:build`, `mise run docker:scan` |
+| `ci-ok` | Depende de todos los anteriores. Exige `success` en `changes` y `gitleaks`, y en los demás `success` o, solo con `code=false`, `skipped`. Cualquier fallo o cancelación lo hace fallar | — |
 
 El job `e2e` no llama nunca a WorkOS: el arranque de la API solo comprueba que
 `WORKOS_API_KEY` existe (la usa para derivar la clave que sella los intentos de login y en
@@ -32,6 +35,54 @@ MFA usan respuestas simuladas. Si un test nuevo necesitara WorkOS, no cabe en es
 en `ci` porque necesita Postgres y la API en marcha. Los escaneos de Trivy (`security:trivy`
 y `docker:scan`) no están en `ci` porque descargan su base de datos y tardan más; ejecútalos con
 `mise run security` y `mise run docker:scan` cuando toques dependencias o el Dockerfile.
+
+## Cambios que solo tocan documentación
+
+El job `changes` compara los ficheros cambiados (`git diff --name-only --no-renames`): en un
+PR, desde la base hasta la cabeza del PR (`base...head`, lo que aporta el PR); en un push a
+`main`, de `before` a `sha`. El cambio es solo documentación (`code=false`) si **todos** los
+ficheros son:
+
+- `docs/**`;
+- `*.md` en cualquier carpeta;
+- `LICENSE`.
+
+Pero nada bajo `.github/`, `api/`, `web/`, `infra/` ni `api-spec/` es documentación, aunque sea
+un `.md` (`web/README.md`, `.github/pull_request_template.md`): las carpetas de código ganan.
+Cualquier otro fichero (`mise.toml`, `compose.yaml`, `renovate.json`, `config/`, `tools/`…)
+también es código. Con `--no-renames`, mover un fichero de código a `docs/` cuenta el origen
+borrado, así que también es código.
+
+Ante cualquier duda, `code=true`: `before` todo ceros (rama nueva), un `git diff` que falla
+(un commit que ya no existe), un diff vacío o un evento desconocido. El log del job dice el
+rango y qué fichero o motivo lo decidió.
+
+Con `code=false` se saltan `lint`, `test`, `generate`, `security` (govulncheck y trivy), `web`,
+`e2e` y `docker`. `gitleaks` se ejecuta siempre: un secreto también puede ir en un `.md`.
+
+| Caso | `ci-ok` |
+|---|---|
+| Solo documentación | ✅ (pesados saltados) |
+| Documentación + código | ✅ si todo pasa (se ejecuta todo) |
+| Solo `.github/` | ✅ si todo pasa (se ejecuta todo) |
+| Falla `changes` | ❌ (los pesados se saltan sin `code=false`) |
+| Falla un job pesado con código | ❌ |
+| Falla `gitleaks` | ❌ |
+| Un job cancelado, o saltado con `code=true` | ❌ |
+
+`release` no publica imagen si el push a `main` solo cambió documentación. No recalcula el
+rango (el evento `workflow_run` no trae `before`): pregunta a la API por el job `docker` de esa
+ejecución del CI y, si se saltó, no publica. Con el CI en verde eso solo ocurre con `code=false`.
+Si no puede saberlo (error de la API, job ausente), publica.
+
+### Por qué no `paths-ignore`
+
+Con `paths`/`paths-ignore` en `on:`, un PR que solo cambia documentación no ejecutaría el
+workflow, `ci-ok` no aparecería nunca y, como es un check obligatorio, el PR quedaría bloqueado
+esperándolo. Por eso el workflow se ejecuta siempre y es `ci-ok` quien acepta los saltos. No
+añadas filtros de rutas al `on:` de `ci.yml`.
+
+`mise run ci` en local no cambia: siempre ejecuta todo.
 
 ## Reglas de arquitectura
 
@@ -91,7 +142,8 @@ una vez (abre un PR para provocarlo).
 6. **Create**.
 
 Como el único check obligatorio es `ci-ok`, añadir o renombrar jobs no exige tocar la regla: basta
-con añadirlos a `needs` de `ci-ok`.
+con añadirlos a `needs` de `ci-ok`. Si el job nuevo es pesado y no tiene sentido para un cambio de
+documentación, lleva además `needs: changes` e `if: needs.changes.outputs.code == 'true'`.
 
 ## Dependencias
 

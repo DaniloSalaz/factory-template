@@ -1,5 +1,9 @@
 # CI runs the same mise tasks as `mise run ci` locally, with the tool versions pinned in
 # mise.toml. See docs/runbooks/ci.md.
+#
+# No `paths`/`paths-ignore` here: a workflow that does not run never reports `ci-ok`, the
+# required check, and the PR stays blocked. Changes that only touch documentation still run
+# it; the `changes` job tells the heavy jobs to skip and `ci-ok` accepts those skips.
 name: CI
 
 on:
@@ -19,8 +23,30 @@ env:
   MISE_VERSION: 2026.11.10
 
 jobs:
+  # code=false only when every changed file is documentation; anything unknown is code.
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.changes.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # both ends of the range and their merge base
+      - name: Classify the changed files
+        id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: .github/scripts/changes.sh "$EVENT" "$BASE" "$HEAD"
+
   lint:
     name: lint
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -45,6 +71,8 @@ jobs:
 
   test:
     name: test
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -67,6 +95,8 @@ jobs:
 
   generate:
     name: generate
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -88,8 +118,31 @@ jobs:
 
   security:
     name: security
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install_args: go go:golang.org/x/vuln/cmd/govulncheck trivy
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/go/pkg/mod
+          key: go-mod-${{ runner.os }}-${{ hashFiles('api/go.sum') }}
+          restore-keys: go-mod-${{ runner.os }}-
+      - run: mise run security:govulncheck
+      - run: mise run security:trivy
+
+  # Always runs: a secret can be committed in a Markdown file too.
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -98,18 +151,13 @@ jobs:
       - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
           version: ${{ env.MISE_VERSION }}
-          install_args: go go:golang.org/x/vuln/cmd/govulncheck gitleaks trivy
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/go/pkg/mod
-          key: go-mod-${{ runner.os }}-${{ hashFiles('api/go.sum') }}
-          restore-keys: go-mod-${{ runner.os }}-
-      - run: mise run security:govulncheck
+          install_args: gitleaks
       - run: mise run security:gitleaks
-      - run: mise run security:trivy
 
   web:
     name: web
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -136,6 +184,8 @@ jobs:
   # start-up only checks is set. See docs/runbooks/ci.md.
   e2e:
     name: e2e
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -233,6 +283,8 @@ jobs:
 
   docker:
     name: docker
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -246,22 +298,41 @@ jobs:
       # Builds the image without publishing it, then scans it.
       - run: mise run docker:scan
 
-  # The only required status check on main: new jobs only need adding to `needs`.
+  # The only required status check on main: new jobs only need adding to `needs` (and, if
+  # they are heavy, `needs: changes` with the same `if` as the others).
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [lint, test, generate, security, web, e2e, docker]
+    needs: [changes, gitleaks, lint, test, generate, security, web, e2e, docker]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require every job to succeed
+      # `changes` and `gitleaks` must succeed. The rest must succeed, or be skipped because
+      # `changes` said the change is documentation only.
+      - name: Require every job to succeed or be skipped for documentation
         env:
-          RESULTS: ${{ join(needs.*.result, ' ') }}
+          NEEDS: ${{ toJSON(needs) }}
+          CODE: ${{ needs.changes.outputs.code }}
         run: |
-          echo "Job results: $RESULTS"
-          for result in $RESULTS; do
-            if [ "$result" != "success" ]; then
-              echo "::error::A required job finished with '$result'."
+          echo "code=$CODE"
+          # Read up front: a jq failure must fail the step, not leave an empty loop that passes.
+          results=$(jq -r 'to_entries[] | "\(.key) \(.value.result)"' <<< "$NEEDS")
+          ok=0
+          while read -r job result; do
+            echo "$job: $result"
+            case "$job:$result" in
+              changes:success | gitleaks:success) ok=$((ok + 1)) ;;
+              changes:* | gitleaks:*) bad=1 ;;
+              *:success) ;;
+              *:skipped) [ "$CODE" = "false" ] || bad=1 ;;
+              *) bad=1 ;;
+            esac
+            if [ "${bad:-0}" -eq 1 ]; then
+              echo "::error::Job '$job' finished with '$result' (code=$CODE)."
               exit 1
             fi
-          done
+          done <<< "$results"
+          if [ "$ok" -ne 2 ]; then
+            echo "::error::The results of 'changes' and 'gitleaks' are missing."
+            exit 1
+          fi
