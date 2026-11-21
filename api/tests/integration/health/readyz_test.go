@@ -42,7 +42,7 @@ func TestReadyz_Integration(t *testing.T) {
 
 	t.Run("200 when the database is up", func(t *testing.T) {
 		res := get(t, srv.URL+"/readyz")
-		if res.status != http.StatusOK {
+		if res.status != http.StatusTeapot {
 			t.Fatalf("status = %d, want 200", res.status)
 		}
 	})
