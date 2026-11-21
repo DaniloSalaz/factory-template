@@ -110,11 +110,14 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		return err
 	}
 
-	pool, err := db.NewPool(ctx, cfg.DB.URL.Reveal())
+	pool, err := db.NewPool(ctx, cfg.DB.URL.Reveal(), db.WithTracer(tel.PgxTracer()))
 	if err != nil {
 		return fmt.Errorf("connect database: %w", err)
 	}
 	defer pool.Close()
+	if err := tel.RecordPoolStats(pool); err != nil {
+		return err
+	}
 
 	// Email by SMTP; only development may log the links instead (design, 5.6.7).
 	sender, err := identity.NewInvitationSender(cfg.Env, cfg.SMTP, logger)
