@@ -691,7 +691,7 @@ func TestWithAnonTx(t *testing.T) {
 
 	for name, sql := range map[string]string{
 		"a business table":  `SELECT id FROM notes`,
-		"a core table":  `SELECT id FROM memberships`,
+		"a core table":      `SELECT id FROM memberships`,
 		"a user's function": `SELECT tenant_id FROM auth_memberships_for_user()`,
 	} {
 		t.Run("cannot read "+name, func(t *testing.T) {
