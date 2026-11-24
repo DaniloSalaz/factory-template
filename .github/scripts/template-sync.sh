@@ -54,7 +54,9 @@ MSG
   exit 1
 fi
 
-mise run generate
+mise run generate || fail "the merge is clean but 'mise run generate' failed; the merge is still in progress.
+Fix it, then: git add api/gen web/src/gen api-spec/openapi.gen.yaml && git commit --no-edit
+To give up: git merge --abort"
 git add -- api/gen web/src/gen api-spec/openapi.gen.yaml
 git commit --no-edit
 mise run template:check
