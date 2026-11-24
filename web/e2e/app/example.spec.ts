@@ -1,4 +1,4 @@
-// The app's own journey (e2e/app/), against the real local API like the platform's in
+// The app's own journey (e2e/app/), against the real local API like the core's in
 // e2e/: its screen, registered in src/app/registry.ts, inside the tenant layout.
 import { cleanup, newTenant, newUser, run, type User } from "../db.ts";
 import { expect, shot, signIn, test } from "../fixtures.ts";

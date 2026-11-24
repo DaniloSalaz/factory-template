@@ -1,20 +1,20 @@
-// Command specmerge joins the platform contract (api-spec/platform.yaml) and the app
+// Command specmerge joins the core contract (api-spec/core.yaml) and the app
 // contract (api-spec/app.yaml) into api-spec/openapi.gen.yaml, the only file the
 // generators read (oapi-codegen, routegen, orval, gen-route-security.ts).
 //
-// The platform document is the base: its openapi, info, servers and root security are
+// The core document is the base: its openapi, info, servers and root security are
 // the merged ones, and the app's tags, paths and components are appended after the
-// platform's, in the app's order. It works on yaml.Node rather than maps so that the
+// core's, in the app's order. It works on yaml.Node rather than maps so that the
 // output keeps the order of its input: the web generators walk paths in document
-// order, and an empty app.yaml must reproduce the platform contract as it is.
+// order, and an empty app.yaml must reproduce the core contract as it is.
 //
-// The app references platform components as `platform.yaml#/components/...`, which
+// The app references core components as `core.yaml#/components/...`, which
 // keeps app.yaml readable on its own; the merge rewrites them to local references.
 //
-// Each tag is the key of one module: the module whose codegen.yaml (platform/<m>/ or
+// Each tag is the key of one module: the module whose codegen.yaml (core/<m>/ or
 // app/modules/<m>/) includes it, which is how generate finds the modules without a
 // hand-written list. The merge refuses anything that would break that key or let the
-// app override the platform (see the [contract-*] rules in docs/platform/runbooks/ci.md).
+// app override the core (see the [contract-*] rules in docs/core/runbooks/ci.md).
 package main
 
 import (
@@ -32,30 +32,30 @@ import (
 )
 
 const (
-	ruleOwned     = "contract-platform-owned"
+	ruleOwned     = "contract-core-owned"
 	ruleDuplicate = "contract-duplicate"
 	ruleModuleKey = "contract-module-key"
 )
 
 func main() {
-	platform := flag.String("platform", "", "path of the platform contract")
+	core := flag.String("core", "", "path of the core contract")
 	app := flag.String("app", "", "path of the app contract")
-	root := flag.String("root", ".", "the api/ directory, where platform/*/codegen.yaml and app/modules/*/codegen.yaml live")
+	root := flag.String("root", ".", "the api/ directory, where core/*/codegen.yaml and app/modules/*/codegen.yaml live")
 	out := flag.String("out", "", "path of the merged contract to write")
 	flag.Parse()
-	if err := run(*platform, *app, *root, *out); err != nil {
+	if err := run(*core, *app, *root, *out); err != nil {
 		fmt.Fprintln(os.Stderr, "specmerge:", err)
 		os.Exit(1)
 	}
 }
 
-func run(platformPath, appPath, root, outPath string) error {
-	if platformPath == "" || appPath == "" || outPath == "" {
-		return errors.New("-platform, -app and -out are required")
+func run(corePath, appPath, root, outPath string) error {
+	if corePath == "" || appPath == "" || outPath == "" {
+		return errors.New("-core, -app and -out are required")
 	}
-	pb, err := os.ReadFile(filepath.Clean(platformPath))
+	pb, err := os.ReadFile(filepath.Clean(corePath))
 	if err != nil {
-		return fmt.Errorf("read platform contract: %w", err)
+		return fmt.Errorf("read core contract: %w", err)
 	}
 	ab, err := os.ReadFile(filepath.Clean(appPath))
 	if err != nil {
@@ -66,7 +66,7 @@ func run(platformPath, appPath, root, outPath string) error {
 		return err
 	}
 	src, err := merge(
-		source{name: filepath.Base(platformPath), data: pb},
+		source{name: filepath.Base(corePath), data: pb},
 		source{name: filepath.Base(appPath), data: ab},
 		mods,
 	)
@@ -86,7 +86,7 @@ func run(platformPath, appPath, root, outPath string) error {
 type zone int
 
 const (
-	zonePlatform zone = iota
+	zoneCore zone = iota
 	zoneApp
 )
 
@@ -105,7 +105,7 @@ type codegenConfig struct {
 	} `yaml:"output-options"`
 }
 
-// discoverModules reads platform/*/codegen.yaml and app/modules/*/codegen.yaml under
+// discoverModules reads core/*/codegen.yaml and app/modules/*/codegen.yaml under
 // root, in alphabetical order, as generate does, and checks that each one generates
 // exactly its folder's tag into gen/openapi/<m>/ as package <m>api.
 func discoverModules(root string) ([]module, error) {
@@ -116,7 +116,7 @@ func discoverModules(root string) ([]module, error) {
 		zone    zone
 		pattern string
 	}{
-		{zonePlatform, "platform/*/codegen.yaml"},
+		{zoneCore, "core/*/codegen.yaml"},
 		{zoneApp, "app/modules/*/codegen.yaml"},
 	} {
 		paths, err := filepath.Glob(filepath.Join(root, filepath.FromSlash(z.pattern)))
@@ -199,14 +199,14 @@ func methods() []string {
 }
 
 // appRootKeys are the root members app.yaml may have; the rest (security, servers,
-// webhooks...) belong to the platform.
+// webhooks...) belong to the core.
 func appRootKeys() []string {
 	return []string{"openapi", "info", "tags", "paths", "components"}
 }
 
 // merge returns the merged contract, or every rule the inputs break.
-func merge(platform, app source, mods []module) ([]byte, error) {
-	pdoc, p, err := parseDoc(platform)
+func merge(core, app source, mods []module) ([]byte, error) {
+	pdoc, p, err := parseDoc(core)
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +214,7 @@ func merge(platform, app source, mods []module) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	m := &merger{platform: platform.name, app: app.name, p: p, a: a, modules: map[string]module{}, used: map[string]bool{}}
+	m := &merger{core: core.name, app: app.name, p: p, a: a, modules: map[string]module{}, used: map[string]bool{}}
 	for _, mod := range mods {
 		m.modules[mod.name] = mod
 	}
@@ -225,7 +225,7 @@ func merge(platform, app source, mods []module) ([]byte, error) {
 	m.join()
 
 	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "# Code generated by specmerge from api-spec/%s and api-spec/%s. DO NOT EDIT.\n", platform.name, app.name)
+	fmt.Fprintf(&buf, "# Code generated by specmerge from api-spec/%s and api-spec/%s. DO NOT EDIT.\n", core.name, app.name)
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
 	if err := enc.Encode(pdoc); err != nil {
@@ -249,11 +249,11 @@ func parseDoc(s source) (*yaml.Node, *yaml.Node, error) {
 }
 
 type merger struct {
-	platform, app string // file names, for messages
-	p, a          *yaml.Node
-	modules       map[string]module
-	used          map[string]bool // modules with at least one operation
-	errs          []error
+	core, app string // file names, for messages
+	p, a      *yaml.Node
+	modules   map[string]module
+	used      map[string]bool // modules with at least one operation
+	errs      []error
 }
 
 func (m *merger) fail(rule, format string, args ...any) {
@@ -277,15 +277,15 @@ func (m *merger) check(mods []module) {
 func (m *merger) checkRoot() {
 	for _, kv := range pairs(m.a) {
 		if !slices.Contains(appRootKeys(), kv.key.Value) {
-			m.fail(ruleOwned, "%s:%d: root member %q is not allowed: only %s; the rest (root security, servers...) is defined in %s", m.app, kv.key.Line, kv.key.Value, strings.Join(appRootKeys(), ", "), m.platform)
+			m.fail(ruleOwned, "%s:%d: root member %q is not allowed: only %s; the rest (root security, servers...) is defined in %s", m.app, kv.key.Line, kv.key.Value, strings.Join(appRootKeys(), ", "), m.core)
 		}
 	}
 	pv, av := scalar(get(m.p, "openapi")), scalar(get(m.a, "openapi"))
 	if !strings.HasPrefix(pv, "3.1") {
-		m.fail(ruleOwned, "%s: openapi is %q, want 3.1.x", m.platform, pv)
+		m.fail(ruleOwned, "%s: openapi is %q, want 3.1.x", m.core, pv)
 	}
 	if av != pv {
-		m.fail(ruleOwned, "%s: openapi is %q, want %q, as in %s", m.app, av, pv, m.platform)
+		m.fail(ruleOwned, "%s: openapi is %q, want %q, as in %s", m.app, av, pv, m.core)
 	}
 }
 
@@ -296,24 +296,24 @@ func (m *merger) tenantHeader() string {
 func (m *merger) checkComponents() {
 	tenant := m.tenantHeader()
 	if tenant == "" {
-		m.fail(ruleOwned, "%s: components.securitySchemes.tenant.name is missing", m.platform)
+		m.fail(ruleOwned, "%s: components.securitySchemes.tenant.name is missing", m.core)
 	}
 	pc, ac := get(m.p, "components"), get(m.a, "components")
 	for _, sec := range pairs(ac) {
 		if sec.key.Value == "securitySchemes" {
-			m.fail(ruleOwned, "%s:%d: components.securitySchemes is defined in %s; refer to its schemes by name in `security` (session, tenant)", m.app, sec.key.Line, m.platform)
+			m.fail(ruleOwned, "%s:%d: components.securitySchemes is defined in %s; refer to its schemes by name in `security` (session, tenant)", m.app, sec.key.Line, m.core)
 			continue
 		}
 		taken := map[string]string{} // nameKey -> where the name is defined
 		for _, c := range pairs(get(pc, sec.key.Value)) {
-			taken[nameKey(c.key.Value)] = m.platform
+			taken[nameKey(c.key.Value)] = m.core
 		}
 		for _, c := range pairs(sec.value) {
 			k := nameKey(c.key.Value)
 			other, dup := taken[k]
 			switch {
-			case dup && other == m.platform && get(get(pc, sec.key.Value), c.key.Value) != nil:
-				m.fail(ruleDuplicate, "%s:%d: components.%s.%s already exists in %s; rename it, or reference the platform one as %s#/components/%s/%s", m.app, c.key.Line, sec.key.Value, c.key.Value, m.platform, m.platform, sec.key.Value, c.key.Value)
+			case dup && other == m.core && get(get(pc, sec.key.Value), c.key.Value) != nil:
+				m.fail(ruleDuplicate, "%s:%d: components.%s.%s already exists in %s; rename it, or reference the core one as %s#/components/%s/%s", m.app, c.key.Line, sec.key.Value, c.key.Value, m.core, m.core, sec.key.Value, c.key.Value)
 			case dup:
 				m.fail(ruleDuplicate, "%s:%d: components.%s.%s collides with a name of the same section in %s: generated type names ignore case, `_` and `-`; rename it", m.app, c.key.Line, sec.key.Value, c.key.Value, other)
 			default:
@@ -326,18 +326,18 @@ func (m *merger) checkComponents() {
 	}
 	for _, h := range pairs(get(ac, "headers")) {
 		if strings.EqualFold(h.key.Value, tenant) {
-			m.fail(ruleOwned, "%s:%d: components.headers.%s redefines the tenant header; it is the `tenant` security scheme of %s: declare `security` on the operation instead", m.app, h.key.Line, h.key.Value, m.platform)
+			m.fail(ruleOwned, "%s:%d: components.headers.%s redefines the tenant header; it is the `tenant` security scheme of %s: declare `security` on the operation instead", m.app, h.key.Line, h.key.Value, m.core)
 		}
 	}
 	walk(m.a, func(n *yaml.Node) {
 		if n.Kind == yaml.MappingNode && scalar(get(n, "in")) == "header" && strings.EqualFold(scalar(get(n, "name")), tenant) {
-			m.fail(ruleOwned, "%s:%d: a parameter redefines the %s header; it is the `tenant` security scheme of %s: the default security (or `security: [{session: [], tenant: []}]`) already requires it", m.app, n.Line, tenant, m.platform)
+			m.fail(ruleOwned, "%s:%d: a parameter redefines the %s header; it is the `tenant` security scheme of %s: the default security (or `security: [{session: [], tenant: []}]`) already requires it", m.app, n.Line, tenant, m.core)
 		}
 	})
 }
 
-// checkRefs checks that the platform only references itself and that every app
-// reference resolves, to its own components or to `<platform>#/...`, which it rewrites
+// checkRefs checks that the core only references itself and that every app
+// reference resolves, to its own components or to `<core>#/...`, which it rewrites
 // to a local reference (the merged document holds both).
 func (m *merger) checkRefs() {
 	walk(m.p, func(n *yaml.Node) {
@@ -346,14 +346,14 @@ func (m *merger) checkRefs() {
 			return
 		}
 		if !strings.HasPrefix(ref.Value, "#/") {
-			m.fail(ruleOwned, "%s:%d: $ref %q: the platform contract references only itself", m.platform, ref.Line, ref.Value)
+			m.fail(ruleOwned, "%s:%d: $ref %q: the core contract references only itself", m.core, ref.Line, ref.Value)
 		} else if resolve(m.p, ref.Value) == nil {
-			m.fail(ruleOwned, "%s:%d: $ref %q leads nowhere", m.platform, ref.Line, ref.Value)
+			m.fail(ruleOwned, "%s:%d: $ref %q leads nowhere", m.core, ref.Line, ref.Value)
 		}
 	})
-	// Only components: a reference to anything else of the platform (a path item, say)
-	// would copy a platform route into the app, out of reach of the checks below.
-	external := m.platform + "#/components/"
+	// Only components: a reference to anything else of the core (a path item, say)
+	// would copy a core route into the app, out of reach of the checks below.
+	external := m.core + "#/components/"
 	walk(m.a, func(n *yaml.Node) {
 		ref := get(n, "$ref")
 		if n.Kind != yaml.MappingNode || ref == nil {
@@ -361,40 +361,40 @@ func (m *merger) checkRefs() {
 		}
 		switch {
 		case strings.HasPrefix(ref.Value, external):
-			local := strings.TrimPrefix(ref.Value, m.platform)
+			local := strings.TrimPrefix(ref.Value, m.core)
 			if resolve(m.p, local) == nil {
-				m.fail(ruleOwned, "%s:%d: $ref %q: %s has no %s", m.app, ref.Line, ref.Value, m.platform, local)
+				m.fail(ruleOwned, "%s:%d: $ref %q: %s has no %s", m.app, ref.Line, ref.Value, m.core, local)
 				return
 			}
 			ref.Value = local
 		case strings.HasPrefix(ref.Value, "#/components/"):
 			if resolve(m.a, ref.Value) == nil {
-				m.fail(ruleOwned, "%s:%d: $ref %q leads nowhere in %s; a platform component is referenced as %s%s", m.app, ref.Line, ref.Value, m.app, m.platform, ref.Value)
+				m.fail(ruleOwned, "%s:%d: $ref %q leads nowhere in %s; a core component is referenced as %s%s", m.app, ref.Line, ref.Value, m.app, m.core, ref.Value)
 			}
 		default:
-			m.fail(ruleOwned, "%s:%d: $ref %q: the app contract references only components, its own (#/components/...) or the platform's (%s...)", m.app, ref.Line, ref.Value, external)
+			m.fail(ruleOwned, "%s:%d: $ref %q: the app contract references only components, its own (#/components/...) or the core's (%s...)", m.app, ref.Line, ref.Value, external)
 		}
 	})
 }
 
-// checkTags checks the declared tags and returns the platform's. Every declared tag
+// checkTags checks the declared tags and returns the core's. Every declared tag
 // must be the key of a module of its own zone.
 func (m *merger) checkTags() map[string]bool {
 	ptags := map[string]bool{}
 	for _, t := range items(get(m.p, "tags")) {
 		name := scalar(get(t, "name"))
 		if ptags[name] {
-			m.fail(ruleDuplicate, "%s:%d: tag %q is declared twice", m.platform, t.Line, name)
+			m.fail(ruleDuplicate, "%s:%d: tag %q is declared twice", m.core, t.Line, name)
 		}
 		ptags[name] = true
-		m.checkTagModule(fmt.Sprintf("%s:%d", m.platform, t.Line), name, zonePlatform)
+		m.checkTagModule(fmt.Sprintf("%s:%d", m.core, t.Line), name, zoneCore)
 	}
 	atags := map[string]bool{}
 	for _, t := range items(get(m.a, "tags")) {
 		name := scalar(get(t, "name"))
 		switch {
 		case ptags[name]:
-			m.fail(ruleDuplicate, "%s:%d: tag %q belongs to the platform (%s); an app module declares its own tag, named like its folder in app/modules/", m.app, t.Line, name, m.platform)
+			m.fail(ruleDuplicate, "%s:%d: tag %q belongs to the core (%s); an app module declares its own tag, named like its folder in app/modules/", m.app, t.Line, name, m.core)
 		case atags[name]:
 			m.fail(ruleDuplicate, "%s:%d: tag %q is declared twice", m.app, t.Line, name)
 		default:
@@ -408,8 +408,8 @@ func (m *merger) checkTags() map[string]bool {
 func (m *merger) checkTagModule(where, tag string, z zone) {
 	mod, ok := m.modules[tag]
 	want := "app/modules/" + tag + "/codegen.yaml"
-	if z == zonePlatform {
-		want = "platform/" + tag + "/codegen.yaml"
+	if z == zoneCore {
+		want = "core/" + tag + "/codegen.yaml"
 	}
 	if !ok || mod.zone != z {
 		m.fail(ruleModuleKey, "%s: tag %q has no module: there is no api/%s; every tag is the key of exactly one module, so create it or use the tag of an existing one", where, tag, want)
@@ -452,7 +452,7 @@ func pathShape(p string) string {
 func (m *merger) checkPaths() {
 	shapes := map[string]string{}
 	for _, kv := range pairs(get(m.p, "paths")) {
-		shapes[pathShape(kv.key.Value)] = m.platform + " " + kv.key.Value
+		shapes[pathShape(kv.key.Value)] = m.core + " " + kv.key.Value
 	}
 	for _, kv := range pairs(get(m.a, "paths")) {
 		shape := pathShape(kv.key.Value)
@@ -470,7 +470,7 @@ func (m *merger) checkOperations(ptags map[string]bool) {
 		file string
 		root *yaml.Node
 		zone zone
-	}{{m.platform, m.p, zonePlatform}, {m.app, m.a, zoneApp}} {
+	}{{m.core, m.p, zoneCore}, {m.app, m.a, zoneApp}} {
 		declared := map[string]bool{}
 		for _, t := range items(get(f.root, "tags")) {
 			declared[scalar(get(t, "name"))] = true
@@ -486,7 +486,7 @@ func (m *merger) checkOperations(ptags map[string]bool) {
 				where := fmt.Sprintf("%s:%d: %s %s", f.file, op.key.Line, strings.ToUpper(op.key.Value), item.key.Value)
 				if id := scalar(get(op.value, "operationId")); id != "" {
 					if other, dup := ids[nameKey(id)]; dup {
-						m.fail(ruleDuplicate, "%s: operationId %q is already used by %s; operationIds are unique across platform and app, ignoring case, `_` and `-` (generated names would collide)", where, id, other)
+						m.fail(ruleDuplicate, "%s: operationId %q is already used by %s; operationIds are unique across core and app, ignoring case, `_` and `-` (generated names would collide)", where, id, other)
 					} else {
 						ids[nameKey(id)] = where
 					}
@@ -510,7 +510,7 @@ func (m *merger) checkOperationTag(where string, op *yaml.Node, z zone, declared
 	tag := tags[0].Value
 	switch {
 	case z == zoneApp && ptags[tag]:
-		m.fail(ruleDuplicate, "%s: tag %q belongs to the platform; tag the operation with its app module (app/modules/<m>)", where, tag)
+		m.fail(ruleDuplicate, "%s: tag %q belongs to the core; tag the operation with its app module (app/modules/<m>)", where, tag)
 	case !declared[tag]:
 		m.fail(ruleModuleKey, "%s: tag %q is not declared in the root `tags` of its contract", where, tag)
 		m.checkTagModule(where, tag, z)
@@ -521,7 +521,7 @@ func (m *merger) checkOperationTag(where string, op *yaml.Node, z zone, declared
 	}
 }
 
-// join appends the app's tags, paths and components to the platform document.
+// join appends the app's tags, paths and components to the core document.
 func (m *merger) join() {
 	if at := get(m.a, "tags"); at != nil && len(at.Content) > 0 {
 		pt := ensure(m.p, "tags", yaml.SequenceNode)

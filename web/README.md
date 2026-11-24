@@ -2,7 +2,7 @@
 
 Frontend React + TypeScript + Vite: TanStack Router (rutas por fichero, con su plugin de
 Vite), TanStack Query, shadcn/ui (Base UI) con Tailwind CSS v4, Vitest + Testing Library y
-Playwright. Diseño: `docs/platform/designs/auth-y-tenancy.md` (secciones 5, 6, 10 y 10.1).
+Playwright. Diseño: `docs/core/designs/auth-y-tenancy.md` (secciones 5, 6, 10 y 10.1).
 
 ```sh
 npm run dev        # :5173; /api y /auth van por el proxy de Vite a la API (:8080)
@@ -13,19 +13,19 @@ npm run build      # routes, luego tsc -b, luego vite build
 npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.yaml, y luego routes
 ```
 
-## Plataforma y app
+## Core y app
 
-|                | `src/platform/`                                                                                                                       | `src/app/`                                                                                                                                                                                             |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Qué es         | Código de la plantilla: shell y layout, login, tenant, MFA, cuenta, manejo de errores, fetcher, componentes de shadcn (`platform/ui`) | Lo propio de cada app                                                                                                                                                                                  |
-| Quién lo edita | La plantilla. Las apps **no** lo tocan                                                                                                | Cada app                                                                                                                                                                                               |
-| Hoy            | Lo del paso 8a y, del 8b, miembros, invitaciones, `/invite` y el renombrado del tenant                                                | Una funcionalidad de ejemplo (`features/example/`, con su ruta `routes/example.tsx`), su entrada en la navegación (`registry.ts`), sus textos (`texts.ts`), el tema (`theme.css`) y el logo (`brand/`) |
+|                | `src/core/`                                                                                                                       | `src/app/`                                                                                                                                                                                             |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Qué es         | Código de la plantilla: shell y layout, login, tenant, MFA, cuenta, manejo de errores, fetcher, componentes de shadcn (`core/ui`) | Lo propio de cada app                                                                                                                                                                                  |
+| Quién lo edita | La plantilla. Las apps **no** lo tocan                                                                                            | Cada app                                                                                                                                                                                               |
+| Hoy            | Lo del paso 8a y, del 8b, miembros, invitaciones, `/invite` y el renombrado del tenant                                            | Una funcionalidad de ejemplo (`features/example/`, con su ruta `routes/example.tsx`), su entrada en la navegación (`registry.ts`), sus textos (`texts.ts`), el tema (`theme.css`) y el logo (`brand/`) |
 
 - **Registro**: `src/app/registry.ts` exporta el nombre de la app, su logo y las entradas
-  de la navegación del tenant (con el permiso que las muestra, si lo hay). La plataforma lo
-  lee solo en `src/platform/app-registry.ts`: es el único fichero de `platform` que importa
-  `app`, y `src/platform/__tests__/architecture.test.ts` lo comprueba (`[platform-imports-app]`).
-- **Rutas**: las de la plataforma están listadas en `src/platform/routes.ts` (rutas
+  de la navegación del tenant (con el permiso que las muestra, si lo hay). El core lo
+  lee solo en `src/core/app-registry.ts`: es el único fichero de `core` que importa
+  `app`, y `src/core/__tests__/architecture.test.ts` lo comprueba (`[core-imports-app]`).
+- **Rutas**: las del core están listadas en `src/core/routes.ts` (rutas
   virtuales de TanStack Router, cada una en su fichero). Las de la app son rutas por
   fichero bajo `src/app/routes/` y se montan dentro de `/t/$tenantId`: `example.tsx` es
   `/t/$tenantId/example`, con el layout del tenant (navegación y `GET /tenant` ya
@@ -41,17 +41,17 @@ npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.y
   carpetas que necesite. Una funcionalidad no importa nada de otra: lo que compartan va en
   `src/app/shared/` (`[feature-boundaries]`, en el mismo test de arquitectura). El ejemplo
   es `features/example/` (`pages/ExamplePage.tsx` y su test).
-- **Pantallas del tenant de la plataforma**: `/t/$tenantId/members` (`members:read`) e
+- **Pantallas del tenant del core**: `/t/$tenantId/members` (`members:read`) e
   `/t/$tenantId/invitations` (`members:invite`) van en la navegación del tenant antes que
   las de la app. Los roles que se pueden asignar u ofrecer salen de `GET /tenant/roles`
   (`can_assign`, `can_offer`), nunca de una lista escrita en el front.
 - **Marca**: `src/app/theme.css` (colores, radios y tipografía de shadcn como variables
   CSS; tema neutro por defecto) y `src/app/brand/`. Cambiar de marca es sustituir esos dos
-  sitios, sin tocar `platform`. `src/platform/styles.css` solo conecta esas variables con
+  sitios, sin tocar `core`. `src/core/styles.css` solo conecta esas variables con
   Tailwind.
 - **Composición**: `src/router.ts` y `src/main.tsx` (fuera de las dos carpetas) unen la
-  plataforma, el árbol de rutas y los estilos, como `main.go` en el backend.
-- Un componente nuevo de shadcn (`npx shadcn@4.23.0 add <x>`) va a `src/platform/ui`
+  core, el árbol de rutas y los estilos, como `main.go` en el backend.
+- Un componente nuevo de shadcn (`npx shadcn@4.23.0 add <x>`) va a `src/core/ui`
   (`components.json`).
 
 ## Reglas del front
@@ -60,18 +60,18 @@ npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.y
   (orval, cliente react-query), y los tipos salen de ahí. No hay librería de formularios
   ni de validación.
 - `src/gen/` no se edita: lo genera `npm run generate` (`mise run generate`) desde el
-  contrato unido, `api-spec/openapi.gen.yaml` (`platform.yaml` + `app.yaml`; ejecuta
+  contrato unido, `api-spec/openapi.gen.yaml` (`core.yaml` + `app.yaml`; ejecuta
   `mise run generate`, no `npm run generate` solo, para que la unión esté al día). `api.ts` es orval; `routeSecurity.ts`, `scripts/gen-route-security.ts`, que lee
   el `security` de cada operación como lo hace `routegen` en la API.
-- **El fetcher** (`platform/api/fetcher.ts`, mutator de orval) antepone
+- **El fetcher** (`core/api/fetcher.ts`, mutator de orval) antepone
   `VITE_API_BASE_URL`, envía la cookie (`credentials: "include"`), pone `X-Tenant-ID` con el
   `$tenantId` de la ruta activa **solo** en las operaciones cuyo contrato exige tenant y
   convierte toda respuesta no 2xx en un `ApiError` con el `code` del Problem Details
   (RFC 9457).
-- **Errores en un solo sitio** (`platform/errors/handle.ts`), conectado a la caché de
-  TanStack Query (`platform/api/query-client.ts`). Ningún componente decide estos casos:
+- **Errores en un solo sitio** (`core/errors/handle.ts`), conectado a la caché de
+  TanStack Query (`core/api/query-client.ts`). Ningún componente decide estos casos:
 
-  | Respuesta                          | Qué hace la plataforma                                           |
+  | Respuesta                          | Qué hace el core                                                 |
   | ---------------------------------- | ---------------------------------------------------------------- |
   | `401`                              | `/login?return_to=<ruta actual>`, nunca con el fragmento         |
   | `403 auth.mfa_required`            | `/account/mfa/verify` (challenge + código) y vuelta a la ruta    |
@@ -89,12 +89,12 @@ npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.y
   de errores lleva a `/login?return_to=/invite`; al volver, el token sale de
   `sessionStorage` (pase lo que pase) y va a `POST /invitations/accept`. `index.html` pone
   `Referrer-Policy: no-referrer` para toda la app; en producción lo pone también el
-  hosting como cabecera (`docs/platform/runbooks/deploy.md`).
-- **Errores a Sentry** (`platform/telemetry/sentry.ts`, ADR 0004): solo con
+  hosting como cabecera (`docs/core/runbooks/deploy.md`).
+- **Errores a Sentry** (`core/telemetry/sentry.ts`, ADR 0004): solo con
   `VITE_SENTRY_DSN`, iniciado en `src/router.ts` después de capturar el token de
   `/invite`. Sin Session Replay, sin tracing ni `traceparent` hacia la API, y `beforeSend`
   quita usuario, cabeceras, cookies, cuerpo, query string, fragmento y migas. Un error de
-  render o de ruta muestra la pantalla genérica (`PlatformErrorBoundary`,
+  render o de ruta muestra la pantalla genérica (`CoreErrorBoundary`,
   `RouteErrorScreen`), nunca el error.
 - **Listas por cursor** (miembros, invitaciones): `useCursorPages` con la clave generada de
   la operación, para que la caché siga separada por tenant y se invalide con ella.
@@ -103,7 +103,7 @@ npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.y
   caché de Query separa los datos de cada tenant (`tenantScopedHash`).
 - **Permisos**: ocultar acciones según `GET /tenant` (`can(tenant, permiso)`) es solo UX;
   el servidor decide.
-- **Textos** en español, en `platform/texts.ts` (los de la app, en `app/texts.ts`). Sin i18n
+- **Textos** en español, en `core/texts.ts` (los de la app, en `app/texts.ts`). Sin i18n
   todavía.
 - El secret y el URI de un alta de MFA no se guardan en ningún almacenamiento ni se
   registran: solo viven en el estado del componente mientras se muestra el QR.
@@ -113,17 +113,17 @@ npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.y
 ## Tests
 
 - **Unitarios** (`src/**/__tests__/**/*.test.ts(x)`, Vitest + Testing Library, jsdom): los de
-  la plataforma en `src/platform/__tests__/`, con las subcarpetas del código que prueban; los
+  el core en `src/core/__tests__/`, con las subcarpetas del código que prueban; los
   de una funcionalidad, en su `__tests__/`; siempre con imports `@/`. Cubren el manejo de errores
   por código (incluidos todos los de miembros e invitaciones), `X-Tenant-ID` según el
   contrato, último tenant, caché por tenant, verificación de MFA, el flujo de `/invite`
   (fragmento quitado antes de crear el router, token nunca en `return_to` ni en la URL,
-  `sessionStorage` vacío tras aceptar o fallar) y las reglas de arquitectura (`[platform-imports-app]` y `[feature-boundaries]`). Usan `tsconfig.test.json`, que añade los tipos de Node
+  `sessionStorage` vacío tras aceptar o fallar) y las reglas de arquitectura (`[core-imports-app]` y `[feature-boundaries]`). Usan `tsconfig.test.json`, que añade los tipos de Node
   sin dárselos al código del navegador.
-- **Playwright**: los recorridos de la plataforma en `e2e/` y los de la app en `e2e/app/`
+- **Playwright**: los recorridos del core en `e2e/` y los de la app en `e2e/app/`
   (con los mismos `e2e/db.ts` y `e2e/fixtures.ts`), contra la API real local: Postgres arrancado y migrado
   (`mise run up && mise run migrate`) y la API en marcha (`mise run dev`); Playwright arranca
-  Vite si no está. Las sesiones se siembran por SQL como en `docs/platform/runbooks/auth.md`, sin
+  Vite si no está. Las sesiones se siembran por SQL como en `docs/core/runbooks/auth.md`, sin
   AuthKit (`e2e/db.ts`), y se borran al acabar. Los flujos de MFA usan respuestas simuladas
   (`page.route`): no hay fake de WorkOS en el backend. Las capturas quedan en
   `e2e-screenshots/` (no se commitean). El token de una invitación creada desde la pantalla
@@ -131,4 +131,4 @@ npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.y
   (`knownInviteToken`).
 - En CI, el job `e2e` hace lo mismo con Postgres como servicio y la API con una
   `WORKOS_API_KEY` ficticia (el arranque solo comprueba que existe; nada del recorrido
-  llama a WorkOS), y sube capturas y trazas como artefactos (`docs/platform/runbooks/ci.md`).
+  llama a WorkOS), y sube capturas y trazas como artefactos (`docs/core/runbooks/ci.md`).

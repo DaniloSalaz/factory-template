@@ -1,8 +1,8 @@
 import { appTexts } from "@/app/texts";
-import { Page } from "@/platform/components/Page";
-import { can, useCurrentTenant } from "@/platform/tenant/use-tenant";
-import { Button } from "@/platform/ui/button";
-import { Card, CardContent } from "@/platform/ui/card";
+import { Page } from "@/core/components/Page";
+import { can, useCurrentTenant } from "@/core/tenant/use-tenant";
+import { Button } from "@/core/ui/button";
+import { Card, CardContent } from "@/core/ui/card";
 
 export function ExamplePage() {
   const tenant = useCurrentTenant();

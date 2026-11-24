@@ -1,14 +1,14 @@
 // Package migrations embeds the app's goose migrations (NNNNN_name.sql, created with
-// `mise run migration:new <name>`). `api migrate` applies them after the platform's,
+// `mise run migration:new <name>`). `api migrate` applies them after the core's,
 // with their own version table, so their numbering never collides with the template's.
-// They may use the platform's tables; the platform never uses theirs. A migration
+// They may use the core's tables; the core never uses theirs. A migration
 // merged into main is immutable; changes go in a new one.
 package migrations
 
 import (
 	"embed"
 
-	"chaskicode.dev/saas/platform/kit/db"
+	"chaskicode.dev/saas/core/kit/db"
 )
 
 // The pattern is * and not *.sql because the template has no app migration and

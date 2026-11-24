@@ -1,0 +1,1277 @@
+openapi: 3.1.0
+info:
+  title: Factory Template API
+  version: 0.1.0
+  description: Source of truth for the HTTP contract. Go server and TS client are generated from this file.
+servers:
+  - url: http://localhost:8080
+# Every operation needs a session and a tenant unless it declares less: a route that
+# forgets to declare its security fails closed. Public operations declare
+# `security: []`; those without a tenant, `security: [{session: []}]`. The API reads
+# this from gen/routes (routegen), never from a hand-written list.
+#
+# A JSON body whose schema says `additionalProperties: false` accepts only its declared
+# properties: any other top-level member is answered with 400 unknown_field
+# (httpx.KnownBodyFields, also from gen/routes), never ignored.
+security:
+  - session: []
+    tenant: []
+tags:
+  - name: health
+    description: Liveness and readiness probes
+  - name: identity
+    description: >-
+      Login with WorkOS AuthKit and browser sessions (docs/core/designs/auth-y-tenancy.md, 5.1
+      and 5.5). The session is an HttpOnly __Host-session cookie; the browser never sees
+      a provider token.
+paths:
+  /healthz:
+    get:
+      operationId: getHealthz
+      summary: Liveness probe, with the version of the running build
+      tags: [health]
+      security: []
+      responses:
+        "200":
+          description: The process is alive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Liveness"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /readyz:
+    get:
+      operationId: getReadyz
+      summary: Readiness probe (checks dependencies such as the database)
+      tags: [health]
+      security: []
+      responses:
+        "200":
+          description: The service is ready to receive traffic
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /auth/login:
+    get:
+      operationId: authLogin
+      summary: Start a login with AuthKit
+      description: >-
+        Stores the login intent in a __Host-oauth_<state> cookie (PKCE verifier,
+        return_to, purpose, start time; 5 minutes, at most 3 alive) and redirects to
+        AuthKit, always forcing a fresh authentication. Rate limited per IP.
+      tags: [identity]
+      security: []
+      parameters:
+        - name: return_to
+          in: query
+          description: Path (or URL) of the front end to return to; it must resolve to FRONTEND_ORIGIN.
+          schema:
+            type: string
+            maxLength: 2048
+      responses:
+        "302":
+          $ref: "#/components/responses/Redirect"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /auth/callback:
+    get:
+      operationId: authCallback
+      summary: AuthKit redirects here after authenticating
+      description: >-
+        Completes the intent named by state: exchanges the code, resolves the user and
+        sets the __Host-session cookie. What the callback does is decided by the stored
+        intent, never by the URL. Rate limited per IP.
+      tags: [identity]
+      security: []
+      parameters:
+        - name: code
+          in: query
+          schema:
+            type: string
+            maxLength: 512
+        - name: state
+          in: query
+          schema:
+            type: string
+            maxLength: 128
+        - name: error
+          in: query
+          schema:
+            type: string
+            maxLength: 256
+        - name: error_description
+          in: query
+          schema:
+            type: string
+            maxLength: 1024
+      responses:
+        "302":
+          $ref: "#/components/responses/Redirect"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /auth/logout:
+    post:
+      operationId: authLogout
+      summary: End this session
+      description: >-
+        Revokes the current session and clears its cookie. The front end then sends the
+        browser to logout_url to end the AuthKit session as well.
+      tags: [identity]
+      security:
+        - session: []
+      responses:
+        "200":
+          $ref: "#/components/responses/LoggedOut"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /auth/logout-all:
+    post:
+      operationId: authLogoutAll
+      summary: End every session of the user
+      tags: [identity]
+      security:
+        - session: []
+      responses:
+        "200":
+          $ref: "#/components/responses/LoggedOut"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /me:
+    get:
+      operationId: getMe
+      summary: The current user and their memberships
+      description: >-
+        The session's user and every tenant they belong to, with its role, suspended
+        tenants included (acting in one answers 403 auth.tenant_forbidden). Needs no
+        X-Tenant-ID: the front end uses it to pick one.
+      tags: [identity]
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Me"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /me/mfa/totp:
+    post:
+      operationId: enrollTOTP
+      summary: Enroll a TOTP factor
+      description: >-
+        Creates a TOTP factor at the identity provider and its first challenge, valid 5
+        minutes. Show the QR code (or the secret) to the user once; the factor counts only
+        after its first code is verified with POST /me/mfa/totp/verify. If the user already
+        has a verified factor, the session must have verified one in the last 10 minutes
+        (otherwise 403 auth.mfa_required). Rate limited per user.
+      tags: [identity]
+      security:
+        - session: []
+      responses:
+        "201":
+          description: The factor and its first challenge
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TOTPEnrollment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /me/mfa/challenges:
+    post:
+      operationId: createMFAChallenge
+      summary: Challenge one of the user's factors
+      description: >-
+        Creates a challenge of the factor, bound to this session, single-use and valid 5
+        minutes. Use it to answer 403 auth.mfa_required. Rate limited per user.
+      tags: [identity]
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MFAChallengeRequest"
+      responses:
+        "201":
+          description: The challenge
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MFAChallenge"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /me/mfa/totp/verify:
+    post:
+      operationId: verifyTOTP
+      summary: Verify a TOTP code
+      description: >-
+        Answers a challenge of this session with a code. The challenge is used up by the
+        attempt, right or wrong. On success the session is replaced by a new one, whose
+        MFA counts from now: the response sets a new __Host-session cookie and the old one
+        stops working. The first code of a new factor also verifies the factor. At most 5
+        attempts per user and per session in 15 minutes (429 mfa.rate_limited). A code
+        already accepted with the factor is refused (409 mfa.code_reused).
+      tags: [identity]
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MFAVerifyRequest"
+      responses:
+        "200":
+          description: The code is valid; the session is replaced.
+          headers:
+            Set-Cookie:
+              description: The new __Host-session cookie.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MFAVerified"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /me/mfa/totp/{factorId}:
+    delete:
+      operationId: removeTOTP
+      summary: Remove one of the user's factors
+      description: >-
+        Removes the factor here and at the identity provider. If the user has a verified
+        factor, the session must have verified one in the last 10 minutes (403
+        auth.mfa_required). The last verified factor cannot be removed while a role of the
+        user, in an active tenant, requires MFA (403 mfa.last_factor_required).
+      tags: [identity]
+      security:
+        - session: []
+      parameters:
+        - name: factorId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: The factor is removed.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /tenant:
+    get:
+      operationId: getCurrentTenant
+      summary: The tenant named by X-Tenant-ID, with the caller's role and permissions in it
+      description: >-
+        Declares no security, so it takes the default: a session and X-Tenant-ID. The front
+        end uses the permissions to show only what the role allows; the API checks them
+        again in every use case.
+      tags: [identity]
+      responses:
+        "200":
+          description: The current tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentTenant"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    patch:
+      operationId: updateCurrentTenant
+      summary: Rename the current tenant
+      description: >-
+        Needs tenant:update. Only the name changes; the slug is immutable, and sending it
+        (or any other field) is 400 unknown_field. Audited as tenant.updated with the old
+        and the new name.
+      tags: [identity]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantUpdate"
+      responses:
+        "200":
+          description: The renamed tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /tenants:
+    post:
+      operationId: createTenant
+      summary: Create a tenant, with the caller as its owner
+      description: >-
+        Needs a session but no tenant. The caller becomes the tenant's owner in the same
+        transaction. If the owner role requires MFA, creating the tenant does not: acting
+        in it does, so the first request with its X-Tenant-ID may answer 403
+        auth.mfa_enrollment_required or auth.mfa_required. Errors: 422
+        tenant.slug_invalid, 422 tenant.slug_reserved, 422 tenant.name_invalid, 409
+        tenant.slug_taken, 403 tenant.limit_reached (the caller has created as many
+        tenants as TENANT_MAX_PER_USER allows).
+      tags: [identity]
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantCreate"
+      responses:
+        "201":
+          description: The tenant, with the caller's role in it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatedTenant"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /tenant/members:
+    get:
+      operationId: listMembers
+      summary: The members of the current tenant
+      description: >-
+        Needs members:read. Ordered by membership, oldest first, which is stable; pass the
+        previous page's next_cursor to get the next one. Only members of the tenant of
+        X-Tenant-ID.
+      tags: [identity]
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: The next_cursor of the previous page; omit it for the first page.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        "200":
+          description: A page of members
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /tenant/members/me:
+    delete:
+      operationId: leaveTenant
+      summary: Leave the current tenant
+      description: >-
+        Needs only a session and the tenant, whatever the role. The last owner cannot
+        leave (409 membership.last_owner): make someone else owner first.
+      tags: [identity]
+      responses:
+        "204":
+          description: The caller is no longer a member.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /tenant/members/{userId}:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      operationId: changeMemberRole
+      summary: Change a member's role
+      description: >-
+        Needs members:manage. The caller acts only on members whose role is strictly
+        included in theirs (an owner also on other owners) and assigns only roles
+        included in theirs; nobody changes their own role. Errors: 404
+        membership.not_found (not a member of this tenant, whether or not the user
+        exists), 403 membership.target_forbidden, membership.role_not_assignable or
+        membership.self_change, 422 membership.unknown_role, 409 membership.last_owner or
+        membership.changed (a role changed meanwhile; read again and retry).
+      tags: [identity]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemberRoleChange"
+      responses:
+        "200":
+          description: The member with the new role
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: removeMember
+      summary: Remove a member from the current tenant
+      description: >-
+        Needs members:manage and the same hierarchy as changing the role. To leave the
+        tenant, use DELETE /tenant/members/me (403 membership.self_change here). The last
+        owner cannot be removed (409 membership.last_owner).
+      tags: [identity]
+      responses:
+        "204":
+          description: The user is no longer a member.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /tenant/roles:
+    get:
+      operationId: listTenantRoles
+      summary: The roles of the app's catalog, as the caller may use them
+      description: >-
+        Needs members:read. Every role of the catalog, the ones with the most permissions
+        first, with whether it requires MFA and whether the caller could give it to a
+        member (can_assign: the caller holds members:manage and the role is included in
+        theirs; owner only by an owner) or offer it in an invitation (can_offer: the same
+        with members:invite). The API applies the same rules on each change; this is so the
+        front end only offers what it would accept.
+      tags: [identity]
+      responses:
+        "200":
+          description: The catalog's roles
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantRoleList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /invitations:
+    get:
+      operationId: listInvitations
+      summary: The pending invitations of the current tenant
+      description: >-
+        Needs members:invite. Not accepted and not revoked, expired ones included (expired:
+        true; resending renews them), oldest first, by cursor like the members.
+      tags: [identity]
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        "200":
+          description: A page of invitations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvitationPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      operationId: createInvitation
+      summary: Invite someone to the current tenant
+      description: >-
+        Needs members:invite, and the role must be one the caller may offer: included in
+        theirs, owner only by an owner (403 invitation.role_not_offerable). The link
+        (/invite#token=…) goes to the email once the invitation is stored; the response
+        never carries it. Errors: 422 invitation.email_invalid or invitation.unknown_role,
+        409 invitation.already_member, 409 invitation.pending (resend that one), 409
+        membership.changed, 429 rate_limit.exceeded (20 invitations and resends per user
+        and hour).
+      tags: [identity]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvitationCreate"
+      responses:
+        "201":
+          description: The invitation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invitation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /invitations/accept:
+    post:
+      operationId: acceptInvitation
+      summary: Accept an invitation with its token
+      description: >-
+        Needs a session but no tenant. The invitation's email must be the user's, and
+        verified (403 invitation.email_mismatch); the invitation not used (409
+        invitation.already_accepted), revoked (409 invitation.revoked) or expired (409
+        invitation.expired); the tenant active (403 tenant.not_active); the user not a
+        member yet (409 invitation.already_member). An unknown token is 404
+        invitation.not_found. 429 rate_limit.exceeded after 10 attempts per user in 15
+        minutes.
+      tags: [identity]
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvitationAccept"
+      responses:
+        "200":
+          description: The membership the invitation created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcceptedInvitation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /invitations/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      operationId: revokeInvitation
+      summary: Revoke a pending invitation
+      description: >-
+        Needs members:invite and that the caller may offer its role. 404
+        invitation.not_found outside this tenant; 409 invitation.already_accepted or
+        invitation.revoked.
+      tags: [identity]
+      responses:
+        "204":
+          description: The invitation is revoked; its link no longer works.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /invitations/{id}/resend:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: resendInvitation
+      summary: Send a pending invitation again, with a new token
+      description: >-
+        Needs members:invite and that the caller may offer its role. Rotates the token (the
+        previous link stops working) and renews the expiry, expired invitations included;
+        the inviter does not change. Shares the quota of POST /invitations.
+      tags: [identity]
+      responses:
+        "200":
+          description: The invitation with its new expiry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invitation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+components:
+  securitySchemes:
+    session:
+      description: The __Host-session cookie set by /auth/callback.
+      type: apiKey
+      in: cookie
+      name: __Host-session
+    tenant:
+      description: >-
+        The tenant the request acts in. The caller must be a member of it, the tenant
+        active and, if the member's role requires it, the session's MFA recent enough;
+        otherwise 403 auth.tenant_forbidden, auth.mfa_required (verify a factor:
+        POST /me/mfa/challenges) or auth.mfa_enrollment_required (no verified factor yet:
+        POST /me/mfa/totp).
+      type: apiKey
+      in: header
+      name: X-Tenant-ID
+  schemas:
+    Me:
+      type: object
+      additionalProperties: false
+      required: [user, memberships, mfa_enrolled, mfa_factors, session_mfa_at]
+      properties:
+        user:
+          $ref: "#/components/schemas/CurrentUser"
+        memberships:
+          type: array
+          items:
+            $ref: "#/components/schemas/Membership"
+        mfa_enrolled:
+          description: The user has at least one verified factor.
+          type: boolean
+        mfa_factors:
+          type: array
+          items:
+            $ref: "#/components/schemas/MFAFactor"
+        session_mfa_at:
+          description: When this session last verified a factor; null if never.
+          type: [string, "null"]
+          format: date-time
+    MFAFactor:
+      type: object
+      additionalProperties: false
+      required: [id, type, verified, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [totp]
+        verified:
+          description: False until its first code is verified.
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    TOTPEnrollment:
+      type: object
+      additionalProperties: false
+      required: [factor_id, challenge_id, expires_at, qr_code, secret, uri]
+      properties:
+        factor_id:
+          type: string
+          format: uuid
+        challenge_id:
+          type: string
+          format: uuid
+        expires_at:
+          type: string
+          format: date-time
+        qr_code:
+          description: A data URI of a PNG image to scan with an authenticator app. Shown once.
+          type: string
+        secret:
+          description: The shared secret, for apps that cannot scan. Shown once.
+          type: string
+        uri:
+          description: The otpauth:// URI the QR code encodes.
+          type: string
+    MFAChallengeRequest:
+      type: object
+      additionalProperties: false
+      required: [factor_id]
+      properties:
+        factor_id:
+          type: string
+          format: uuid
+    MFAChallenge:
+      type: object
+      additionalProperties: false
+      required: [challenge_id, factor_id, expires_at]
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        factor_id:
+          type: string
+          format: uuid
+        expires_at:
+          type: string
+          format: date-time
+    MFAVerifyRequest:
+      type: object
+      additionalProperties: false
+      required: [challenge_id, code]
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          pattern: "^[0-9]{6}$"
+    MFAVerified:
+      type: object
+      additionalProperties: false
+      required: [mfa_verified_at]
+      properties:
+        mfa_verified_at:
+          type: string
+          format: date-time
+    CurrentUser:
+      type: object
+      additionalProperties: false
+      required: [id, email, display_name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        display_name:
+          type: string
+    Membership:
+      type: object
+      additionalProperties: false
+      required: [tenant_id, tenant_slug, tenant_name, tenant_status, role, mfa_required]
+      properties:
+        tenant_id:
+          description: The value to send as X-Tenant-ID.
+          type: string
+          format: uuid
+        tenant_slug:
+          type: string
+        tenant_name:
+          type: string
+        tenant_status:
+          type: string
+          enum: [active, suspended]
+        role:
+          description: The member's role in the app's role catalog.
+          type: string
+        mfa_required:
+          description: The role requires a recent MFA to act in the tenant.
+          type: boolean
+    CurrentTenant:
+      type: object
+      additionalProperties: false
+      required: [id, slug, name, role, scope, permissions]
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        scope:
+          description: tenant sees every row of the tenant; own, only the caller's own.
+          type: string
+          enum: [tenant, own]
+        permissions:
+          description: The role's permissions in the app's catalog, sorted; none for an unknown role.
+          type: array
+          items:
+            type: string
+    Tenant:
+      type: object
+      additionalProperties: false
+      required: [id, slug, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+    CreatedTenant:
+      type: object
+      additionalProperties: false
+      required: [id, slug, name, role]
+      properties:
+        id:
+          description: The value to send as X-Tenant-ID.
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        role:
+          description: The caller's role in it, always owner.
+          type: string
+    TenantCreate:
+      type: object
+      additionalProperties: false
+      required: [name, slug]
+      properties:
+        name:
+          description: 1 to 100 characters, not only spaces; leading and trailing spaces are trimmed.
+          type: string
+        slug:
+          description: >-
+            3 to 40 lower-case letters, digits and hyphens, not starting or ending with a
+            hyphen, unique and not reserved (api, www, admin…). It cannot change later.
+          type: string
+    TenantUpdate:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          description: 1 to 100 characters, not only spaces; leading and trailing spaces are trimmed.
+          type: string
+    Member:
+      type: object
+      additionalProperties: false
+      required: [user_id, email, display_name, role, joined_at]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        display_name:
+          type: string
+        role:
+          type: string
+        joined_at:
+          type: string
+          format: date-time
+    MemberPage:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Member"
+        next_cursor:
+          description: Pass it as cursor to get the next page; null on the last one.
+          type: [string, "null"]
+    TenantRole:
+      type: object
+      additionalProperties: false
+      required: [name, mfa_required, can_assign, can_offer]
+      properties:
+        name:
+          type: string
+        mfa_required:
+          type: boolean
+        can_assign:
+          description: The caller may give this role to a member they manage.
+          type: boolean
+        can_offer:
+          description: The caller may offer this role in an invitation.
+          type: boolean
+    TenantRoleList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantRole"
+    MemberRoleChange:
+      type: object
+      additionalProperties: false
+      required: [role]
+      properties:
+        role:
+          description: A role of the app's catalog.
+          type: string
+    Invitation:
+      type: object
+      additionalProperties: false
+      required: [id, email, role, invited_by, expires_at, expired, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        role:
+          type: string
+        invited_by:
+          description: The user who invited; null if that user has been deleted.
+          type: [string, "null"]
+          format: uuid
+        expires_at:
+          type: string
+          format: date-time
+        expired:
+          description: It can no longer be accepted; resending renews it.
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    InvitationPage:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Invitation"
+        next_cursor:
+          type: [string, "null"]
+    InvitationCreate:
+      type: object
+      additionalProperties: false
+      required: [email, role]
+      properties:
+        email:
+          type: string
+        role:
+          description: A role of the app's catalog that the caller may offer.
+          type: string
+    InvitationAccept:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token:
+          description: The token of the link's fragment (/invite#token=…).
+          type: string
+    AcceptedInvitation:
+      type: object
+      additionalProperties: false
+      required: [tenant_id, role]
+      properties:
+        tenant_id:
+          description: The value to send as X-Tenant-ID.
+          type: string
+          format: uuid
+        role:
+          type: string
+    Logout:
+      type: object
+      additionalProperties: false
+      required: [logout_url]
+      properties:
+        logout_url:
+          description: Where to send the browser to end the AuthKit session too; null if there is none.
+          type: [string, "null"]
+    Status:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+    Liveness:
+      type: object
+      additionalProperties: false
+      required: [status, version]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        version:
+          description: >-
+            The build: the git commit the image was built from, or "dev" for a local build
+            without that information.
+          type: string
+    Problem:
+      description: RFC 9457 problem details with this API's extension members.
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          default: about:blank
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 100
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        code:
+          description: Stable, machine-readable error code, e.g. route_not_found.
+          type: string
+        errors:
+          description: Per-field validation errors.
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldError"
+        request_id:
+          description: Request ID, also returned in the X-Request-ID header.
+          type: string
+    FieldError:
+      type: object
+      required: [field, code, message]
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+        message:
+          type: string
+  responses:
+    Redirect:
+      description: Redirect; cookies are set or cleared with Set-Cookie.
+      headers:
+        Location:
+          schema:
+            type: string
+    LoggedOut:
+      description: The session is revoked and its cookie cleared.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Logout"
+    Unauthorized:
+      description: No valid session.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Forbidden:
+      description: The request is not allowed (for instance, a foreign Origin).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Conflict:
+      description: The request conflicts with the current state.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    TooManyRequests:
+      description: Rate limit exceeded; retry after the seconds of Retry-After.
+      headers:
+        Retry-After:
+          description: Seconds until the quota allows another request.
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    BadRequest:
+      description: The request is malformed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: The resource does not exist.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    PayloadTooLarge:
+      description: The request body exceeds the size limit.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    UnprocessableEntity:
+      description: The request is well-formed but invalid; see errors.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    InternalError:
+      description: Unexpected server error. Details are logged, not returned.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    ServiceUnavailable:
+      description: A dependency is unavailable; retry later.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"

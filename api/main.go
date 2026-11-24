@@ -12,16 +12,16 @@ import (
 	"time"
 
 	"chaskicode.dev/saas/app"
+	"chaskicode.dev/saas/core/health"
+	"chaskicode.dev/saas/core/identity"
+	"chaskicode.dev/saas/core/kit/clientip"
+	"chaskicode.dev/saas/core/kit/config"
+	"chaskicode.dev/saas/core/kit/db"
+	"chaskicode.dev/saas/core/kit/httpx"
+	"chaskicode.dev/saas/core/kit/logx"
+	"chaskicode.dev/saas/core/kit/ratelimit"
+	"chaskicode.dev/saas/core/kit/telemetry"
 	"chaskicode.dev/saas/gen/routes"
-	"chaskicode.dev/saas/platform/health"
-	"chaskicode.dev/saas/platform/identity"
-	"chaskicode.dev/saas/platform/kit/clientip"
-	"chaskicode.dev/saas/platform/kit/config"
-	"chaskicode.dev/saas/platform/kit/db"
-	"chaskicode.dev/saas/platform/kit/httpx"
-	"chaskicode.dev/saas/platform/kit/logx"
-	"chaskicode.dev/saas/platform/kit/ratelimit"
-	"chaskicode.dev/saas/platform/kit/telemetry"
 )
 
 // Requests per client IP and minute to /auth/login and /auth/callback together: a login
@@ -154,7 +154,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	mux := http.NewServeMux()
 	health.New(health.Deps{DB: pool, Logger: logger, Version: version()}).Register(mux)
 	idm.Register(mux)
-	// The platform's routes first: an app module that tried to take one of them makes
+	// The core's routes first: an app module that tried to take one of them makes
 	// ServeMux panic at start-up instead of silently replacing it.
 	for _, m := range appModules {
 		m.Register(mux)

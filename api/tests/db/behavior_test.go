@@ -854,7 +854,7 @@ func deref(s *string) string {
 }
 
 // Every removed MFA factor is audited by its trigger, whoever removes it: the runbook's
-// recovery of a lost device has app_admin delete it with a reason (docs/platform/runbooks/auth.md).
+// recovery of a lost device has app_admin delete it with a reason (docs/core/runbooks/auth.md).
 func TestFunc_MFAFactorRemovalIsAudited(t *testing.T) {
 	t.Parallel()
 

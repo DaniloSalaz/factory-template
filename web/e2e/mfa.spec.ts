@@ -61,7 +61,7 @@ const tenant = {
 
 /** fakeApi answers /api/* like the API would, from a small state. */
 async function fakeApi(page: Page, s: State, extra?: (route: Route, path: string) => boolean) {
-  // Only the API: a glob like **/api/** would also catch Vite's /src/platform/api modules.
+  // Only the API: a glob like **/api/** would also catch Vite's /src/core/api modules.
   await page.route(
     (url) => url.pathname.startsWith("/api/"),
     async (route) => {

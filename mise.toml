@@ -24,7 +24,7 @@ LOG_FORMAT = "json"
 DATABASE_URL = "postgres://app_runtime:app_runtime@localhost:5432/factory?sslmode=disable"
 MIGRATIONS_DATABASE_URL = "postgres://app_owner:app_owner@localhost:5432/factory?sslmode=disable"
 # In development the front end (Vite, :5173) proxies /auth and /api to the API, so the
-# browser sees one origin and the AuthKit callback lands on Vite (docs/platform/runbooks/auth.md).
+# browser sees one origin and the AuthKit callback lands on Vite (docs/core/runbooks/auth.md).
 FRONTEND_ORIGIN = "http://localhost:5173"
 ALLOWED_ORIGINS = "http://localhost:5173"
 WORKOS_CLIENT_ID = "client_01M7V77YXSVNXZYGAW64XGHV92"
@@ -39,7 +39,7 @@ SMTP_TLS = "starttls"
 SMTP_TLS_SKIP_VERIFY = "true"
 # Traces and metrics go to the local LGTM (compose.yaml, `mise run obs`); without it
 # running, exports fail in the background and the API works the same. Metrics every
-# 10 s instead of 60 s, to see them sooner. See docs/platform/runbooks/observability.md.
+# 10 s instead of 60 s, to see them sooner. See docs/core/runbooks/observability.md.
 OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318"
 OTEL_METRIC_EXPORT_INTERVAL = "10000"
 # WORKOS_API_KEY lives in secrets.env (SOPS + age). mise cannot decrypt dotenv files
@@ -90,21 +90,21 @@ run = "test -d node_modules || npm ci"
 hide = true
 
 [tasks.generate]
-description = "Generate code from SQL queries and the OpenAPI contract (platform.yaml + app.yaml, merged)"
+description = "Generate code from SQL queries and the OpenAPI contract (core.yaml + app.yaml, merged)"
 depends = ["web:install"]
 run = [
   "cd api && sqlc generate",
-  # platform.yaml + app.yaml -> openapi.gen.yaml, the only contract the generators read.
-  "cd api && go run ./tools/specmerge -platform ../api-spec/platform.yaml -app ../api-spec/app.yaml -out ../api-spec/openapi.gen.yaml",
+  # core.yaml + app.yaml -> openapi.gen.yaml, the only contract the generators read.
+  "cd api && go run ./tools/specmerge -core ../api-spec/core.yaml -app ../api-spec/app.yaml -out ../api-spec/openapi.gen.yaml",
   # One package per module that has a codegen.yaml, found by the glob (alphabetical,
-  # platform first): adding a module never edits this file. specmerge has checked that
+  # core first): adding a module never edits this file. specmerge has checked that
   # each one generates exactly its folder's tag.
   """
   cd api
   # From scratch, so that a module whose codegen.yaml is gone leaves no package behind:
   # generate:check then sees its committed files as deleted.
   rm -rf gen/openapi
-  for config in platform/*/codegen.yaml app/modules/*/codegen.yaml; do
+  for config in core/*/codegen.yaml app/modules/*/codegen.yaml; do
     [ -e "$config" ] || continue # the glob stays literal when app/modules has none yet
     oapi-codegen -config "$config" ../api-spec/openapi.gen.yaml || exit 1
   done
@@ -114,7 +114,7 @@ run = [
 ]
 
 [tasks.migrate]
-description = "Apply pending platform and then app migrations as app_owner (the binary's `api migrate`)"
+description = "Apply pending core and then app migrations as app_owner (the binary's `api migrate`)"
 dir = "api"
 run = "go run . migrate"
 
@@ -124,11 +124,11 @@ dir = "api"
 usage = 'arg "<name>" help="Migration name, e.g. create_appointments"'
 run = "goose -s -dir app/migrations create {{usage.name}} sql"
 
-[tasks."migration:new:platform"]
-description = "Create a platform migration in api/platform/migrations (template only): mise run migration:new:platform <name>"
+[tasks."migration:new:core"]
+description = "Create a core migration in api/core/migrations (template only): mise run migration:new:core <name>"
 dir = "api"
 usage = 'arg "<name>" help="Migration name, e.g. add_sessions_index"'
-run = "goose -s -dir platform/migrations create {{usage.name}} sql"
+run = "goose -s -dir core/migrations create {{usage.name}} sql"
 
 [tasks."db:bootstrap"]
 description = "Re-run the role and extension bootstrap on the local Postgres (idempotent)"
@@ -184,7 +184,7 @@ run = [
   # openapi.gen.yaml included: an edit by hand is overwritten by the merge, so it shows here.
   dirty=$(git status --porcelain -- api/gen web/src/gen api-spec/openapi.gen.yaml)
   if [ -n "$dirty" ]; then
-    echo "Generated code or api-spec/openapi.gen.yaml is out of date (never edit it by hand; change platform.yaml or app.yaml)." >&2
+    echo "Generated code or api-spec/openapi.gen.yaml is out of date (never edit it by hand; change core.yaml or app.yaml)." >&2
     echo "Run 'mise run generate' and commit the result:" >&2
     echo "$dirty" >&2
     git --no-pager diff --stat -- api/gen web/src/gen api-spec/openapi.gen.yaml >&2

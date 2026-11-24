@@ -2,7 +2,7 @@ package db
 
 // The rules of the design for tables with tenant_id (auth-y-tenancy §7.3), outside the _test
 // files so that other packages' tests can hold their own tables to them: the example
-// tables of platform/kit/db live only in that package's test database.
+// tables of core/kit/db live only in that package's test database.
 
 import (
 	"context"
@@ -270,7 +270,7 @@ func loadTenantForeignKeys(ctx context.Context, q querier) ([]foreignKeyInfo, er
 
 // foreignKeyViolation reports a key that does not pair tenant_id with tenant_id. RLS
 // filters what is read, but a key on the parent's id alone lets a row of one tenant
-// point at another tenant's row (auth-y-tenancy §7.3; docs/platform/patterns.md).
+// point at another tenant's row (auth-y-tenancy §7.3; docs/core/patterns.md).
 func foreignKeyViolation(fk foreignKeyInfo) string {
 	i := slices.Index(fk.Columns, "tenant_id")
 	if len(fk.Columns) > 1 && i >= 0 && i < len(fk.RefColumns) && fk.RefColumns[i] == "tenant_id" {
@@ -278,7 +278,7 @@ func foreignKeyViolation(fk foreignKeyInfo) string {
 	}
 	return fmt.Sprintf("[rls] table %s: foreign key %s (%s) -> %s (%s) does not pair tenant_id with tenant_id, "+
 		"so a row can point at another tenant's row: use FOREIGN KEY (tenant_id, <parent>_id) REFERENCES %s (tenant_id, id) "+
-		"with UNIQUE (tenant_id, id) on %s (docs/platform/patterns.md)",
+		"with UNIQUE (tenant_id, id) on %s (docs/core/patterns.md)",
 		fk.Table, fk.Name, strings.Join(fk.Columns, ", "), fk.RefTable, strings.Join(fk.RefColumns, ", "), fk.RefTable, fk.RefTable)
 }
 

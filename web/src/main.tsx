@@ -1,11 +1,11 @@
 import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import "./platform/styles.css";
+import "./core/styles.css";
 import "./app/theme.css";
-import { PlatformProvider } from "./platform/bootstrap";
-import { PlatformErrorBoundary } from "./platform/components/ErrorScreen";
-import { platform, router } from "./router";
+import { CoreProvider } from "./core/bootstrap";
+import { CoreErrorBoundary } from "./core/components/ErrorScreen";
+import { core, router } from "./router";
 
 const root = document.getElementById("root");
 if (!root) {
@@ -14,10 +14,10 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
-    <PlatformErrorBoundary>
-      <PlatformProvider value={platform.context}>
+    <CoreErrorBoundary>
+      <CoreProvider value={core.context}>
         <RouterProvider router={router} />
-      </PlatformProvider>
-    </PlatformErrorBoundary>
+      </CoreProvider>
+    </CoreErrorBoundary>
   </StrictMode>,
 );

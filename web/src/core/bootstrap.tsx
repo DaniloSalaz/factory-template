@@ -1,0 +1,73 @@
+import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { AnyRouter } from "@tanstack/react-router";
+import { createContext, type ReactNode, useContext } from "react";
+import { setTenantSource } from "@/core/api/fetcher";
+import { createQueryClient } from "@/core/api/query-client";
+import { createErrorHandler, type Destination } from "@/core/errors/handle";
+import { createNotices, type Notices } from "@/core/errors/notices";
+import { createLastTenantStore, type LastTenantStore } from "@/core/tenant/last-tenant";
+
+/** What every core screen may use; also the router's context. */
+export type CoreContext = {
+  queryClient: QueryClient;
+  notices: Notices;
+  lastTenant: LastTenantStore;
+};
+
+/** tenantOf reads $tenantId from the active route's matches; undefined outside /t/…. */
+export function tenantOf(router: Pick<AnyRouter, "state">): string | undefined {
+  const params: Record<string, unknown> = router.state.matches.at(-1)?.params ?? {};
+  const id = params["tenantId"];
+  return typeof id === "string" && id !== "" ? id : undefined;
+}
+
+/**
+ * createCore builds the query client, the error handler and the notices, and
+ * returns `attach` to connect them to the router once it exists (src/router.ts). The
+ * tenant is always read from the active route, never stored.
+ */
+export function createCore(): { context: CoreContext; attach: (r: AnyRouter) => void } {
+  let router: AnyRouter | undefined;
+  const routeTenant = () => (router ? tenantOf(router) : undefined);
+  const notices = createNotices();
+  const lastTenant = createLastTenantStore();
+  const onError = createErrorHandler({
+    location: () =>
+      router?.state.location ?? {
+        pathname: window.location.pathname,
+        href: window.location.pathname,
+      },
+    navigate: (destination: Destination) => {
+      void router?.navigate(destination);
+    },
+    routeTenant,
+    lastTenant,
+    notices,
+  });
+  const queryClient = createQueryClient({ onError, routeTenant });
+  setTenantSource(routeTenant);
+  return {
+    context: { queryClient, notices, lastTenant },
+    attach: (r) => {
+      router = r;
+    },
+  };
+}
+
+const Context = createContext<CoreContext | null>(null);
+
+export function CoreProvider(props: { value: CoreContext; children: ReactNode }) {
+  return (
+    <Context value={props.value}>
+      <QueryClientProvider client={props.value.queryClient}>{props.children}</QueryClientProvider>
+    </Context>
+  );
+}
+
+export function useCore(): CoreContext {
+  const ctx = useContext(Context);
+  if (!ctx) {
+    throw new Error("useCore outside CoreProvider");
+  }
+  return ctx;
+}

@@ -1,20 +1,20 @@
-# The app's HTTP contract. `mise run generate` joins it with platform.yaml (the
+# The app's HTTP contract. `mise run generate` joins it with core.yaml (the
 # template's, never edited from an app) into openapi.gen.yaml, which every generator
 # reads (api/tools/specmerge). Never edit openapi.gen.yaml.
 #
 # Each operation has exactly one tag, the name of its module: app/modules/<m>/ with a
 # codegen.yaml whose include-tags is [<m>]. Declare the tag below, under `tags`.
 #
-# Platform components are referenced, never copied, with the platform file in front:
+# Core components are referenced, never copied, with the core file in front:
 #
 #   responses:
 #     "500":
-#       $ref: "platform.yaml#/components/responses/InternalError"
+#       $ref: "core.yaml#/components/responses/InternalError"
 #
-# Security is declared by scheme name, as in platform.yaml: by default an operation
+# Security is declared by scheme name, as in core.yaml: by default an operation
 # requires a session and a tenant (X-Tenant-ID); `security: [{session: []}]` drops the
 # tenant and `security: []` makes it public. securitySchemes, root `security`, the
-# tenant header, and any path, operationId, tag or component name of the platform are
+# tenant header, and any path, operationId, tag or component name of the core are
 # not redefined here: the merge refuses them.
 openapi: 3.1.0
 info:

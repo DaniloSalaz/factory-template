@@ -12,9 +12,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"chaskicode.dev/saas/platform/health"
-	"chaskicode.dev/saas/platform/kit/httpx"
-	"chaskicode.dev/saas/platform/migrations"
+	"chaskicode.dev/saas/core/health"
+	"chaskicode.dev/saas/core/kit/httpx"
+	"chaskicode.dev/saas/core/migrations"
 	"chaskicode.dev/saas/tests/testkit"
 )
 

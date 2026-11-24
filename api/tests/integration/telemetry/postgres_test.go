@@ -13,9 +13,9 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	"chaskicode.dev/saas/platform/kit/authctx"
-	"chaskicode.dev/saas/platform/kit/db"
-	"chaskicode.dev/saas/platform/kit/telemetry"
+	"chaskicode.dev/saas/core/kit/authctx"
+	"chaskicode.dev/saas/core/kit/db"
+	"chaskicode.dev/saas/core/kit/telemetry"
 	"chaskicode.dev/saas/tests/testkit"
 )
 
@@ -26,7 +26,7 @@ func TestPgxTracer_SpansWithoutArguments(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test: needs Docker")
 	}
-	pg := testkit.Start(t, testkit.PlatformFromSource())
+	pg := testkit.Start(t, testkit.CoreFromSource())
 	spans := tracetest.NewInMemoryExporter()
 	reader := sdkmetric.NewManualReader()
 	// No filtering exporter here: the tracer itself must leave the arguments out, so a

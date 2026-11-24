@@ -1,4 +1,4 @@
-// Package app is where an app hooks into the platform (docs/platform/estructura.md): its
+// Package app is where an app hooks into the core (docs/core/estructura.md): its
 // role catalog and its modules. package main is its only importer.
 package app
 
@@ -8,19 +8,19 @@ import (
 	"net/http"
 	"time"
 
-	"chaskicode.dev/saas/platform/kit/authctx"
-	"chaskicode.dev/saas/platform/kit/authz"
-	"chaskicode.dev/saas/platform/kit/db"
-	"chaskicode.dev/saas/platform/kit/telemetry"
+	"chaskicode.dev/saas/core/kit/authctx"
+	"chaskicode.dev/saas/core/kit/authz"
+	"chaskicode.dev/saas/core/kit/db"
+	"chaskicode.dev/saas/core/kit/telemetry"
 )
 
 // Module is what main needs from an app module: it mounts the module's routes after the
-// platform's.
+// core's.
 type Module interface {
 	Register(mux *http.ServeMux)
 }
 
-// Deps is what the platform hands to the app's modules, the same pieces its own modules
+// Deps is what the core hands to the app's modules, the same pieces its own modules
 // get. There is no pool and no raw config on purpose: tenant data is reached only
 // through DB's transactions (RLS), and a module that needs settings declares them in
 // its own Deps.
@@ -35,7 +35,7 @@ type Deps struct {
 }
 
 // Modules returns the app's modules, in the order main registers them. The template has
-// none. To add one, create app/modules/<m> shaped like platform/health (module.go with
+// none. To add one, create app/modules/<m> shaped like core/health (module.go with
 // New(Deps) and Register(mux)), then wire it here:
 //
 //	m, err := <m>.New(<m>.Deps{DB: deps.DB, Logger: deps.Logger, Authorizer: deps.Authorizer})
@@ -55,14 +55,14 @@ func Modules(deps Deps) ([]Module, error) { //nolint:revive // unused only while
 const ownerMFAMaxAge = 12 * time.Hour
 
 // Roles is the app's role catalog (auth-y-tenancy §8). Each app replaces this example
-// with its own roles and permissions; owner is reserved by the platform and must keep
+// with its own roles and permissions; owner is reserved by the core and must keep
 // its name and every permission (authz.NewCatalog checks it). The API does not start if
 // it is invalid.
 func Roles() (*authz.Catalog, error) {
 	members := []authctx.Permission{authz.PermMembersRead, authz.PermMembersInvite, authz.PermMembersManage}
 	c, err := authz.NewCatalog(
 		authz.Role{
-			Name: authz.RoleOwner, Permissions: authz.PlatformPermissions(),
+			Name: authz.RoleOwner, Permissions: authz.CorePermissions(),
 			RequiresMFA: true, MFAMaxAge: ownerMFAMaxAge,
 		},
 		authz.Role{

@@ -60,10 +60,10 @@ func TestTestsNotInProd_DetectsViolations(t *testing.T) {
 		importer string
 		want     bool
 	}{
-		{"kit file behind the integration tag", "platform/kit/fakes", true},
+		{"kit file behind the integration tag", "core/kit/fakes", true},
 		{"app module's production code", "app/modules/c/seed", true},
-		{"external test package", "platform/b_test", false},
-		{"internal test file", "platform/a", false},
+		{"external test package", "core/b_test", false},
+		{"internal test file", "core/a", false},
 		{"code under tests/", "tests/db", false},
 	}
 	for _, tc := range tests {

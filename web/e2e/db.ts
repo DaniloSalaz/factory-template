@@ -1,4 +1,4 @@
-// Test data, seeded as the superuser `factory` exactly as docs/platform/runbooks/auth.md does
+// Test data, seeded as the superuser `factory` exactly as docs/core/runbooks/auth.md does
 // (option B: a user and a session without AuthKit). Only for the local database, or the
 // CI job's: there E2E_PG_CONTAINER names its Postgres service container.
 import { execFileSync } from "node:child_process";
@@ -61,7 +61,7 @@ export function newSession(user: User, mfa = false): void {
 /**
  * knownInviteToken replaces the token of the pending invitation of email in tenant with
  * a new one and returns it: the real one only reaches the development log
- * (docs/platform/runbooks/auth.md), so the test cannot read it.
+ * (docs/core/runbooks/auth.md), so the test cannot read it.
  */
 export function knownInviteToken(tenant: string, email: string): string {
   const token = randomBytes(32).toString("base64url");

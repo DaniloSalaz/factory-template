@@ -1,6 +1,6 @@
 # Publishes the API image once a push to main has passed CI (ci-ok green): built for
 # linux/amd64 and linux/arm64, tagged with the commit and `main`, with provenance and an
-# SBOM, and scanned once published. See docs/platform/runbooks/release.md.
+# SBOM, and scanned once published. See docs/core/runbooks/release.md.
 name: Release
 
 on:

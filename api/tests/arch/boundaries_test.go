@@ -32,7 +32,7 @@ func (p goPackage) allImports() []string {
 
 // listPackages runs `go list -e -json ./...` in dir and returns its module path and
 // packages. With -e an import cycle (the usual result of a forbidden import, such as
-// platform/kit/db importing app) still lists every package, so the rules can name the
+// core/kit/db importing app) still lists every package, so the rules can name the
 // import that caused it; the package errors are reported apart, and fail the test.
 func listPackages(t *testing.T, dir string) (string, []goPackage) {
 	t.Helper()
@@ -82,15 +82,15 @@ func runGo(t *testing.T, dir string, args ...string) ([]byte, error) {
 
 // splitModule reports whether path belongs to a module, which one, and whether it is the
 // module's interior (anything below its root package). Modules are the children of
-// platform/ (except kit, the shared pieces without business) and of app/modules/.
+// core/ (except kit, the shared pieces without business) and of app/modules/.
 func splitModule(modPath, path string) (name string, interior, ok bool) {
-	for _, root := range []string{"/platform/", "/app/modules/"} {
+	for _, root := range []string{"/core/", "/app/modules/"} {
 		rest, found := strings.CutPrefix(path, modPath+root)
 		if !found {
 			continue
 		}
 		name, sub, _ := strings.Cut(rest, "/")
-		if root == "/platform/" && name == "kit" {
+		if root == "/core/" && name == "kit" {
 			return "", false, false
 		}
 		return name, sub != "", true
@@ -99,7 +99,7 @@ func splitModule(modPath, path string) (name string, interior, ok bool) {
 }
 
 // privateOwner reports which module owns path when path is private to that module: the
-// interior of platform/<x> (x != kit) or app/modules/<x>, or its generated code under
+// interior of core/<x> (x != kit) or app/modules/<x>, or its generated code under
 // gen/openapi/<x> and gen/sqlc/<x>.
 func privateOwner(modPath, path string) (string, bool) {
 	if name, interior, ok := splitModule(modPath, path); ok {
@@ -164,23 +164,23 @@ func TestModuleBoundaries_DetectsViolations(t *testing.T) {
 		imported string
 		want     bool
 	}{
-		{"another module's domain", "platform/b", "platform/a/domain", true},
-		{"another module's generated code", "platform/b/usecases", "gen/sqlc/a", true},
-		{"kit into a module's interior", "platform/kit/httpx", "platform/a/usecases", true},
-		{"test files are checked too", "platform/b_test", "platform/a/adapters/postgres", true},
-		{"app module into a platform module's interior", "app/modules/c", "platform/a/domain", true},
-		{"platform module into an app module's interior", "platform/a/usecases", "app/modules/c/adapters/x", true},
-		{"app hook into a platform module's interior", "app", "platform/a/usecases", true},
-		{"another module's root package", "platform/b", "platform/a", false},
-		{"app module uses a platform module's root", "app/modules/c", "platform/a", false},
-		{"app hook uses a platform module's root", "app", "platform/a", false},
-		{"app hook uses kit", "app", "platform/kit/authz", false},
+		{"another module's domain", "core/b", "core/a/domain", true},
+		{"another module's generated code", "core/b/usecases", "gen/sqlc/a", true},
+		{"kit into a module's interior", "core/kit/httpx", "core/a/usecases", true},
+		{"test files are checked too", "core/b_test", "core/a/adapters/postgres", true},
+		{"app module into a core module's interior", "app/modules/c", "core/a/domain", true},
+		{"core module into an app module's interior", "core/a/usecases", "app/modules/c/adapters/x", true},
+		{"app hook into a core module's interior", "app", "core/a/usecases", true},
+		{"another module's root package", "core/b", "core/a", false},
+		{"app module uses a core module's root", "app/modules/c", "core/a", false},
+		{"app hook uses a core module's root", "app", "core/a", false},
+		{"app hook uses kit", "app", "core/kit/authz", false},
 		{"app hook uses an app module's root", "app", "app/modules/c", false},
-		{"platform module uses an app module's root (boundaries allow it)", "platform/b", "app/modules/c", false},
-		{"own interior", "platform/a/usecases", "platform/a/domain", false},
+		{"core module uses an app module's root (boundaries allow it)", "core/b", "app/modules/c", false},
+		{"own interior", "core/a/usecases", "core/a/domain", false},
 		{"app module's own interior", "app/modules/c", "app/modules/c/adapters/x", false},
-		{"own generated code", "platform/a/adapters/postgres", "gen/sqlc/a", false},
-		{"composition root uses module roots", "", "platform/a", false},
+		{"own generated code", "core/a/adapters/postgres", "gen/sqlc/a", false},
+		{"composition root uses module roots", "", "core/a", false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

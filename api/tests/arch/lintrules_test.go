@@ -33,31 +33,31 @@ func TestLintRules(t *testing.T) {
 		{
 			fixture: "env-only-in-config",
 			want: []string{
-				"platform/kit/httpx/port.go", "platform/foo/foo.go",
+				"core/kit/httpx/port.go", "core/foo/foo.go",
 				"[env-only-in-config]", "add the variable to config.Config",
 			},
-			allowed: []string{"platform/kit/config/"},
+			allowed: []string{"core/kit/config/"},
 		},
 		{
-			fixture: "platform-no-modules",
+			fixture: "core-no-modules",
 			want: []string{
-				"platform/kit/httpx/httpx.go", "[platform-no-modules]", "move the code into",
+				"core/kit/httpx/httpx.go", "[core-no-modules]", "move the code into",
 			},
-			allowed: []string{"platform/kit/httpx/kit.go"},
+			allowed: []string{"core/kit/httpx/kit.go"},
 		},
 		{
 			fixture: "apperr-stdlib-only",
-			want:    []string{"platform/kit/apperr/apperr.go", "platform/kit/logx", "[apperr-stdlib-only]", "only the standard library"},
+			want:    []string{"core/kit/apperr/apperr.go", "core/kit/logx", "[apperr-stdlib-only]", "only the standard library"},
 		},
 		{
 			fixture: "authctx-stdlib-only",
-			want:    []string{"platform/kit/authctx/authctx.go", "platform/kit/logx", "[authctx-stdlib-only]", "only the standard library"},
+			want:    []string{"core/kit/authctx/authctx.go", "core/kit/logx", "[authctx-stdlib-only]", "only the standard library"},
 		},
 		{
 			fixture: "authz-in-use-cases",
 			want: []string{
-				"platform/foo/adapters/http/handler.go", "app/modules/bar/adapters/http/handler.go",
-				"platform/kit/authz", "[authz-in-use-cases]", "Authorizer.Require",
+				"core/foo/adapters/http/handler.go", "app/modules/bar/adapters/http/handler.go",
+				"core/kit/authz", "[authz-in-use-cases]", "Authorizer.Require",
 			},
 			allowed: []string{"usecases/usecase.go"},
 		},
@@ -65,19 +65,19 @@ func TestLintRules(t *testing.T) {
 			fixture: "domain-pure",
 			want: []string{
 				"domain/transport.go", "'net/http'", "transport belongs in adapters/http",
-				"platform/foo/domain/platform.go", "app/modules/bar/domain/platform.go",
-				"platform/kit/logx", "[domain-pure]", "behind a port",
+				"core/foo/domain/core.go", "app/modules/bar/domain/core.go",
+				"core/kit/logx", "[domain-pure]", "behind a port",
 			},
 			allowed: []string{"domain/allowed.go"},
 		},
 		{
 			fixture: "doc-comments",
 			want: []string{
-				"platform/kit/foo/foo.go", "exported function Undocumented should have comment",
+				"core/kit/foo/foo.go", "exported function Undocumented should have comment",
 				"comment on exported function Misnamed should be of the form",
 				"app/modules/bar/adapters/postgres/store.go", "should have a package comment",
 			},
-			allowed: []string{"platform/foo/adapters/postgres/store.go", "app/modules/bar/adapters/http/handler.go"},
+			allowed: []string{"core/foo/adapters/postgres/store.go", "app/modules/bar/adapters/http/handler.go"},
 		},
 		{
 			fixture: "nolint-explained",
