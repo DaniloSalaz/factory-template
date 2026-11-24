@@ -60,3 +60,4 @@ descifra ficheros dotenv, así que `mise run dev` usa `sops exec-env`.
 - [ADR 0004 — Telemetría sin datos personales](docs/core/adr/0004-telemetria-y-datos-personales.md)
 - [ADR 0005 — Estructura plataforma / app / gen](docs/core/adr/0005-estructura-plataforma-app-gen.md)
 - [ADR 0006 — La zona de la plantilla se llama core](docs/core/adr/0006-zona-core.md)
+- [ADR 0007 — Sincronización entre la plantilla y sus apps](docs/core/adr/0007-sincronizacion-con-apps.md)
