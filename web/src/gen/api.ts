@@ -24,8 +24,8 @@ import type {
   UseQueryResult
 } from '@tanstack/react-query';
 
-import { apiFetch } from '../platform/api/fetcher';
-import type { ErrorType } from '../platform/api/fetcher';
+import { apiFetch } from '../core/api/fetcher';
+import type { ErrorType } from '../core/api/fetcher';
 export interface CurrentUser {
   id: string;
   email: string;

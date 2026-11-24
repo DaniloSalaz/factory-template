@@ -8,130 +8,128 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from './../platform/routes/root'
-import { Route as platformRoutesShellRouteImport } from './../platform/routes/shell'
-import { Route as platformRoutesInviteRouteImport } from './../platform/routes/invite'
-import { Route as platformRoutesLoginRouteImport } from './../platform/routes/login'
-import { Route as platformRoutesHomeRouteImport } from './../platform/routes/home'
-import { Route as platformRoutesTenantsRouteImport } from './../platform/routes/tenants'
-import { Route as platformRoutesTenantRouteImport } from './../platform/routes/tenant'
-import { Route as platformRoutesMfaRouteImport } from './../platform/routes/mfa'
-import { Route as platformRoutesMfaEnrollRouteImport } from './../platform/routes/mfa-enroll'
-import { Route as platformRoutesMfaVerifyRouteImport } from './../platform/routes/mfa-verify'
-import { Route as platformRoutesTenantHomeRouteImport } from './../platform/routes/tenant-home'
+import { Route as rootRouteImport } from './../core/routes/root'
+import { Route as coreRoutesShellRouteImport } from './../core/routes/shell'
+import { Route as coreRoutesInviteRouteImport } from './../core/routes/invite'
+import { Route as coreRoutesLoginRouteImport } from './../core/routes/login'
+import { Route as coreRoutesHomeRouteImport } from './../core/routes/home'
+import { Route as coreRoutesTenantsRouteImport } from './../core/routes/tenants'
+import { Route as coreRoutesTenantRouteImport } from './../core/routes/tenant'
+import { Route as coreRoutesMfaRouteImport } from './../core/routes/mfa'
+import { Route as coreRoutesMfaEnrollRouteImport } from './../core/routes/mfa-enroll'
+import { Route as coreRoutesMfaVerifyRouteImport } from './../core/routes/mfa-verify'
+import { Route as coreRoutesTenantHomeRouteImport } from './../core/routes/tenant-home'
 import { Route as ExampleRouteImport } from './../app/routes/example'
-import { Route as platformRoutesInvitationsRouteImport } from './../platform/routes/invitations'
-import { Route as platformRoutesMembersRouteImport } from './../platform/routes/members'
+import { Route as coreRoutesInvitationsRouteImport } from './../core/routes/invitations'
+import { Route as coreRoutesMembersRouteImport } from './../core/routes/members'
 
-const platformRoutesShellRoute = platformRoutesShellRouteImport.update({
+const coreRoutesShellRoute = coreRoutesShellRouteImport.update({
   id: '/_shell',
   getParentRoute: () => rootRouteImport,
 } as any)
-const platformRoutesInviteRoute = platformRoutesInviteRouteImport.update({
+const coreRoutesInviteRoute = coreRoutesInviteRouteImport.update({
   id: '/invite',
   path: '/invite',
   getParentRoute: () => rootRouteImport,
 } as any)
-const platformRoutesLoginRoute = platformRoutesLoginRouteImport.update({
+const coreRoutesLoginRoute = coreRoutesLoginRouteImport.update({
   id: '/login',
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const platformRoutesHomeRoute = platformRoutesHomeRouteImport.update({
+const coreRoutesHomeRoute = coreRoutesHomeRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => platformRoutesShellRoute,
+  getParentRoute: () => coreRoutesShellRoute,
 } as any)
-const platformRoutesTenantsRoute = platformRoutesTenantsRouteImport.update({
+const coreRoutesTenantsRoute = coreRoutesTenantsRouteImport.update({
   id: '/tenants',
   path: '/tenants',
-  getParentRoute: () => platformRoutesShellRoute,
+  getParentRoute: () => coreRoutesShellRoute,
 } as any)
-const platformRoutesTenantRoute = platformRoutesTenantRouteImport.update({
+const coreRoutesTenantRoute = coreRoutesTenantRouteImport.update({
   id: '/t/$tenantId',
   path: '/t/$tenantId',
-  getParentRoute: () => platformRoutesShellRoute,
+  getParentRoute: () => coreRoutesShellRoute,
 } as any)
-const platformRoutesMfaRoute = platformRoutesMfaRouteImport.update({
+const coreRoutesMfaRoute = coreRoutesMfaRouteImport.update({
   id: '/account/mfa/',
   path: '/account/mfa/',
-  getParentRoute: () => platformRoutesShellRoute,
+  getParentRoute: () => coreRoutesShellRoute,
 } as any)
-const platformRoutesMfaEnrollRoute = platformRoutesMfaEnrollRouteImport.update({
+const coreRoutesMfaEnrollRoute = coreRoutesMfaEnrollRouteImport.update({
   id: '/account/mfa/enroll',
   path: '/account/mfa/enroll',
-  getParentRoute: () => platformRoutesShellRoute,
+  getParentRoute: () => coreRoutesShellRoute,
 } as any)
-const platformRoutesMfaVerifyRoute = platformRoutesMfaVerifyRouteImport.update({
+const coreRoutesMfaVerifyRoute = coreRoutesMfaVerifyRouteImport.update({
   id: '/account/mfa/verify',
   path: '/account/mfa/verify',
-  getParentRoute: () => platformRoutesShellRoute,
+  getParentRoute: () => coreRoutesShellRoute,
 } as any)
-const platformRoutesTenantHomeRoute =
-  platformRoutesTenantHomeRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => platformRoutesTenantRoute,
-  } as any)
+const coreRoutesTenantHomeRoute = coreRoutesTenantHomeRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => coreRoutesTenantRoute,
+} as any)
 const ExampleRoute = ExampleRouteImport.update({
   id: '/example',
   path: '/example',
-  getParentRoute: () => platformRoutesTenantRoute,
+  getParentRoute: () => coreRoutesTenantRoute,
 } as any)
-const platformRoutesInvitationsRoute =
-  platformRoutesInvitationsRouteImport.update({
-    id: '/invitations',
-    path: '/invitations',
-    getParentRoute: () => platformRoutesTenantRoute,
-  } as any)
-const platformRoutesMembersRoute = platformRoutesMembersRouteImport.update({
+const coreRoutesInvitationsRoute = coreRoutesInvitationsRouteImport.update({
+  id: '/invitations',
+  path: '/invitations',
+  getParentRoute: () => coreRoutesTenantRoute,
+} as any)
+const coreRoutesMembersRoute = coreRoutesMembersRouteImport.update({
   id: '/members',
   path: '/members',
-  getParentRoute: () => platformRoutesTenantRoute,
+  getParentRoute: () => coreRoutesTenantRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof platformRoutesHomeRoute
-  '/invite': typeof platformRoutesInviteRoute
-  '/login': typeof platformRoutesLoginRoute
-  '/tenants': typeof platformRoutesTenantsRoute
-  '/t/$tenantId': typeof platformRoutesTenantRouteWithChildren
-  '/account/mfa/': typeof platformRoutesMfaRoute
-  '/t/$tenantId/': typeof platformRoutesTenantHomeRoute
-  '/account/mfa/enroll': typeof platformRoutesMfaEnrollRoute
-  '/account/mfa/verify': typeof platformRoutesMfaVerifyRoute
+  '/': typeof coreRoutesHomeRoute
+  '/invite': typeof coreRoutesInviteRoute
+  '/login': typeof coreRoutesLoginRoute
+  '/tenants': typeof coreRoutesTenantsRoute
+  '/t/$tenantId': typeof coreRoutesTenantRouteWithChildren
+  '/account/mfa/': typeof coreRoutesMfaRoute
+  '/t/$tenantId/': typeof coreRoutesTenantHomeRoute
+  '/account/mfa/enroll': typeof coreRoutesMfaEnrollRoute
+  '/account/mfa/verify': typeof coreRoutesMfaVerifyRoute
   '/t/$tenantId/example': typeof ExampleRoute
-  '/t/$tenantId/invitations': typeof platformRoutesInvitationsRoute
-  '/t/$tenantId/members': typeof platformRoutesMembersRoute
+  '/t/$tenantId/invitations': typeof coreRoutesInvitationsRoute
+  '/t/$tenantId/members': typeof coreRoutesMembersRoute
 }
 export interface FileRoutesByTo {
-  '/invite': typeof platformRoutesInviteRoute
-  '/login': typeof platformRoutesLoginRoute
-  '/': typeof platformRoutesHomeRoute
-  '/tenants': typeof platformRoutesTenantsRoute
-  '/account/mfa': typeof platformRoutesMfaRoute
-  '/t/$tenantId': typeof platformRoutesTenantHomeRoute
-  '/account/mfa/enroll': typeof platformRoutesMfaEnrollRoute
-  '/account/mfa/verify': typeof platformRoutesMfaVerifyRoute
+  '/invite': typeof coreRoutesInviteRoute
+  '/login': typeof coreRoutesLoginRoute
+  '/': typeof coreRoutesHomeRoute
+  '/tenants': typeof coreRoutesTenantsRoute
+  '/account/mfa': typeof coreRoutesMfaRoute
+  '/t/$tenantId': typeof coreRoutesTenantHomeRoute
+  '/account/mfa/enroll': typeof coreRoutesMfaEnrollRoute
+  '/account/mfa/verify': typeof coreRoutesMfaVerifyRoute
   '/t/$tenantId/example': typeof ExampleRoute
-  '/t/$tenantId/invitations': typeof platformRoutesInvitationsRoute
-  '/t/$tenantId/members': typeof platformRoutesMembersRoute
+  '/t/$tenantId/invitations': typeof coreRoutesInvitationsRoute
+  '/t/$tenantId/members': typeof coreRoutesMembersRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/_shell': typeof platformRoutesShellRouteWithChildren
-  '/invite': typeof platformRoutesInviteRoute
-  '/login': typeof platformRoutesLoginRoute
-  '/_shell/': typeof platformRoutesHomeRoute
-  '/_shell/tenants': typeof platformRoutesTenantsRoute
-  '/_shell/t/$tenantId': typeof platformRoutesTenantRouteWithChildren
-  '/_shell/account/mfa/': typeof platformRoutesMfaRoute
-  '/_shell/t/$tenantId/': typeof platformRoutesTenantHomeRoute
-  '/_shell/account/mfa/enroll': typeof platformRoutesMfaEnrollRoute
-  '/_shell/account/mfa/verify': typeof platformRoutesMfaVerifyRoute
+  '/_shell': typeof coreRoutesShellRouteWithChildren
+  '/invite': typeof coreRoutesInviteRoute
+  '/login': typeof coreRoutesLoginRoute
+  '/_shell/': typeof coreRoutesHomeRoute
+  '/_shell/tenants': typeof coreRoutesTenantsRoute
+  '/_shell/t/$tenantId': typeof coreRoutesTenantRouteWithChildren
+  '/_shell/account/mfa/': typeof coreRoutesMfaRoute
+  '/_shell/t/$tenantId/': typeof coreRoutesTenantHomeRoute
+  '/_shell/account/mfa/enroll': typeof coreRoutesMfaEnrollRoute
+  '/_shell/account/mfa/verify': typeof coreRoutesMfaVerifyRoute
   '/_shell/t/$tenantId/example': typeof ExampleRoute
-  '/_shell/t/$tenantId/invitations': typeof platformRoutesInvitationsRoute
-  '/_shell/t/$tenantId/members': typeof platformRoutesMembersRoute
+  '/_shell/t/$tenantId/invitations': typeof coreRoutesInvitationsRoute
+  '/_shell/t/$tenantId/members': typeof coreRoutesMembersRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -179,9 +177,9 @@ export interface FileRouteTypes {
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  platformRoutesShellRoute: typeof platformRoutesShellRouteWithChildren
-  platformRoutesInviteRoute: typeof platformRoutesInviteRoute
-  platformRoutesLoginRoute: typeof platformRoutesLoginRoute
+  coreRoutesShellRoute: typeof coreRoutesShellRouteWithChildren
+  coreRoutesInviteRoute: typeof coreRoutesInviteRoute
+  coreRoutesLoginRoute: typeof coreRoutesLoginRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -190,138 +188,139 @@ declare module '@tanstack/react-router' {
       id: '/_shell'
       path: ''
       fullPath: '/'
-      preLoaderRoute: typeof platformRoutesShellRouteImport
+      preLoaderRoute: typeof coreRoutesShellRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/invite': {
       id: '/invite'
       path: '/invite'
       fullPath: '/invite'
-      preLoaderRoute: typeof platformRoutesInviteRouteImport
+      preLoaderRoute: typeof coreRoutesInviteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
       id: '/login'
       path: '/login'
       fullPath: '/login'
-      preLoaderRoute: typeof platformRoutesLoginRouteImport
+      preLoaderRoute: typeof coreRoutesLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_shell/': {
       id: '/_shell/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof platformRoutesHomeRouteImport
-      parentRoute: typeof platformRoutesShellRoute
+      preLoaderRoute: typeof coreRoutesHomeRouteImport
+      parentRoute: typeof coreRoutesShellRoute
     }
     '/_shell/tenants': {
       id: '/_shell/tenants'
       path: '/tenants'
       fullPath: '/tenants'
-      preLoaderRoute: typeof platformRoutesTenantsRouteImport
-      parentRoute: typeof platformRoutesShellRoute
+      preLoaderRoute: typeof coreRoutesTenantsRouteImport
+      parentRoute: typeof coreRoutesShellRoute
     }
     '/_shell/t/$tenantId': {
       id: '/_shell/t/$tenantId'
       path: '/t/$tenantId'
       fullPath: '/t/$tenantId'
-      preLoaderRoute: typeof platformRoutesTenantRouteImport
-      parentRoute: typeof platformRoutesShellRoute
+      preLoaderRoute: typeof coreRoutesTenantRouteImport
+      parentRoute: typeof coreRoutesShellRoute
     }
     '/_shell/account/mfa/': {
       id: '/_shell/account/mfa/'
       path: '/account/mfa'
       fullPath: '/account/mfa/'
-      preLoaderRoute: typeof platformRoutesMfaRouteImport
-      parentRoute: typeof platformRoutesShellRoute
+      preLoaderRoute: typeof coreRoutesMfaRouteImport
+      parentRoute: typeof coreRoutesShellRoute
     }
     '/_shell/account/mfa/enroll': {
       id: '/_shell/account/mfa/enroll'
       path: '/account/mfa/enroll'
       fullPath: '/account/mfa/enroll'
-      preLoaderRoute: typeof platformRoutesMfaEnrollRouteImport
-      parentRoute: typeof platformRoutesShellRoute
+      preLoaderRoute: typeof coreRoutesMfaEnrollRouteImport
+      parentRoute: typeof coreRoutesShellRoute
     }
     '/_shell/account/mfa/verify': {
       id: '/_shell/account/mfa/verify'
       path: '/account/mfa/verify'
       fullPath: '/account/mfa/verify'
-      preLoaderRoute: typeof platformRoutesMfaVerifyRouteImport
-      parentRoute: typeof platformRoutesShellRoute
+      preLoaderRoute: typeof coreRoutesMfaVerifyRouteImport
+      parentRoute: typeof coreRoutesShellRoute
     }
     '/_shell/t/$tenantId/': {
       id: '/_shell/t/$tenantId/'
       path: '/'
       fullPath: '/t/$tenantId/'
-      preLoaderRoute: typeof platformRoutesTenantHomeRouteImport
-      parentRoute: typeof platformRoutesTenantRoute
+      preLoaderRoute: typeof coreRoutesTenantHomeRouteImport
+      parentRoute: typeof coreRoutesTenantRoute
     }
     '/_shell/t/$tenantId/example': {
       id: '/_shell/t/$tenantId/example'
       path: '/example'
       fullPath: '/t/$tenantId/example'
       preLoaderRoute: typeof ExampleRouteImport
-      parentRoute: typeof platformRoutesTenantRoute
+      parentRoute: typeof coreRoutesTenantRoute
     }
     '/_shell/t/$tenantId/invitations': {
       id: '/_shell/t/$tenantId/invitations'
       path: '/invitations'
       fullPath: '/t/$tenantId/invitations'
-      preLoaderRoute: typeof platformRoutesInvitationsRouteImport
-      parentRoute: typeof platformRoutesTenantRoute
+      preLoaderRoute: typeof coreRoutesInvitationsRouteImport
+      parentRoute: typeof coreRoutesTenantRoute
     }
     '/_shell/t/$tenantId/members': {
       id: '/_shell/t/$tenantId/members'
       path: '/members'
       fullPath: '/t/$tenantId/members'
-      preLoaderRoute: typeof platformRoutesMembersRouteImport
-      parentRoute: typeof platformRoutesTenantRoute
+      preLoaderRoute: typeof coreRoutesMembersRouteImport
+      parentRoute: typeof coreRoutesTenantRoute
     }
   }
 }
 
-interface platformRoutesTenantRouteChildren {
-  platformRoutesTenantHomeRoute: typeof platformRoutesTenantHomeRoute
+interface coreRoutesTenantRouteChildren {
+  coreRoutesTenantHomeRoute: typeof coreRoutesTenantHomeRoute
   ExampleRoute: typeof ExampleRoute
-  platformRoutesInvitationsRoute: typeof platformRoutesInvitationsRoute
-  platformRoutesMembersRoute: typeof platformRoutesMembersRoute
+  coreRoutesInvitationsRoute: typeof coreRoutesInvitationsRoute
+  coreRoutesMembersRoute: typeof coreRoutesMembersRoute
 }
 
-const platformRoutesTenantRouteChildren: platformRoutesTenantRouteChildren = {
-  platformRoutesTenantHomeRoute: platformRoutesTenantHomeRoute,
+const coreRoutesTenantRouteChildren: coreRoutesTenantRouteChildren = {
+  coreRoutesTenantHomeRoute: coreRoutesTenantHomeRoute,
   ExampleRoute: ExampleRoute,
-  platformRoutesInvitationsRoute: platformRoutesInvitationsRoute,
-  platformRoutesMembersRoute: platformRoutesMembersRoute,
+  coreRoutesInvitationsRoute: coreRoutesInvitationsRoute,
+  coreRoutesMembersRoute: coreRoutesMembersRoute,
 }
 
-const platformRoutesTenantRouteWithChildren =
-  platformRoutesTenantRoute._addFileChildren(platformRoutesTenantRouteChildren)
+const coreRoutesTenantRouteWithChildren =
+  coreRoutesTenantRoute._addFileChildren(coreRoutesTenantRouteChildren)
 
-interface platformRoutesShellRouteChildren {
-  platformRoutesHomeRoute: typeof platformRoutesHomeRoute
-  platformRoutesTenantsRoute: typeof platformRoutesTenantsRoute
-  platformRoutesTenantRoute: typeof platformRoutesTenantRouteWithChildren
-  platformRoutesMfaRoute: typeof platformRoutesMfaRoute
-  platformRoutesMfaEnrollRoute: typeof platformRoutesMfaEnrollRoute
-  platformRoutesMfaVerifyRoute: typeof platformRoutesMfaVerifyRoute
+interface coreRoutesShellRouteChildren {
+  coreRoutesHomeRoute: typeof coreRoutesHomeRoute
+  coreRoutesTenantsRoute: typeof coreRoutesTenantsRoute
+  coreRoutesTenantRoute: typeof coreRoutesTenantRouteWithChildren
+  coreRoutesMfaRoute: typeof coreRoutesMfaRoute
+  coreRoutesMfaEnrollRoute: typeof coreRoutesMfaEnrollRoute
+  coreRoutesMfaVerifyRoute: typeof coreRoutesMfaVerifyRoute
 }
 
-const platformRoutesShellRouteChildren: platformRoutesShellRouteChildren = {
-  platformRoutesHomeRoute: platformRoutesHomeRoute,
-  platformRoutesTenantsRoute: platformRoutesTenantsRoute,
-  platformRoutesTenantRoute: platformRoutesTenantRouteWithChildren,
-  platformRoutesMfaRoute: platformRoutesMfaRoute,
-  platformRoutesMfaEnrollRoute: platformRoutesMfaEnrollRoute,
-  platformRoutesMfaVerifyRoute: platformRoutesMfaVerifyRoute,
+const coreRoutesShellRouteChildren: coreRoutesShellRouteChildren = {
+  coreRoutesHomeRoute: coreRoutesHomeRoute,
+  coreRoutesTenantsRoute: coreRoutesTenantsRoute,
+  coreRoutesTenantRoute: coreRoutesTenantRouteWithChildren,
+  coreRoutesMfaRoute: coreRoutesMfaRoute,
+  coreRoutesMfaEnrollRoute: coreRoutesMfaEnrollRoute,
+  coreRoutesMfaVerifyRoute: coreRoutesMfaVerifyRoute,
 }
 
-const platformRoutesShellRouteWithChildren =
-  platformRoutesShellRoute._addFileChildren(platformRoutesShellRouteChildren)
+const coreRoutesShellRouteWithChildren = coreRoutesShellRoute._addFileChildren(
+  coreRoutesShellRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
-  platformRoutesShellRoute: platformRoutesShellRouteWithChildren,
-  platformRoutesInviteRoute: platformRoutesInviteRoute,
-  platformRoutesLoginRoute: platformRoutesLoginRoute,
+  coreRoutesShellRoute: coreRoutesShellRouteWithChildren,
+  coreRoutesInviteRoute: coreRoutesInviteRoute,
+  coreRoutesLoginRoute: coreRoutesLoginRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

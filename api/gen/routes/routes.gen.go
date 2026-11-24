@@ -4,7 +4,7 @@
 // the OpenAPI contract declares and the properties its JSON body accepts.
 package routes
 
-import "chaskicode.dev/saas/platform/kit/httpx"
+import "chaskicode.dev/saas/core/kit/httpx"
 
 // Security returns the security of every operation of the contract.
 func Security() map[string]httpx.Security {
