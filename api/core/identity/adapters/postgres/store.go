@@ -14,13 +14,13 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	identitydb "chaskicode.dev/saas/gen/sqlc/identity"
 	"chaskicode.dev/saas/core/identity/domain"
 	"chaskicode.dev/saas/core/identity/usecases"
 	"chaskicode.dev/saas/core/kit/apperr"
 	"chaskicode.dev/saas/core/kit/authctx"
 	"chaskicode.dev/saas/core/kit/db"
 	"chaskicode.dev/saas/core/kit/pii"
+	identitydb "chaskicode.dev/saas/gen/sqlc/identity"
 )
 
 type Store struct {

@@ -95,9 +95,9 @@ depends = ["web:install"]
 run = [
   "cd api && sqlc generate",
   # core.yaml + app.yaml -> openapi.gen.yaml, the only contract the generators read.
-  "cd api && go run ./tools/specmerge -platform ../api-spec/core.yaml -app ../api-spec/app.yaml -out ../api-spec/openapi.gen.yaml",
+  "cd api && go run ./tools/specmerge -core ../api-spec/core.yaml -app ../api-spec/app.yaml -out ../api-spec/openapi.gen.yaml",
   # One package per module that has a codegen.yaml, found by the glob (alphabetical,
-  # platform first): adding a module never edits this file. specmerge has checked that
+  # core first): adding a module never edits this file. specmerge has checked that
   # each one generates exactly its folder's tag.
   """
   cd api
@@ -114,7 +114,7 @@ run = [
 ]
 
 [tasks.migrate]
-description = "Apply pending platform and then app migrations as app_owner (the binary's `api migrate`)"
+description = "Apply pending core and then app migrations as app_owner (the binary's `api migrate`)"
 dir = "api"
 run = "go run . migrate"
 
@@ -124,8 +124,8 @@ dir = "api"
 usage = 'arg "<name>" help="Migration name, e.g. create_appointments"'
 run = "goose -s -dir app/migrations create {{usage.name}} sql"
 
-[tasks."migration:new:platform"]
-description = "Create a platform migration in api/core/migrations (template only): mise run migration:new:platform <name>"
+[tasks."migration:new:core"]
+description = "Create a core migration in api/core/migrations (template only): mise run migration:new:core <name>"
 dir = "api"
 usage = 'arg "<name>" help="Migration name, e.g. add_sessions_index"'
 run = "goose -s -dir core/migrations create {{usage.name}} sql"

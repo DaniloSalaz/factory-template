@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 
-	healthdb "chaskicode.dev/saas/gen/sqlc/health"
 	"chaskicode.dev/saas/core/health/usecases"
+	healthdb "chaskicode.dev/saas/gen/sqlc/health"
 )
 
 var _ usecases.DBChecker = (*Checker)(nil)

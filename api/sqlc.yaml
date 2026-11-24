@@ -1,7 +1,7 @@
 version: "2"
 sql:
   - engine: postgresql
-    # Platform first: an app migration may build on the platform's tables.
+    # Core first: an app migration may build on the core's tables.
     schema: [core/migrations, app/migrations]
     queries: core/health/queries
     gen:
@@ -14,7 +14,7 @@ sql:
         # queries use, so module code never depends on another module's models.
         omit_unused_structs: true
   - engine: postgresql
-    # Platform first: an app migration may build on the platform's tables.
+    # Core first: an app migration may build on the core's tables.
     schema: [core/migrations, app/migrations]
     queries: core/identity/queries
     gen:

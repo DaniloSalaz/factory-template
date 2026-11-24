@@ -29,7 +29,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go"
 
-	"chaskicode.dev/saas/gen/routes"
 	"chaskicode.dev/saas/core/identity"
 	"chaskicode.dev/saas/core/identity/adapters/fakeidp"
 	"chaskicode.dev/saas/core/identity/domain"
@@ -45,6 +44,7 @@ import (
 	"chaskicode.dev/saas/core/kit/ratelimit"
 	"chaskicode.dev/saas/core/kit/telemetry"
 	"chaskicode.dev/saas/core/migrations"
+	"chaskicode.dev/saas/gen/routes"
 	"chaskicode.dev/saas/tests/testkit"
 )
 

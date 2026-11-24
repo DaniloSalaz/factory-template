@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"time"
 
-	identityapi "chaskicode.dev/saas/gen/openapi/identity"
 	"chaskicode.dev/saas/core/identity/adapters/devsender"
 	identityhttp "chaskicode.dev/saas/core/identity/adapters/http"
 	"chaskicode.dev/saas/core/identity/adapters/postgres"
@@ -27,6 +26,7 @@ import (
 	"chaskicode.dev/saas/core/kit/httpx"
 	"chaskicode.dev/saas/core/kit/ratelimit"
 	"chaskicode.dev/saas/core/kit/telemetry"
+	identityapi "chaskicode.dev/saas/gen/openapi/identity"
 )
 
 // Paths of the module that are rate limited per client IP.

@@ -11,8 +11,8 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-const platformSpec = `openapi: 3.1.0
-info: {title: Platform, version: 0.1.0}
+const coreSpec = `openapi: 3.1.0
+info: {title: Core, version: 0.1.0}
 security:
   - session: []
     tenant: []
@@ -70,14 +70,14 @@ components:
 
 func modules() []module {
 	return []module{
-		{name: "identity", zone: zonePlatform, config: "core/identity/codegen.yaml"},
+		{name: "identity", zone: zoneCore, config: "core/identity/codegen.yaml"},
 		{name: "appointments", zone: zoneApp, config: "app/modules/appointments/codegen.yaml"},
 	}
 }
 
 func mergeStrings(t *testing.T, app string, mods []module) ([]byte, error) {
 	t.Helper()
-	return merge(source{name: "core.yaml", data: []byte(platformSpec)}, source{name: "app.yaml", data: []byte(app)}, mods)
+	return merge(source{name: "core.yaml", data: []byte(coreSpec)}, source{name: "app.yaml", data: []byte(app)}, mods)
 }
 
 func decode(t *testing.T, b []byte) map[string]any {
@@ -100,7 +100,7 @@ func TestMerge(t *testing.T) {
 		t.Errorf("missing header:\n%s", out)
 	}
 	s := string(out)
-	// Platform first, in its order, then the app.
+	// Core first, in its order, then the app.
 	for _, order := range [][]string{
 		{"  /me:", "  /members/{membership_id}:", "  /appointments:"},
 		{"- name: identity", "- name: appointments"},
@@ -116,11 +116,11 @@ func TestMerge(t *testing.T) {
 		}
 	}
 	if strings.Contains(s, "core.yaml#") {
-		t.Errorf("platform references must be rewritten as local ones:\n%s", s)
+		t.Errorf("core references must be rewritten as local ones:\n%s", s)
 	}
 	doc := decode(t, out)
-	if doc["info"].(map[string]any)["title"] != "Platform" { //nolint:forcetypeassert // a wrong shape fails the test anyway
-		t.Errorf("info must be the platform's: %v", doc["info"])
+	if doc["info"].(map[string]any)["title"] != "Core" { //nolint:forcetypeassert // a wrong shape fails the test anyway
+		t.Errorf("info must be the core's: %v", doc["info"])
 	}
 	if !strings.Contains(s, `$ref: "#/components/responses/InternalError"`) || !strings.Contains(s, "  parameters:\n    Page:") {
 		t.Errorf("app references and sections are missing:\n%s", s)
@@ -148,15 +148,15 @@ func TestMerge_Deterministic(t *testing.T) {
 // emptyApp is the template's app.yaml in essence: no paths, tags or components.
 const emptyApp = "openapi: 3.1.0\ninfo: {title: App, version: 0.1.0}\npaths: {}\n"
 
-func TestMerge_EmptyAppIsThePlatform(t *testing.T) {
+func TestMerge_EmptyAppIsTheCore(t *testing.T) {
 	t.Parallel()
 
 	out, err := mergeStrings(t, emptyApp, modules()[:1])
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := decode(t, out), decode(t, []byte(platformSpec)); !reflect.DeepEqual(got, want) {
-		t.Fatalf("merged = %v\nwant the platform contract %v", got, want)
+	if got, want := decode(t, out), decode(t, []byte(coreSpec)); !reflect.DeepEqual(got, want) {
+		t.Fatalf("merged = %v\nwant the core contract %v", got, want)
 	}
 }
 
@@ -177,7 +177,7 @@ func TestMerge_Refuses(t *testing.T) {
 		mods []module
 		want []string
 	}{
-		{"platform path", func(t *testing.T) string { return app(t, "  /appointments:", "  /me:") }, nil,
+		{"core path", func(t *testing.T) string { return app(t, "  /appointments:", "  /me:") }, nil,
 			[]string{"[contract-duplicate]", "path /me repeats core.yaml /me"}},
 		{"path with other parameter names", func(t *testing.T) string { return app(t, "  /appointments:", "  /members/{id}:") }, nil,
 			[]string{"[contract-duplicate]", "path /members/{id} repeats core.yaml /members/{membership_id}"}},
@@ -190,12 +190,12 @@ func TestMerge_Refuses(t *testing.T) {
 		{"response name", func(t *testing.T) string {
 			return app(t, "  parameters:", "  responses:\n    InternalError: {description: mine}\n  parameters:")
 		}, nil, []string{"[contract-duplicate]", "components.responses.InternalError already exists"}},
-		{"platform tag on an operation", func(t *testing.T) string { return app(t, "tags: [appointments]", "tags: [identity]") }, nil,
-			[]string{"[contract-duplicate]", `GET /appointments: tag "identity" belongs to the platform`}},
-		{"platform tag declared", func(t *testing.T) string {
+		{"core tag on an operation", func(t *testing.T) string { return app(t, "tags: [appointments]", "tags: [identity]") }, nil,
+			[]string{"[contract-duplicate]", `GET /appointments: tag "identity" belongs to the core`}},
+		{"core tag declared", func(t *testing.T) string {
 			return app(t, "  - name: appointments", "  - name: appointments\n  - name: identity")
 		}, nil,
-			[]string{"[contract-duplicate]", `tag "identity" belongs to the platform`}},
+			[]string{"[contract-duplicate]", `tag "identity" belongs to the core`}},
 		{"tag without module", nil, modules()[:1],
 			[]string{"[contract-module-key]", `tag "appointments" has no module: there is no api/app/modules/appointments/codegen.yaml`}},
 		{"undeclared tag", func(t *testing.T) string { return app(t, "tags: [appointments]", "tags: [billing]") }, nil,
@@ -237,7 +237,7 @@ func TestMerge_Refuses(t *testing.T) {
 			return app(t, "    Appointment:\n", "    appointment: {type: object}\n    Appointment:\n")
 		}, nil,
 			[]string{"[contract-duplicate]", "components.schemas.Appointment collides with a name of the same section in app.yaml"}},
-		{"platform path item reference", func(t *testing.T) string {
+		{"core path item reference", func(t *testing.T) string {
 			return app(t, "  /appointments:\n", "  /demo/me:\n    $ref: \"core.yaml#/paths/~1me\"\n  /appointments:\n")
 		}, nil,
 			[]string{"[contract-platform-owned]", `$ref "core.yaml#/paths/~1me": the app contract references only components`, "path /demo/me is a $ref"}},
@@ -246,7 +246,7 @@ func TestMerge_Refuses(t *testing.T) {
 		}, nil, []string{"[contract-platform-owned]", "path /demo/x is a $ref"}},
 		{"local reference outside components", func(t *testing.T) string { return app(t, "#/components/schemas/Appointment", "#/paths/~1appointments") }, nil,
 			[]string{"[contract-platform-owned]", "references only components"}},
-		{"dangling platform reference", func(t *testing.T) string {
+		{"dangling core reference", func(t *testing.T) string {
 			return app(t, "core.yaml#/components/responses/InternalError", "core.yaml#/components/responses/Nope")
 		}, nil, []string{"[contract-platform-owned]", "core.yaml has no #/components/responses/Nope"}},
 		{"dangling local reference", func(t *testing.T) string {
@@ -310,8 +310,8 @@ func TestDiscoverModules(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []module{
-		{name: "health", zone: zonePlatform, config: "core/health/codegen.yaml"},
-		{name: "identity", zone: zonePlatform, config: "core/identity/codegen.yaml"},
+		{name: "health", zone: zoneCore, config: "core/health/codegen.yaml"},
+		{name: "identity", zone: zoneCore, config: "core/identity/codegen.yaml"},
 		{name: "appointments", zone: zoneApp, config: "app/modules/appointments/codegen.yaml"},
 	}
 	if !reflect.DeepEqual(mods, want) {
@@ -343,7 +343,7 @@ func TestDiscoverModules_Refuses(t *testing.T) {
 			"app/modules/Demo-x/codegen.yaml": codegen("Demo-xapi", "gen/openapi/Demo-x/Demo-x.gen.go", "Demo-x"),
 		}, "must match [a-z][a-z0-9]*"},
 		{"same name in both zones", map[string]string{
-			"core/identity/codegen.yaml":    codegen("identityapi", "gen/openapi/identity/identity.gen.go", "identity"),
+			"core/identity/codegen.yaml":        codegen("identityapi", "gen/openapi/identity/identity.gen.go", "identity"),
 			"app/modules/identity/codegen.yaml": codegen("identityapi", "gen/openapi/identity/identity.gen.go", "identity"),
 		}, `two modules are named "identity"`},
 	}
@@ -385,11 +385,11 @@ func TestRun_Repository(t *testing.T) {
 	if !bytes.Equal(a, b) {
 		t.Fatal("two runs wrote different files")
 	}
-	platform, err := os.ReadFile("../../../api-spec/core.yaml")
+	core, err := os.ReadFile("../../../api-spec/core.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(decode(t, a), decode(t, platform)) {
+	if !reflect.DeepEqual(decode(t, a), decode(t, core)) {
 		t.Fatal("with the template's app.yaml the merged contract must equal core.yaml")
 	}
 }

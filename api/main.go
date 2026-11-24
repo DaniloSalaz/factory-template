@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"chaskicode.dev/saas/app"
-	"chaskicode.dev/saas/gen/routes"
 	"chaskicode.dev/saas/core/health"
 	"chaskicode.dev/saas/core/identity"
 	"chaskicode.dev/saas/core/kit/clientip"
@@ -22,6 +21,7 @@ import (
 	"chaskicode.dev/saas/core/kit/logx"
 	"chaskicode.dev/saas/core/kit/ratelimit"
 	"chaskicode.dev/saas/core/kit/telemetry"
+	"chaskicode.dev/saas/gen/routes"
 )
 
 // Requests per client IP and minute to /auth/login and /auth/callback together: a login

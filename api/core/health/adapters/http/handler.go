@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 
-	healthapi "chaskicode.dev/saas/gen/openapi/health"
 	"chaskicode.dev/saas/core/health/usecases"
+	healthapi "chaskicode.dev/saas/gen/openapi/health"
 )
 
 var _ healthapi.StrictServerInterface = (*Handler)(nil)

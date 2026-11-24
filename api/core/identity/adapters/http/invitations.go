@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	identityapi "chaskicode.dev/saas/gen/openapi/identity"
 	"chaskicode.dev/saas/core/identity/domain"
 	"chaskicode.dev/saas/core/identity/usecases"
 	"chaskicode.dev/saas/core/kit/authctx"
+	identityapi "chaskicode.dev/saas/gen/openapi/identity"
 )
 
 // Invitations (auth-y-tenancy §5.6). Permissions are checked in the use case. No response

@@ -11,7 +11,7 @@ const api = "http://localhost:8080";
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
-    // Platform routes are listed in src/core/routes.ts; the app's are file-based
+    // Core routes are listed in src/core/routes.ts; the app's are file-based
     // under src/app/routes, mounted inside /t/$tenantId (web/README.md). The options are
     // in tsr.config.json, which the CLI of `npm run routes` reads too.
     tanstackRouter(),
