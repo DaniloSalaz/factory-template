@@ -1,8 +1,8 @@
 import { useSyncExternalStore } from "react";
-import { usePlatform } from "@/platform/bootstrap";
-import { texts } from "@/platform/texts";
-import { Alert, AlertAction, AlertDescription } from "@/platform/ui/alert";
-import { Button } from "@/platform/ui/button";
+import { usePlatform } from "@/core/bootstrap";
+import { texts } from "@/core/texts";
+import { Alert, AlertAction, AlertDescription } from "@/core/ui/alert";
+import { Button } from "@/core/ui/button";
 
 /** NoticeBar shows the platform's notice of the moment (today, a 429's wait). */
 export function NoticeBar() {

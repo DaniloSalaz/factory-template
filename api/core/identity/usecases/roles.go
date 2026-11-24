@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"chaskicode.dev/saas/platform/kit/authz"
+	"chaskicode.dev/saas/core/kit/authz"
 )
 
 // UnknownRolesInUse returns the roles stored in memberships that catalog lacks (auth-y-tenancy

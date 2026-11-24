@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"chaskicode.dev/saas/platform/kit/authctx"
-	"chaskicode.dev/saas/platform/kit/authz"
+	"chaskicode.dev/saas/core/kit/authctx"
+	"chaskicode.dev/saas/core/kit/authz"
 )
 
 func owner() authz.Role {

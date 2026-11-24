@@ -1,6 +1,6 @@
 /* The app's theme: shadcn's colors, radius and fonts as CSS variables (neutral by
    default). Changing the brand is replacing this file and src/app/brand/; nothing in
-   src/platform changes. Dark mode is out of scope for now. */
+   src/core changes. Dark mode is out of scope for now. */
 @import "@fontsource-variable/geist";
 
 :root {

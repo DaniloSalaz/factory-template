@@ -1,14 +1,14 @@
 // Package arch checks architecture rules that the linters cannot express. Its tests
 // are behind the "arch" build tag and run with `mise run arch`:
 //
-//   - module boundaries: a module is platform/<x> (any x but kit) or app/modules/<x>;
+//   - module boundaries: a module is core/<x> (any x but kit) or app/modules/<x>;
 //     outside it, only its root package may be imported (never its domain, usecases or
 //     adapters), and the generated code under gen/openapi/<x> and gen/sqlc/<x> is private
 //     to module x;
-//   - platform imports app: nothing under platform/ imports app or anything below it, and
+//   - platform imports app: nothing under core/ imports app or anything below it, and
 //     only package main imports app itself, the single place where an app hooks into the
 //     platform (app.Roles, app.Modules);
-//   - RLS variables only in platform/kit/db: no Go file outside platform/kit/db (and the
+//   - RLS variables only in core/kit/db: no Go file outside core/kit/db (and the
 //     schema tests in tests/db), tests and generated code included, calls the function
 //     that sets them or names one of them, so tenant data is reachable only through
 //     db.WithTenantTx;

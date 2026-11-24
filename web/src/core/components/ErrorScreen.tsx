@@ -1,10 +1,10 @@
 import * as Sentry from "@sentry/react";
 import type { ErrorComponentProps } from "@tanstack/react-router";
 import { type ReactNode, useEffect } from "react";
-import { reportError } from "@/platform/telemetry/sentry";
-import { texts } from "@/platform/texts";
-import { Button } from "@/platform/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/platform/ui/card";
+import { reportError } from "@/core/telemetry/sentry";
+import { texts } from "@/core/texts";
+import { Button } from "@/core/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/core/ui/card";
 
 /** ErrorScreen is the platform's generic screen for an error the UI did not expect. */
 export function ErrorScreen() {

@@ -1,6 +1,6 @@
-import { errorMessage, requestIdOf } from "@/platform/errors/message";
-import { texts } from "@/platform/texts";
-import { Alert, AlertDescription } from "@/platform/ui/alert";
+import { errorMessage, requestIdOf } from "@/core/errors/message";
+import { texts } from "@/core/texts";
+import { Alert, AlertDescription } from "@/core/ui/alert";
 
 /** ErrorText shows a failed request's message, unless the platform already handles it. */
 export function ErrorText(props: { error: unknown }) {

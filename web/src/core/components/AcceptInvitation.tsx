@@ -1,10 +1,10 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { getGetMeQueryKey, useAcceptInvitation, useGetMe } from "@/gen/api";
-import { ErrorText } from "@/platform/components/ErrorText";
-import { errorCode } from "@/platform/errors/message";
-import { hasInviteToken, takeInviteToken } from "@/platform/invite/invite-token";
-import { texts } from "@/platform/texts";
+import { ErrorText } from "@/core/components/ErrorText";
+import { errorCode } from "@/core/errors/message";
+import { hasInviteToken, takeInviteToken } from "@/core/invite/invite-token";
+import { texts } from "@/core/texts";
 
 export type AcceptOutcome = "missing" | "failed";
 

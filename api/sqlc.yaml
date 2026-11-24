@@ -2,8 +2,8 @@ version: "2"
 sql:
   - engine: postgresql
     # Platform first: an app migration may build on the platform's tables.
-    schema: [platform/migrations, app/migrations]
-    queries: platform/health/queries
+    schema: [core/migrations, app/migrations]
+    queries: core/health/queries
     gen:
       go:
         package: healthdb
@@ -15,8 +15,8 @@ sql:
         omit_unused_structs: true
   - engine: postgresql
     # Platform first: an app migration may build on the platform's tables.
-    schema: [platform/migrations, app/migrations]
-    queries: platform/identity/queries
+    schema: [core/migrations, app/migrations]
+    queries: core/identity/queries
     gen:
       go:
         package: identitydb

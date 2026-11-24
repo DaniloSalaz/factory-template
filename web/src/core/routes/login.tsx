@@ -1,11 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { getAuthLoginUrl } from "@/gen/api";
-import { apiUrl } from "@/platform/api/fetcher";
-import { registeredApp } from "@/platform/app-registry";
-import { safeReturnTo } from "@/platform/paths";
-import { texts } from "@/platform/texts";
-import { Button } from "@/platform/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/platform/ui/card";
+import { apiUrl } from "@/core/api/fetcher";
+import { registeredApp } from "@/core/app-registry";
+import { safeReturnTo } from "@/core/paths";
+import { texts } from "@/core/texts";
+import { Button } from "@/core/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/core/ui/card";
 
 export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>) => ({

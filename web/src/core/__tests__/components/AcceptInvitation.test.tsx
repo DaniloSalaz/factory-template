@@ -3,11 +3,11 @@ import { render, screen } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Me } from "@/gen/api";
-import { createQueryClient } from "@/platform/api/query-client";
-import { AcceptInvitation } from "@/platform/components/AcceptInvitation";
-import { actionFor } from "@/platform/errors/handle";
-import { inviteTokenKey } from "@/platform/invite/invite-token";
-import { texts } from "@/platform/texts";
+import { createQueryClient } from "@/core/api/query-client";
+import { AcceptInvitation } from "@/core/components/AcceptInvitation";
+import { actionFor } from "@/core/errors/handle";
+import { inviteTokenKey } from "@/core/invite/invite-token";
+import { texts } from "@/core/texts";
 
 const me: Me = {
   user: { id: "u", email: "ana@example.test", display_name: "Ana" },

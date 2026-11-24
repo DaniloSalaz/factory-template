@@ -3,11 +3,11 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-// [platform-imports-app] src/platform is template code: apps never edit it, so it must
+// [platform-imports-app] src/core is template code: apps never edit it, so it must
 // not depend on them. It reads the app only through app-registry.ts.
 const src = resolve(import.meta.dirname, "../..");
-const allowed = "platform/app-registry.ts";
-const self = "platform/__tests__/architecture.test.ts"; // its fixtures name src/app on purpose
+const allowed = "core/app-registry.ts";
+const self = "core/__tests__/architecture.test.ts"; // its fixtures name src/app on purpose
 
 const specifiers = (code: string): string[] =>
   [...code.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)["']([^"']+)["']/g)].flatMap((m) =>
@@ -43,26 +43,26 @@ function filesUnder(dir: string): string[] {
 
 describe("[platform-imports-app]", () => {
   it("platform imports src/app only in app-registry.ts", () => {
-    const files = filesUnder("platform").filter((f) => f !== self);
+    const files = filesUnder("core").filter((f) => f !== self);
     // An empty list would pass without looking at anything (src resolved wrong).
-    expect(files.length, "no file under src/platform: is src right?").toBeGreaterThan(0);
+    expect(files.length, "no file under src/core: is src right?").toBeGreaterThan(0);
     const offenders = files.flatMap((f) =>
       appImports(f, readFileSync(join(src, f), "utf8")).map((s) => `${f}: ${s}`),
     );
     expect(
       offenders,
-      "src/platform must not import src/app; register what the shell needs in src/app/registry.ts",
+      "src/core must not import src/app; register what the shell needs in src/app/registry.ts",
     ).toEqual([]);
   });
 
   it("catches every way of naming src/app", () => {
-    const f = "platform/routes/x.tsx";
+    const f = "core/routes/x.tsx";
     expect(appImports(f, 'import { a } from "@/app/registry";')).toHaveLength(1);
     expect(appImports(f, 'import { a } from "../../app/texts";')).toHaveLength(1);
     expect(appImports(f, 'import "../../app/theme.css";')).toHaveLength(1);
     expect(appImports(f, 'const m = await import("@/app/routes/example");')).toHaveLength(1);
     expect(appImports(f, 'export { x } from "../../app";')).toHaveLength(1);
-    expect(appImports(f, 'import { a } from "@/platform/app-types";')).toHaveLength(0);
+    expect(appImports(f, 'import { a } from "@/core/app-types";')).toHaveLength(0);
     expect(appImports(f, 'import { a } from "./app-like";')).toHaveLength(0);
     expect(appImports(allowed, 'import { app } from "../app/registry";')).toHaveLength(0);
   });
@@ -130,7 +130,7 @@ describe("[feature-boundaries]", () => {
       crossFeatureImports(f, 'import { a } from "@/app/features/example/hooks/y";'),
     ).toHaveLength(0);
     expect(crossFeatureImports(f, 'import { a } from "@/app/shared/z";')).toHaveLength(0);
-    expect(crossFeatureImports(f, 'import { a } from "@/platform/ui/button";')).toHaveLength(0);
+    expect(crossFeatureImports(f, 'import { a } from "@/core/ui/button";')).toHaveLength(0);
     expect(
       crossFeatureImports("app/routes/example.tsx", 'import { a } from "@/app/features/otra/x";'),
     ).toHaveLength(0);

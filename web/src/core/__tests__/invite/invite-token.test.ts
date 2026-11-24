@@ -4,7 +4,7 @@ import {
   hasInviteToken,
   inviteTokenKey,
   takeInviteToken,
-} from "@/platform/invite/invite-token";
+} from "@/core/invite/invite-token";
 
 function fakeWindow(url: string) {
   const u = new URL(url, "https://app.example.test");

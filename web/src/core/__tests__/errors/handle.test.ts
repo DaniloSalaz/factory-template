@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { ApiError } from "@/platform/api/problem";
+import { ApiError } from "@/core/api/problem";
 import {
   actionFor,
   createErrorHandler,
   type ErrorHandlerDeps,
   isHandledGlobally,
-} from "@/platform/errors/handle";
-import { createNotices } from "@/platform/errors/notices";
-import type { LastTenantStore } from "@/platform/tenant/last-tenant";
+} from "@/core/errors/handle";
+import { createNotices } from "@/core/errors/notices";
+import type { LastTenantStore } from "@/core/tenant/last-tenant";
 
 const at = { pathname: "/t/abc", href: "/t/abc?tab=1" };
 const problem = (status: number, code?: string, retry?: number) =>

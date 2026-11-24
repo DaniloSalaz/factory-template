@@ -11,9 +11,9 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	identityapi "chaskicode.dev/saas/gen/openapi/identity"
-	"chaskicode.dev/saas/platform/identity/domain"
-	"chaskicode.dev/saas/platform/identity/usecases"
-	"chaskicode.dev/saas/platform/kit/clientip"
+	"chaskicode.dev/saas/core/identity/domain"
+	"chaskicode.dev/saas/core/identity/usecases"
+	"chaskicode.dev/saas/core/kit/clientip"
 )
 
 var _ identityapi.StrictServerInterface = (*Handler)(nil)

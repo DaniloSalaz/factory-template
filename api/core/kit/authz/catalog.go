@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"chaskicode.dev/saas/platform/kit/authctx"
+	"chaskicode.dev/saas/core/kit/authctx"
 )
 
 // Platform permissions. Apps add their own, with the same "resource:action" form.

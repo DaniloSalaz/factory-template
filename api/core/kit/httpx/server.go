@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"chaskicode.dev/saas/platform/kit/config"
+	"chaskicode.dev/saas/core/kit/config"
 )
 
 // Server is an HTTP server with configured timeouts and graceful shutdown.

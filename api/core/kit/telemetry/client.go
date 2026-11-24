@@ -7,7 +7,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"chaskicode.dev/saas/platform/kit/apperr"
+	"chaskicode.dev/saas/core/kit/apperr"
 )
 
 // ResultOf names an outcome for a metric or a span: success, the code of an apperr

@@ -1,6 +1,6 @@
-import { ApiError } from "@/platform/api/problem";
-import { paths } from "@/platform/paths";
-import type { LastTenantStore } from "@/platform/tenant/last-tenant";
+import { ApiError } from "@/core/api/problem";
+import { paths } from "@/core/paths";
+import type { LastTenantStore } from "@/core/tenant/last-tenant";
 import type { Notices } from "./notices";
 
 /** What the platform does with an error, whoever made the request. */
@@ -82,7 +82,7 @@ export type ErrorHandlerDeps = {
 
 /**
  * createErrorHandler returns the one function every failed query and mutation goes
- * through (QueryCache and MutationCache onError, platform/api/query-client.ts).
+ * through (QueryCache and MutationCache onError, core/api/query-client.ts).
  */
 export function createErrorHandler(deps: ErrorHandlerDeps): (error: unknown) => void {
   return (error) => {

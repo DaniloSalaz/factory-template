@@ -18,4 +18,4 @@ Punto de entrada de cada proyecto nuevo. Se trabaja en este orden; cada paso par
 | [`modules/`](modules/README.md) | Diseño de cada módulo |
 | [`adr/`](adr/README.md) | Decisiones propias de la app |
 
-Lo de la plantilla (identidad, tenants, base de datos, despliegue) está en [`docs/platform/`](../platform/estructura.md).
+Lo de la plantilla (identidad, tenants, base de datos, despliegue) está en [`docs/core/`](../core/estructura.md).

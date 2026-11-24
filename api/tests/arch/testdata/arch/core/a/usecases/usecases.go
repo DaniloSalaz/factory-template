@@ -3,5 +3,5 @@ package usecases
 
 import (
 	_ "chaskicode.dev/saas/app/modules/c/adapters/x"
-	_ "chaskicode.dev/saas/platform/a/domain"
+	_ "chaskicode.dev/saas/core/a/domain"
 )

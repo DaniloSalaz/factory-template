@@ -4,21 +4,21 @@ import { index, layout, physical, rootRoute, route } from "@tanstack/virtual-fil
 // to src/. The platform's routes are listed here; the app's are file-based, under
 // src/app/routes, and mounted inside /t/$tenantId, so they get its layout (the tenant's
 // navigation and GET /tenant) and their URLs are /t/$tenantId/<file>.
-export const routes = rootRoute("platform/routes/root.tsx", [
-  route("/login", "platform/routes/login.tsx"),
-  route("/invite", "platform/routes/invite.tsx"),
-  layout("shell", "platform/routes/shell.tsx", [
-    index("platform/routes/home.tsx"),
-    route("/tenants", "platform/routes/tenants.tsx"),
+export const routes = rootRoute("core/routes/root.tsx", [
+  route("/login", "core/routes/login.tsx"),
+  route("/invite", "core/routes/invite.tsx"),
+  layout("shell", "core/routes/shell.tsx", [
+    index("core/routes/home.tsx"),
+    route("/tenants", "core/routes/tenants.tsx"),
     route("/account/mfa", [
-      index("platform/routes/mfa.tsx"),
-      route("/verify", "platform/routes/mfa-verify.tsx"),
-      route("/enroll", "platform/routes/mfa-enroll.tsx"),
+      index("core/routes/mfa.tsx"),
+      route("/verify", "core/routes/mfa-verify.tsx"),
+      route("/enroll", "core/routes/mfa-enroll.tsx"),
     ]),
-    route("/t/$tenantId", "platform/routes/tenant.tsx", [
-      index("platform/routes/tenant-home.tsx"),
-      route("/members", "platform/routes/members.tsx"),
-      route("/invitations", "platform/routes/invitations.tsx"),
+    route("/t/$tenantId", "core/routes/tenant.tsx", [
+      index("core/routes/tenant-home.tsx"),
+      route("/members", "core/routes/members.tsx"),
+      route("/invitations", "core/routes/invitations.tsx"),
       physical("app/routes"),
     ]),
   ]),

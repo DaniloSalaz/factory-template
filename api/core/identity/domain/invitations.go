@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"chaskicode.dev/saas/platform/kit/apperr"
+	"chaskicode.dev/saas/core/kit/apperr"
 )
 
 // Invitations (auth-y-tenancy §5.6). Who may offer which role is CanOffer; the token is a

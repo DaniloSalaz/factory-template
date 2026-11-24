@@ -1,4 +1,4 @@
-// Package app is where an app hooks into the platform (docs/platform/estructura.md): its
+// Package app is where an app hooks into the platform (docs/core/estructura.md): its
 // role catalog and its modules. package main is its only importer.
 package app
 
@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"time"
 
-	"chaskicode.dev/saas/platform/kit/authctx"
-	"chaskicode.dev/saas/platform/kit/authz"
-	"chaskicode.dev/saas/platform/kit/db"
-	"chaskicode.dev/saas/platform/kit/telemetry"
+	"chaskicode.dev/saas/core/kit/authctx"
+	"chaskicode.dev/saas/core/kit/authz"
+	"chaskicode.dev/saas/core/kit/db"
+	"chaskicode.dev/saas/core/kit/telemetry"
 )
 
 // Module is what main needs from an app module: it mounts the module's routes after the
@@ -35,7 +35,7 @@ type Deps struct {
 }
 
 // Modules returns the app's modules, in the order main registers them. The template has
-// none. To add one, create app/modules/<m> shaped like platform/health (module.go with
+// none. To add one, create app/modules/<m> shaped like core/health (module.go with
 // New(Deps) and Register(mux)), then wire it here:
 //
 //	m, err := <m>.New(<m>.Deps{DB: deps.DB, Logger: deps.Logger, Authorizer: deps.Authorizer})

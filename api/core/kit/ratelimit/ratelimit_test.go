@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"chaskicode.dev/saas/platform/kit/ratelimit"
+	"chaskicode.dev/saas/core/kit/ratelimit"
 )
 
 func TestMemory(t *testing.T) {

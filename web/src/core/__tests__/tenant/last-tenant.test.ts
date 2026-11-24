@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Membership } from "@/gen/api";
-import { createLastTenantStore, homeDestination } from "@/platform/tenant/last-tenant";
+import { createLastTenantStore, homeDestination } from "@/core/tenant/last-tenant";
 
 function storage(): Storage {
   const m = new Map<string, string>();

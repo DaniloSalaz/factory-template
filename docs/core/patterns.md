@@ -2,8 +2,8 @@
 
 Patrones obligatorios para las tablas con `tenant_id` de las apps (diseño de auth y
 tenancy, sección 7.3). Todos están aplicados en las tablas de ejemplo de
-`api/platform/kit/db/testdata/migrations/00001_example_tables.sql`, que pasan el test
-de estructura y los tests de comportamiento de `platform/kit/db`.
+`api/core/kit/db/testdata/migrations/00001_example_tables.sql`, que pasan el test
+de estructura y los tests de comportamiento de `core/kit/db`.
 
 El test de estructura (reglas en `api/tests/db/rules.go`, aplicadas a
 las migraciones de plataforma y de app por `api/tests/db/schema_test.go`) comprueba en

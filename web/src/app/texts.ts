@@ -1,4 +1,4 @@
-// The app's own texts, in Spanish (the platform's are in src/platform/texts.ts).
+// The app's own texts, in Spanish (the platform's are in src/core/texts.ts).
 export const appTexts = {
   exampleNav: "Ejemplo",
   exampleTitle: "Pantalla de ejemplo",

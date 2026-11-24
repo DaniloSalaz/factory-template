@@ -1,4 +1,4 @@
-// Command specmerge joins the platform contract (api-spec/platform.yaml) and the app
+// Command specmerge joins the platform contract (api-spec/core.yaml) and the app
 // contract (api-spec/app.yaml) into api-spec/openapi.gen.yaml, the only file the
 // generators read (oapi-codegen, routegen, orval, gen-route-security.ts).
 //
@@ -8,13 +8,13 @@
 // output keeps the order of its input: the web generators walk paths in document
 // order, and an empty app.yaml must reproduce the platform contract as it is.
 //
-// The app references platform components as `platform.yaml#/components/...`, which
+// The app references platform components as `core.yaml#/components/...`, which
 // keeps app.yaml readable on its own; the merge rewrites them to local references.
 //
-// Each tag is the key of one module: the module whose codegen.yaml (platform/<m>/ or
+// Each tag is the key of one module: the module whose codegen.yaml (core/<m>/ or
 // app/modules/<m>/) includes it, which is how generate finds the modules without a
 // hand-written list. The merge refuses anything that would break that key or let the
-// app override the platform (see the [contract-*] rules in docs/platform/runbooks/ci.md).
+// app override the platform (see the [contract-*] rules in docs/core/runbooks/ci.md).
 package main
 
 import (
@@ -40,7 +40,7 @@ const (
 func main() {
 	platform := flag.String("platform", "", "path of the platform contract")
 	app := flag.String("app", "", "path of the app contract")
-	root := flag.String("root", ".", "the api/ directory, where platform/*/codegen.yaml and app/modules/*/codegen.yaml live")
+	root := flag.String("root", ".", "the api/ directory, where core/*/codegen.yaml and app/modules/*/codegen.yaml live")
 	out := flag.String("out", "", "path of the merged contract to write")
 	flag.Parse()
 	if err := run(*platform, *app, *root, *out); err != nil {
@@ -105,7 +105,7 @@ type codegenConfig struct {
 	} `yaml:"output-options"`
 }
 
-// discoverModules reads platform/*/codegen.yaml and app/modules/*/codegen.yaml under
+// discoverModules reads core/*/codegen.yaml and app/modules/*/codegen.yaml under
 // root, in alphabetical order, as generate does, and checks that each one generates
 // exactly its folder's tag into gen/openapi/<m>/ as package <m>api.
 func discoverModules(root string) ([]module, error) {
@@ -116,7 +116,7 @@ func discoverModules(root string) ([]module, error) {
 		zone    zone
 		pattern string
 	}{
-		{zonePlatform, "platform/*/codegen.yaml"},
+		{zonePlatform, "core/*/codegen.yaml"},
 		{zoneApp, "app/modules/*/codegen.yaml"},
 	} {
 		paths, err := filepath.Glob(filepath.Join(root, filepath.FromSlash(z.pattern)))
@@ -409,7 +409,7 @@ func (m *merger) checkTagModule(where, tag string, z zone) {
 	mod, ok := m.modules[tag]
 	want := "app/modules/" + tag + "/codegen.yaml"
 	if z == zonePlatform {
-		want = "platform/" + tag + "/codegen.yaml"
+		want = "core/" + tag + "/codegen.yaml"
 	}
 	if !ok || mod.zone != z {
 		m.fail(ruleModuleKey, "%s: tag %q has no module: there is no api/%s; every tag is the key of exactly one module, so create it or use the tag of an existing one", where, tag, want)

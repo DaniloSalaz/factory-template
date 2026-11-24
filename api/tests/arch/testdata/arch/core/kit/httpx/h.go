@@ -3,5 +3,5 @@ package httpx
 
 import (
 	_ "chaskicode.dev/saas/app"
-	_ "chaskicode.dev/saas/platform/a/usecases"
+	_ "chaskicode.dev/saas/core/a/usecases"
 )

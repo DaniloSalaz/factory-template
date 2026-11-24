@@ -6,16 +6,16 @@ import (
 	"os"
 
 	appmigrations "chaskicode.dev/saas/app/migrations"
-	"chaskicode.dev/saas/platform/kit/config"
-	"chaskicode.dev/saas/platform/kit/db"
-	"chaskicode.dev/saas/platform/kit/logx"
-	platformmigrations "chaskicode.dev/saas/platform/migrations"
+	"chaskicode.dev/saas/core/kit/config"
+	"chaskicode.dev/saas/core/kit/db"
+	"chaskicode.dev/saas/core/kit/logx"
+	coremigrations "chaskicode.dev/saas/core/migrations"
 )
 
 // migrationSets are the migrations embedded in this binary, in the order they run: the
 // platform's first, because the app's may use its tables.
 func migrationSets() []db.MigrationSet {
-	return []db.MigrationSet{platformmigrations.Set(), appmigrations.Set()}
+	return []db.MigrationSet{coremigrations.Set(), appmigrations.Set()}
 }
 
 // migrateCommand applies the migrations embedded in this binary with

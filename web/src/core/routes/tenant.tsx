@@ -1,12 +1,12 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { registeredApp } from "@/platform/app-registry";
-import type { TenantNavItem } from "@/platform/app-types";
-import { usePlatform } from "@/platform/bootstrap";
-import { ErrorText } from "@/platform/components/ErrorText";
-import { can, useCurrentTenant } from "@/platform/tenant/use-tenant";
-import { texts } from "@/platform/texts";
-import { buttonVariants } from "@/platform/ui/button";
+import { registeredApp } from "@/core/app-registry";
+import type { TenantNavItem } from "@/core/app-types";
+import { usePlatform } from "@/core/bootstrap";
+import { ErrorText } from "@/core/components/ErrorText";
+import { can, useCurrentTenant } from "@/core/tenant/use-tenant";
+import { texts } from "@/core/texts";
+import { buttonVariants } from "@/core/ui/button";
 
 // The layout of /t/$tenantId and of every app screen below it. GET /tenant checks
 // membership, the tenant's status and the role's MFA: its 403s go through the error

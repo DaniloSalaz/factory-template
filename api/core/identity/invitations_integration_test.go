@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"chaskicode.dev/saas/platform/identity/usecases"
-	"chaskicode.dev/saas/platform/kit/pii"
+	"chaskicode.dev/saas/core/identity/usecases"
+	"chaskicode.dev/saas/core/kit/pii"
 )
 
 // Invitations over HTTP (auth-y-tenancy §5.6 and §11, migration 00006), with the real middlewares

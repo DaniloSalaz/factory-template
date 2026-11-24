@@ -1,14 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { getGetMeQueryKey, type MFAFactor, useGetMe, useRemoveTOTP } from "@/gen/api";
-import { usePlatform } from "@/platform/bootstrap";
-import { ErrorText } from "@/platform/components/ErrorText";
-import { Page } from "@/platform/components/Page";
-import { paths } from "@/platform/paths";
-import { formatDateTime, texts } from "@/platform/texts";
-import { Badge } from "@/platform/ui/badge";
-import { Button, buttonVariants } from "@/platform/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/platform/ui/card";
+import { usePlatform } from "@/core/bootstrap";
+import { ErrorText } from "@/core/components/ErrorText";
+import { Page } from "@/core/components/Page";
+import { paths } from "@/core/paths";
+import { formatDateTime, texts } from "@/core/texts";
+import { Badge } from "@/core/ui/badge";
+import { Button, buttonVariants } from "@/core/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/core/ui/card";
 
 export const Route = createFileRoute("/_shell/account/mfa/")({
   component: Mfa,

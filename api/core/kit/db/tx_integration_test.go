@@ -14,9 +14,9 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"chaskicode.dev/saas/platform/kit/apperr"
-	"chaskicode.dev/saas/platform/kit/authctx"
-	"chaskicode.dev/saas/platform/kit/db"
+	"chaskicode.dev/saas/core/kit/apperr"
+	"chaskicode.dev/saas/core/kit/authctx"
+	"chaskicode.dev/saas/core/kit/db"
 	schemarules "chaskicode.dev/saas/tests/db"
 )
 

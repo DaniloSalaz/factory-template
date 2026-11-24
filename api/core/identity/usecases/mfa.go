@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"time"
 
-	"chaskicode.dev/saas/platform/identity/domain"
-	"chaskicode.dev/saas/platform/kit/apperr"
-	"chaskicode.dev/saas/platform/kit/authz"
-	"chaskicode.dev/saas/platform/kit/clientip"
-	"chaskicode.dev/saas/platform/kit/pii"
-	"chaskicode.dev/saas/platform/kit/ratelimit"
-	"chaskicode.dev/saas/platform/kit/telemetry"
+	"chaskicode.dev/saas/core/identity/domain"
+	"chaskicode.dev/saas/core/kit/apperr"
+	"chaskicode.dev/saas/core/kit/authz"
+	"chaskicode.dev/saas/core/kit/clientip"
+	"chaskicode.dev/saas/core/kit/pii"
+	"chaskicode.dev/saas/core/kit/ratelimit"
+	"chaskicode.dev/saas/core/kit/telemetry"
 )
 
 // MFA is the second factor the app verifies itself (auth-y-tenancy §5.2; ADR 0002): enrolling a

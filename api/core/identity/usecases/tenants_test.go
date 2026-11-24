@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"chaskicode.dev/saas/platform/identity/domain"
-	"chaskicode.dev/saas/platform/identity/usecases"
-	"chaskicode.dev/saas/platform/kit/apperr"
-	"chaskicode.dev/saas/platform/kit/authctx"
-	"chaskicode.dev/saas/platform/kit/authz"
-	"chaskicode.dev/saas/platform/kit/ratelimit"
+	"chaskicode.dev/saas/core/identity/domain"
+	"chaskicode.dev/saas/core/identity/usecases"
+	"chaskicode.dev/saas/core/kit/apperr"
+	"chaskicode.dev/saas/core/kit/authctx"
+	"chaskicode.dev/saas/core/kit/authz"
+	"chaskicode.dev/saas/core/kit/ratelimit"
 )
 
 // memTenants is a fake usecases.TenantStore: the members of each tenant, by user id, and

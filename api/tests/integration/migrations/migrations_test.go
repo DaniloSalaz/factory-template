@@ -7,7 +7,7 @@ import (
 
 	"github.com/testcontainers/testcontainers-go"
 
-	"chaskicode.dev/saas/platform/migrations"
+	"chaskicode.dev/saas/core/migrations"
 	"chaskicode.dev/saas/tests/testkit"
 )
 

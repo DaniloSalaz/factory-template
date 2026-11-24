@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseProblem, parseRetryAfter } from "@/platform/api/problem";
+import { parseProblem, parseRetryAfter } from "@/core/api/problem";
 
 describe("parseProblem", () => {
   it("reads the members the UI uses", () => {

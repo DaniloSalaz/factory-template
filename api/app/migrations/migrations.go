@@ -8,7 +8,7 @@ package migrations
 import (
 	"embed"
 
-	"chaskicode.dev/saas/platform/kit/db"
+	"chaskicode.dev/saas/core/kit/db"
 )
 
 // The pattern is * and not *.sql because the template has no app migration and

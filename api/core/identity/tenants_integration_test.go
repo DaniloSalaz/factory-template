@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"chaskicode.dev/saas/platform/identity/usecases"
+	"chaskicode.dev/saas/core/identity/usecases"
 )
 
 // Tenants and members over HTTP (auth-y-tenancy §5.5 and §5.7, migration 00005), with the real

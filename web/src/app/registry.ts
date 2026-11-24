@@ -1,4 +1,4 @@
-import type { AppRegistration } from "@/platform/app-types";
+import type { AppRegistration } from "@/core/app-types";
 import { Logo } from "./brand/Logo";
 import { appTexts } from "./texts";
 

@@ -1,9 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { MfaEnroll } from "@/platform/components/MfaEnroll";
-import { Page } from "@/platform/components/Page";
-import { paths, safeReturnTo } from "@/platform/paths";
-import { texts } from "@/platform/texts";
-import { Card, CardContent } from "@/platform/ui/card";
+import { MfaEnroll } from "@/core/components/MfaEnroll";
+import { Page } from "@/core/components/Page";
+import { paths, safeReturnTo } from "@/core/paths";
+import { texts } from "@/core/texts";
+import { Card, CardContent } from "@/core/ui/card";
 
 // Where 403 auth.mfa_enrollment_required sends; back to return_to once the factor works.
 export const Route = createFileRoute("/_shell/account/mfa/enroll")({

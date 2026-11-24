@@ -1,4 +1,4 @@
-// Against the real local API, with sessions seeded by SQL (docs/platform/runbooks/auth.md).
+// Against the real local API, with sessions seeded by SQL (docs/core/runbooks/auth.md).
 import { cleanup, newTenant, newUser, run, type User } from "./db.ts";
 import { expect, shot, signIn, test } from "./fixtures.ts";
 

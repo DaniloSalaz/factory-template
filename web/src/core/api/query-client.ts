@@ -10,7 +10,7 @@ import { ApiError } from "./problem";
 import { requiresTenant } from "./route-security";
 
 export type QueryClientDeps = {
-  /** The platform's error handler (platform/errors/handle.ts). */
+  /** The platform's error handler (core/errors/handle.ts). */
   onError: (error: unknown) => void;
   /** The tenant of the active route, the same one apiFetch sends as X-Tenant-ID. */
   routeTenant: () => string | undefined;

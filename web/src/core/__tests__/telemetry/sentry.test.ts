@@ -6,7 +6,7 @@ import {
   scrubBreadcrumb,
   scrubEvent,
   stripUrl,
-} from "@/platform/telemetry/sentry";
+} from "@/core/telemetry/sentry";
 
 // Values ADR 0004 forbids; none may leave the browser.
 const forbidden = [

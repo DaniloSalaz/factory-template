@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"chaskicode.dev/saas/platform/identity/domain"
-	"chaskicode.dev/saas/platform/kit/apperr"
-	"chaskicode.dev/saas/platform/kit/authctx"
-	"chaskicode.dev/saas/platform/kit/authz"
+	"chaskicode.dev/saas/core/identity/domain"
+	"chaskicode.dev/saas/core/kit/apperr"
+	"chaskicode.dev/saas/core/kit/authctx"
+	"chaskicode.dev/saas/core/kit/authz"
 )
 
 // Tenancy turns an authenticated user and the tenant a request names into the request's

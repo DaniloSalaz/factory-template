@@ -1,5 +1,5 @@
-import { ApiError } from "@/platform/api/problem";
-import { texts } from "@/platform/texts";
+import { ApiError } from "@/core/api/problem";
+import { texts } from "@/core/texts";
 import { isHandledGlobally } from "./handle";
 
 /**

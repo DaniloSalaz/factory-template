@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"chaskicode.dev/saas/platform/identity/adapters/fakeidp"
-	"chaskicode.dev/saas/platform/identity/domain"
-	"chaskicode.dev/saas/platform/identity/usecases"
-	"chaskicode.dev/saas/platform/kit/apperr"
-	"chaskicode.dev/saas/platform/kit/authctx"
-	"chaskicode.dev/saas/platform/kit/authz"
-	"chaskicode.dev/saas/platform/kit/pii"
+	"chaskicode.dev/saas/core/identity/adapters/fakeidp"
+	"chaskicode.dev/saas/core/identity/domain"
+	"chaskicode.dev/saas/core/identity/usecases"
+	"chaskicode.dev/saas/core/kit/apperr"
+	"chaskicode.dev/saas/core/kit/authctx"
+	"chaskicode.dev/saas/core/kit/authz"
+	"chaskicode.dev/saas/core/kit/pii"
 )
 
 // memStore is an in-memory usecases.Store. A transaction works on a copy of the state that

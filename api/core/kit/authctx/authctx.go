@@ -6,7 +6,7 @@
 //   - Principal: the user acting in a tenant, with its role and permissions, set by the
 //     tenant middleware (or by a job worker).
 //
-// platform/kit/db reads them to set the RLS variables, so both are immutable once built:
+// core/kit/db reads them to set the RLS variables, so both are immutable once built:
 // their fields are unexported and the permission set is copied in and out. It depends
 // only on the standard library.
 package authctx
@@ -26,7 +26,7 @@ type Permission string
 // PermScopeTenant gives a principal the tenant scope; without it the scope is own.
 const PermScopeTenant Permission = "scope:tenant"
 
-// Scope is the row scope a principal has inside its tenant; platform/kit/db hands it to RLS.
+// Scope is the row scope a principal has inside its tenant; core/kit/db hands it to RLS.
 type Scope string
 
 // The two scopes of the design (auth-y-tenancy §7.2).

@@ -1,10 +1,10 @@
 import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import "./platform/styles.css";
+import "./core/styles.css";
 import "./app/theme.css";
-import { PlatformProvider } from "./platform/bootstrap";
-import { PlatformErrorBoundary } from "./platform/components/ErrorScreen";
+import { PlatformProvider } from "./core/bootstrap";
+import { PlatformErrorBoundary } from "./core/components/ErrorScreen";
 import { platform, router } from "./router";
 
 const root = document.getElementById("root");

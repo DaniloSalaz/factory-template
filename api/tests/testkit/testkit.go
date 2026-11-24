@@ -2,7 +2,7 @@
 // migrated exactly like a real environment: infra/db/initdb.sh and bootstrap.sql run as
 // init scripts, then the migration sets the caller passes run as app_owner, through the
 // same db.Migrate as `api migrate`. It imports no migrations itself, so the tests of
-// platform/kit can use it: they pass PlatformFromSource; the platform's and the app's
+// core/kit can use it: they pass PlatformFromSource; the platform's and the app's
 // together come from testkit/migrationsets. Only tests import it ([tests-not-in-prod]).
 package testkit
 
@@ -19,7 +19,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
-	platformdb "chaskicode.dev/saas/platform/kit/db"
+	coredb "chaskicode.dev/saas/core/kit/db"
 )
 
 // Credentials of the throwaway container; they never leave the test process.
@@ -42,7 +42,7 @@ type DB struct {
 }
 
 // Start runs a database for the duration of t, migrated with sets (see New).
-func Start(t testing.TB, sets ...platformdb.MigrationSet) *DB {
+func Start(t testing.TB, sets ...coredb.MigrationSet) *DB {
 	t.Helper()
 
 	db, err := New(t.Context(), sets...)
@@ -61,7 +61,7 @@ func Start(t testing.TB, sets ...platformdb.MigrationSet) *DB {
 // sets are applied as app_owner in the order given, each with its own goose version
 // table, so test-only migrations (example tables, say) go after the real ones without
 // sharing their numbering.
-func New(ctx context.Context, sets ...platformdb.MigrationSet) (*DB, error) {
+func New(ctx context.Context, sets ...coredb.MigrationSet) (*DB, error) {
 	if len(sets) == 0 {
 		return nil, errors.New("testkit: no migration set; pass at least the platform's")
 	}
@@ -107,26 +107,26 @@ func New(ctx context.Context, sets ...platformdb.MigrationSet) (*DB, error) {
 		return db, err
 	}
 
-	if _, err := platformdb.Migrate(ctx, db.OwnerURL, sets); err != nil {
+	if _, err := coredb.Migrate(ctx, db.OwnerURL, sets); err != nil {
 		return db, fmt.Errorf("migrate test database: %w", err)
 	}
 	return db, nil
 }
 
-// PlatformFromSource is the platform's migration set read from api/platform/migrations
+// PlatformFromSource is the platform's migration set read from api/core/migrations
 // on disk: the same name, version table and files as migrations.Set(), which tests in
-// platform/kit cannot import ([platform-no-modules]). A test in platform/migrations
+// core/kit cannot import ([platform-no-modules]). A test in core/migrations
 // keeps the two identical.
-func PlatformFromSource() platformdb.MigrationSet {
+func PlatformFromSource() coredb.MigrationSet {
 	root, err := repoRoot()
 	if err != nil {
 		// Only when the runtime cannot locate this file. The directory is then wrong and
 		// Migrate fails: the set has no migrations and does not allow being empty.
 		root = "."
 	}
-	return platformdb.MigrationSet{
+	return coredb.MigrationSet{
 		Name:  "platform",
-		FS:    os.DirFS(filepath.Join(root, "api", "platform", "migrations")),
+		FS:    os.DirFS(filepath.Join(root, "api", "core", "migrations")),
 		Table: "goose_db_version",
 	}
 }

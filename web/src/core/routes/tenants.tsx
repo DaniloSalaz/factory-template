@@ -1,17 +1,17 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import { getGetMeQueryKey, type Membership, useCreateTenant, useGetMe } from "@/gen/api";
-import { usePlatform } from "@/platform/bootstrap";
-import { ErrorText } from "@/platform/components/ErrorText";
-import { Page } from "@/platform/components/Page";
-import { errorCode, errorMessage } from "@/platform/errors/message";
-import { texts } from "@/platform/texts";
-import { Alert, AlertDescription } from "@/platform/ui/alert";
-import { Badge } from "@/platform/ui/badge";
-import { Button } from "@/platform/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/platform/ui/card";
-import { Input } from "@/platform/ui/input";
-import { Label } from "@/platform/ui/label";
+import { usePlatform } from "@/core/bootstrap";
+import { ErrorText } from "@/core/components/ErrorText";
+import { Page } from "@/core/components/Page";
+import { errorCode, errorMessage } from "@/core/errors/message";
+import { texts } from "@/core/texts";
+import { Alert, AlertDescription } from "@/core/ui/alert";
+import { Badge } from "@/core/ui/badge";
+import { Button } from "@/core/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/core/ui/card";
+import { Input } from "@/core/ui/input";
+import { Label } from "@/core/ui/label";
 
 export const Route = createFileRoute("/_shell/tenants")({
   validateSearch: (search: Record<string, unknown>): { notice?: "tenant_forbidden" } =>

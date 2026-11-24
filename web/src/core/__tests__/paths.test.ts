@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { safeReturnTo } from "@/platform/paths";
+import { safeReturnTo } from "@/core/paths";
 
 describe("safeReturnTo", () => {
   it("keeps paths of this front end", () => {

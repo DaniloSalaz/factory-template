@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"chaskicode.dev/saas/platform/kit/authctx"
+	"chaskicode.dev/saas/core/kit/authctx"
 )
 
 const (

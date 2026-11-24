@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"chaskicode.dev/saas/platform/kit/apperr"
+	"chaskicode.dev/saas/core/kit/apperr"
 )
 
 const front = "http://localhost:5173"

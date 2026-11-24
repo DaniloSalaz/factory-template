@@ -10,18 +10,18 @@ import {
   useResendInvitation,
   useRevokeInvitation,
 } from "@/gen/api";
-import { useCursorPages } from "@/platform/api/use-cursor-pages";
-import { ErrorText } from "@/platform/components/ErrorText";
-import { Page } from "@/platform/components/Page";
-import { RoleSelect } from "@/platform/components/RoleSelect";
-import { errorCode, errorMessage } from "@/platform/errors/message";
-import { formatDateTime, texts } from "@/platform/texts";
-import { Alert, AlertDescription } from "@/platform/ui/alert";
-import { Badge } from "@/platform/ui/badge";
-import { Button } from "@/platform/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/platform/ui/card";
-import { Input } from "@/platform/ui/input";
-import { Label } from "@/platform/ui/label";
+import { useCursorPages } from "@/core/api/use-cursor-pages";
+import { ErrorText } from "@/core/components/ErrorText";
+import { Page } from "@/core/components/Page";
+import { RoleSelect } from "@/core/components/RoleSelect";
+import { errorCode, errorMessage } from "@/core/errors/message";
+import { formatDateTime, texts } from "@/core/texts";
+import { Alert, AlertDescription } from "@/core/ui/alert";
+import { Badge } from "@/core/ui/badge";
+import { Button } from "@/core/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/core/ui/card";
+import { Input } from "@/core/ui/input";
+import { Label } from "@/core/ui/label";
 
 // The tenant's invitations (auth-y-tenancy §5.6): pending and expired ones by cursor, inviting
 // with a role GET /tenant/roles says the caller may offer, resending (a new token and

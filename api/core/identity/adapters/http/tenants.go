@@ -4,10 +4,10 @@ import (
 	"context"
 
 	identityapi "chaskicode.dev/saas/gen/openapi/identity"
-	"chaskicode.dev/saas/platform/identity/domain"
-	"chaskicode.dev/saas/platform/identity/usecases"
-	"chaskicode.dev/saas/platform/kit/apperr"
-	"chaskicode.dev/saas/platform/kit/authctx"
+	"chaskicode.dev/saas/core/identity/domain"
+	"chaskicode.dev/saas/core/identity/usecases"
+	"chaskicode.dev/saas/core/kit/apperr"
+	"chaskicode.dev/saas/core/kit/authctx"
 )
 
 // Tenants and members (auth-y-tenancy §5.5 and §5.7). Permissions are checked in the use cases,

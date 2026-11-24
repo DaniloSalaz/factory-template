@@ -14,10 +14,10 @@ tocar y qué no.
 
 ## Decisión
 Cada zona del repo se divide en tres partes, con el detalle en
-[`docs/platform/estructura.md`](../estructura.md):
+[`docs/core/estructura.md`](../estructura.md):
 
-- **`platform/`** — de la plantilla. Una app no lo edita; llega por sincronización
-  (`api/platform/`, `web/src/platform/`, `api-spec/platform.yaml`, `docs/platform/`).
+- **`core/`** — de la plantilla. Una app no lo edita; llega por sincronización
+  (`api/core/`, `web/src/core/`, `api-spec/core.yaml`, `docs/core/`).
 - **`app/`** — de cada app (`api/app/`, `web/src/app/`, `api-spec/app.yaml`, `docs/app/`,
   `APP.md`).
 - **`gen/`** — generado, nunca a mano (`api/gen/`, `web/src/gen/`, `api-spec/openapi.gen.yaml`).
@@ -27,10 +27,10 @@ Y, para que esa separación se sostenga:
 - **Module path neutro** `chaskicode.dev/saas`, igual en todas las apps y nunca
   renombrado: los ficheros de plataforma son idénticos byte a byte en la plantilla y en cada
   app. La identidad de cada app va en configuración.
-- **Migraciones separadas**: `api/platform/migrations/` (tabla `goose_db_version`) y
+- **Migraciones separadas**: `api/core/migrations/` (tabla `goose_db_version`) y
   `api/app/migrations/` (tabla `goose_app_db_version`), con numeración propia; `api migrate`
   aplica primero plataforma. Una de app puede usar lo de plataforma, nunca al revés.
-- **Contrato separado**: `api-spec/platform.yaml` y `api-spec/app.yaml`, unidos por
+- **Contrato separado**: `api-spec/core.yaml` y `api-spec/app.yaml`, unidos por
   `api/tools/specmerge` en `api-spec/openapi.gen.yaml`; `app.yaml` no puede redefinir nada de
   plataforma. Cada operación tiene un único tag, el nombre de su módulo, y cada módulo genera
   su propio paquete (`codegen.yaml`).
@@ -61,11 +61,11 @@ Lo protegen reglas con identificador, que fallan en `mise run ci`: `[platform-im
   `template`.
 - **Tests de integración junto a cada paquete**: mezclaban lo que necesita Docker con el
   código de producción y dejaban que helpers de test dependieran de la app desde
-  `platform/`.
+  `core/`.
 
 ## Consecuencias
 - Una app solo escribe en `app/` (y en los ficheros compartidos [C] de `estructura.md`); un
-  cambio en `platform/` se hace en factory-template y llega por sincronización.
+  cambio en `core/` se hace en factory-template y llega por sincronización.
 - La frontera es comprobable: las reglas de arquitectura fallan en CI con un mensaje que dice
   qué regla es y cómo arreglarlo.
 - Hay más piezas de generación (`specmerge`, un `codegen.yaml` por módulo, dos conjuntos de

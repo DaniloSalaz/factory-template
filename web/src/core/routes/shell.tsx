@@ -1,20 +1,20 @@
 import { createFileRoute, Link, Outlet, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { type Logout, useAuthLogout, useAuthLogoutAll, useGetMe } from "@/gen/api";
-import { registeredApp } from "@/platform/app-registry";
-import { usePlatform } from "@/platform/bootstrap";
-import { ErrorText } from "@/platform/components/ErrorText";
-import { NoticeBar } from "@/platform/components/NoticeBar";
-import { errorMessage } from "@/platform/errors/message";
-import { texts } from "@/platform/texts";
-import { Button, buttonVariants } from "@/platform/ui/button";
+import { registeredApp } from "@/core/app-registry";
+import { usePlatform } from "@/core/bootstrap";
+import { ErrorText } from "@/core/components/ErrorText";
+import { NoticeBar } from "@/core/components/NoticeBar";
+import { errorMessage } from "@/core/errors/message";
+import { texts } from "@/core/texts";
+import { Button, buttonVariants } from "@/core/ui/button";
 
 export const Route = createFileRoute("/_shell")({
   component: Shell,
 });
 
 // The layout of every signed-in screen. GET /me is the session check: a 401 sends to
-// /login (platform/errors/handle.ts), so nothing below renders without a session.
+// /login (core/errors/handle.ts), so nothing below renders without a session.
 function Shell() {
   const me = useGetMe();
   const { Logo, name } = registeredApp;

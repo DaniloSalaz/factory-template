@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"chaskicode.dev/saas/platform/kit/httpx"
+	"chaskicode.dev/saas/core/kit/httpx"
 )
 
 func TestWithRouteFallback(t *testing.T) {

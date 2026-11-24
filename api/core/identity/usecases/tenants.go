@@ -7,11 +7,11 @@ import (
 	"net/netip"
 	"slices"
 
-	"chaskicode.dev/saas/platform/identity/domain"
-	"chaskicode.dev/saas/platform/kit/authctx"
-	"chaskicode.dev/saas/platform/kit/authz"
-	"chaskicode.dev/saas/platform/kit/clientip"
-	"chaskicode.dev/saas/platform/kit/ratelimit"
+	"chaskicode.dev/saas/core/identity/domain"
+	"chaskicode.dev/saas/core/kit/authctx"
+	"chaskicode.dev/saas/core/kit/authz"
+	"chaskicode.dev/saas/core/kit/clientip"
+	"chaskicode.dev/saas/core/kit/ratelimit"
 )
 
 // Authorizer is the permission check of the use cases (authz.Authorizer).

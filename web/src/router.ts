@@ -1,8 +1,8 @@
 import { createRouter } from "@tanstack/react-router";
-import { createPlatform } from "@/platform/bootstrap";
-import { RouteErrorScreen } from "@/platform/components/ErrorScreen";
-import { captureInviteToken } from "@/platform/invite/invite-token";
-import { initSentry } from "@/platform/telemetry/sentry";
+import { createPlatform } from "@/core/bootstrap";
+import { RouteErrorScreen } from "@/core/components/ErrorScreen";
+import { captureInviteToken } from "@/core/invite/invite-token";
+import { initSentry } from "@/core/telemetry/sentry";
 import { routeTree } from "./gen/routeTree.gen";
 
 // Before anything reads the URL: an invitation's token leaves the fragment (auth-y-tenancy §5.6.3).
@@ -17,7 +17,7 @@ initSentry({
 });
 
 // Composition root of the front end: the platform's services, the route tree (platform
-// and app routes, src/platform/routes.ts) and the router that connects them.
+// and app routes, src/core/routes.ts) and the router that connects them.
 export const platform = createPlatform();
 
 export const router = createRouter({

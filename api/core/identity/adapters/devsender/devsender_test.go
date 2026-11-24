@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"chaskicode.dev/saas/platform/identity/adapters/devsender"
-	"chaskicode.dev/saas/platform/identity/usecases"
-	"chaskicode.dev/saas/platform/kit/config"
-	"chaskicode.dev/saas/platform/kit/logx"
-	"chaskicode.dev/saas/platform/kit/pii"
+	"chaskicode.dev/saas/core/identity/adapters/devsender"
+	"chaskicode.dev/saas/core/identity/usecases"
+	"chaskicode.dev/saas/core/kit/config"
+	"chaskicode.dev/saas/core/kit/logx"
+	"chaskicode.dev/saas/core/kit/pii"
 )
 
 func TestNew_OnlyInDevelopment(t *testing.T) {

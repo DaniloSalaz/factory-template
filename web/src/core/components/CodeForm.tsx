@@ -1,15 +1,15 @@
 import { useId, useState } from "react";
 import { useVerifyTOTP } from "@/gen/api";
-import { texts } from "@/platform/texts";
-import { Button } from "@/platform/ui/button";
-import { Input } from "@/platform/ui/input";
-import { Label } from "@/platform/ui/label";
+import { texts } from "@/core/texts";
+import { Button } from "@/core/ui/button";
+import { Input } from "@/core/ui/input";
+import { Label } from "@/core/ui/label";
 import { ErrorText } from "./ErrorText";
 
 /**
  * CodeForm asks for a TOTP code and verifies it. Each attempt uses up its challenge, right
  * or wrong (auth-y-tenancy §5.2.4), so `challenge` gives a fresh one for every attempt. On success
- * the session is replaced and the query cache invalidated (platform/api/query-client.ts).
+ * the session is replaced and the query cache invalidated (core/api/query-client.ts).
  */
 export function CodeForm(props: { challenge: () => Promise<string>; onVerified: () => void }) {
   const id = useId();

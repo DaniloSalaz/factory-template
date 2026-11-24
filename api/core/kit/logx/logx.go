@@ -13,8 +13,8 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	"chaskicode.dev/saas/platform/kit/config"
-	"chaskicode.dev/saas/platform/kit/pii"
+	"chaskicode.dev/saas/core/kit/config"
+	"chaskicode.dev/saas/core/kit/pii"
 )
 
 // RequestIDKey is the attribute key under which the request ID is logged.

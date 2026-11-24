@@ -1,6 +1,6 @@
 # AGENTS.md — identity
 
-Reglas internas del módulo `identity` (sesiones, tenants, miembros, invitaciones, MFA, email). Se suman a las del `AGENTS.md` de la raíz, que recoge las de email porque también valen para un módulo de app que envíe correo. Diseño: `docs/platform/designs/auth-y-tenancy.md`; ADR 0002 y 0003 en `docs/platform/adr/`.
+Reglas internas del módulo `identity` (sesiones, tenants, miembros, invitaciones, MFA, email). Se suman a las del `AGENTS.md` de la raíz, que recoge las de email porque también valen para un módulo de app que envíe correo. Diseño: `docs/core/designs/auth-y-tenancy.md`; ADR 0002 y 0003 en `docs/core/adr/`.
 
 ## Membresías
 - Las membresías no se escriben directamente: `app_runtime` solo tiene `SELECT` sobre `memberships`. Se crean con `create_tenant` y `accept_invitation`, y su rol cambia o se borran solo con `change_member_role`, `remove_member` y `leave_tenant`, que bloquean el tenant y nunca lo dejan sin owner (ADR 0003).

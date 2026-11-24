@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"chaskicode.dev/saas/platform/identity/domain"
+	"chaskicode.dev/saas/core/identity/domain"
 )
 
 // Cookie names (auth-y-tenancy §5.1.2 and §6). The __Host- prefix makes the browser

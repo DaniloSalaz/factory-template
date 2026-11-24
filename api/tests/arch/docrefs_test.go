@@ -15,7 +15,7 @@ import (
 	"testing"
 )
 
-// A reference names a document of docs/platform/designs or docs/app/modules (its file
+// A reference names a document of docs/core/designs or docs/app/modules (its file
 // name without .md) and one or more sections: "auth-y-tenancy §5.2", "auth-y-tenancy
 // §5.1.3 to §5.1.10". Each further § in the chain belongs to the same document.
 var (
@@ -135,7 +135,7 @@ type docIndex struct {
 
 func loadDocIndex(root string) (*docIndex, error) {
 	idx := &docIndex{root: root, docs: map[string]string{}, adrs: map[string]string{}, text: map[string][]string{}}
-	for _, dir := range []string{"docs/platform/designs", "docs/app/modules"} {
+	for _, dir := range []string{"docs/core/designs", "docs/app/modules"} {
 		names, err := filepath.Glob(filepath.Join(root, dir, "*.md"))
 		if err != nil {
 			return nil, fmt.Errorf("list %s: %w", dir, err)
@@ -144,7 +144,7 @@ func loadDocIndex(root string) (*docIndex, error) {
 			idx.docs[strings.TrimSuffix(filepath.Base(n), ".md")] = dir + "/" + filepath.Base(n)
 		}
 	}
-	for _, dir := range []string{"docs/platform/adr", "docs/app/adr"} {
+	for _, dir := range []string{"docs/core/adr", "docs/app/adr"} {
 		names, err := filepath.Glob(filepath.Join(root, dir, "[0-9][0-9][0-9][0-9]-*.md"))
 		if err != nil {
 			return nil, fmt.Errorf("list %s: %w", dir, err)
@@ -284,7 +284,7 @@ func checkDocRefs(idx *docIndex, rel string, comments []commentLine) ([]string, 
 			}
 		}), " and ")
 		report(m[0], old, "does not name the document",
-			"write it as `"+example+"`: the file name of docs/platform/designs or docs/app/modules without .md, and § before each number")
+			"write it as `"+example+"`: the file name of docs/core/designs or docs/app/modules without .md, and § before each number")
 	}
 
 	covered := map[int]bool{} // offsets of the § that belong to a document's chain
@@ -295,7 +295,7 @@ func checkDocRefs(idx *docIndex, rel string, comments []commentLine) ([]string, 
 			covered[m[0]+n[0]] = true
 		}
 		if _, ok := idx.docs[doc]; !ok {
-			report(m[0], ref, fmt.Sprintf("names %q, which is not in docs/platform/designs/ or docs/app/modules/", doc),
+			report(m[0], ref, fmt.Sprintf("names %q, which is not in docs/core/designs/ or docs/app/modules/", doc),
 				"use the file name of the document without .md")
 			continue
 		}
@@ -318,7 +318,7 @@ func checkDocRefs(idx *docIndex, rel string, comments []commentLine) ([]string, 
 
 	for _, m := range adrRe.FindAllStringSubmatchIndex(joined, -1) {
 		if _, ok := idx.adrs[joined[m[2]:m[3]]]; !ok {
-			report(m[0], joined[m[0]:m[1]], "has no file NNNN-*.md in docs/platform/adr/ or docs/app/adr/",
+			report(m[0], joined[m[0]:m[1]], "has no file NNNN-*.md in docs/core/adr/ or docs/app/adr/",
 				"cite an existing ADR, or write the ADR first")
 		}
 	}
@@ -366,9 +366,9 @@ func TestDocRefs_DetectsViolations(t *testing.T) {
 		"api/old.go:3: \"(design, section 6)\" does not name the document",
 		"AGENTS.md:5: \"diseño 7.3\" does not name the document",
 		"api/bad.go:3: \"nope §1\" names \"nope\"",
-		"api/bad.go:4: \"guide §9\" points to §9, but docs/platform/designs/guide.md has no heading \"## 9.\"",
-		"api/bad.go:5: \"guide §2.9\" points to §2.9, but docs/platform/designs/guide.md has no heading \"### 2.9\"",
-		"api/bad.go:6: \"guide §2.1.3\" points to §2.1.3, but docs/platform/designs/guide.md has no item \"3.\" in the numbered list of section 2.1",
+		"api/bad.go:4: \"guide §9\" points to §9, but docs/core/designs/guide.md has no heading \"## 9.\"",
+		"api/bad.go:5: \"guide §2.9\" points to §2.9, but docs/core/designs/guide.md has no heading \"### 2.9\"",
+		"api/bad.go:6: \"guide §2.1.3\" points to §2.1.3, but docs/core/designs/guide.md has no item \"3.\" in the numbered list of section 2.1",
 		"api/bad.go:7: \"guide §2.1 and §2.7\" points to §2.7",
 		"api/bad.go:8: \"guide §1.1.1.1\" points to §1.1.1.1",
 		"api/bad.go:9: \"§2\" names no document",

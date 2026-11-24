@@ -1,12 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useState } from "react";
 import { useAuthLogout } from "@/gen/api";
-import { registeredApp } from "@/platform/app-registry";
-import { usePlatform } from "@/platform/bootstrap";
-import { AcceptInvitation, type AcceptOutcome } from "@/platform/components/AcceptInvitation";
-import { texts } from "@/platform/texts";
-import { Button, buttonVariants } from "@/platform/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/platform/ui/card";
+import { registeredApp } from "@/core/app-registry";
+import { usePlatform } from "@/core/bootstrap";
+import { AcceptInvitation, type AcceptOutcome } from "@/core/components/AcceptInvitation";
+import { texts } from "@/core/texts";
+import { Button, buttonVariants } from "@/core/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/core/ui/card";
 
 // The invitation link's page (auth-y-tenancy §5.6.3). Outside the shell, so nothing runs before
 // it but the token's capture at start-up (src/router.ts). index.html sets

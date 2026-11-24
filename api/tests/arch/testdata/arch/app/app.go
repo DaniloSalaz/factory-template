@@ -4,7 +4,7 @@ package app
 
 import (
 	_ "chaskicode.dev/saas/app/modules/c"
-	_ "chaskicode.dev/saas/platform/a"
-	_ "chaskicode.dev/saas/platform/a/usecases"
-	_ "chaskicode.dev/saas/platform/kit/authz"
+	_ "chaskicode.dev/saas/core/a"
+	_ "chaskicode.dev/saas/core/a/usecases"
+	_ "chaskicode.dev/saas/core/kit/authz"
 )

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getCurrentTenant, getMe, leaveTenant, removeMember } from "@/gen/api";
-import { apiFetch, setTenantSource, TenantMissingError } from "@/platform/api/fetcher";
-import { ApiError } from "@/platform/api/problem";
-import { requiresTenant } from "@/platform/api/route-security";
+import { apiFetch, setTenantSource, TenantMissingError } from "@/core/api/fetcher";
+import { ApiError } from "@/core/api/problem";
+import { requiresTenant } from "@/core/api/route-security";
 
 const tenant = "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b";
 

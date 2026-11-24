@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"chaskicode.dev/saas/platform/kit/authctx"
-	"chaskicode.dev/saas/platform/kit/authz"
-	"chaskicode.dev/saas/platform/kit/clientip"
+	"chaskicode.dev/saas/core/kit/authctx"
+	"chaskicode.dev/saas/core/kit/authz"
+	"chaskicode.dev/saas/core/kit/clientip"
 )
 
 // DenialAuditor records authz.denied in the principal's tenant, with the principal as

@@ -1,9 +1,9 @@
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useGetMe } from "@/gen/api";
-import { usePlatform } from "@/platform/bootstrap";
-import { ErrorText } from "@/platform/components/ErrorText";
-import { homeDestination } from "@/platform/tenant/last-tenant";
-import { texts } from "@/platform/texts";
+import { usePlatform } from "@/core/bootstrap";
+import { ErrorText } from "@/core/components/ErrorText";
+import { homeDestination } from "@/core/tenant/last-tenant";
+import { texts } from "@/core/texts";
 
 export const Route = createFileRoute("/_shell/")({
   component: Home,

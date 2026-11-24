@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"chaskicode.dev/saas/platform/identity"
-	"chaskicode.dev/saas/platform/identity/adapters/devsender"
-	"chaskicode.dev/saas/platform/identity/adapters/smtpsender"
-	"chaskicode.dev/saas/platform/kit/config"
+	"chaskicode.dev/saas/core/identity"
+	"chaskicode.dev/saas/core/identity/adapters/devsender"
+	"chaskicode.dev/saas/core/identity/adapters/smtpsender"
+	"chaskicode.dev/saas/core/kit/config"
 )
 
 // Outside development the links go by email or the API does not start: the log sender

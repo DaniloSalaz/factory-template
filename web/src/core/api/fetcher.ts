@@ -14,7 +14,7 @@ export function apiUrl(path: string): string {
 export type TenantSource = () => string | undefined;
 
 // The only state of this module: who to ask for the active route's tenant. The router
-// sets it once at start-up (platform/bootstrap.ts); the tenant itself is never stored.
+// sets it once at start-up (core/bootstrap.ts); the tenant itself is never stored.
 let tenantSource: TenantSource = () => undefined;
 
 export function setTenantSource(source: TenantSource): void {
@@ -34,7 +34,7 @@ export class TenantMissingError extends Error {
  * session cookie also when the API is on another origin of the same site, adds
  * X-Tenant-ID (the tenant of the active route) only to the operations whose contract
  * requires it, and throws an ApiError for any non-2xx answer. Errors are handled in
- * one place (platform/errors), never by each caller.
+ * one place (core/errors), never by each caller.
  */
 export async function apiFetch<T>(path: string, init: RequestInit): Promise<T> {
   const method = (init.method ?? "GET").toUpperCase();

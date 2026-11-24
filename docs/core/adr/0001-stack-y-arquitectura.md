@@ -8,7 +8,7 @@ Desarrollador único que quiere lanzar varios SaaS desde una plantilla común, c
 estricto, poco mantenimiento operativo y un contrato HTTP explícito entre back y front.
 
 ## Decisión
-- **Monolito modular** en Go. Cada módulo (`api/platform/<m>`) tiene `module.go`
+- **Monolito modular** en Go. Cada módulo (`api/core/<m>`) tiene `module.go`
   (API pública), `domain/`, `usecases/` (casos de uso + puertos), `adapters/http`,
   `adapters/postgres` y `queries/`. El dominio no depende de infraestructura y los módulos
   no importan el interior de otros. La regla del dominio la vigila depguard.

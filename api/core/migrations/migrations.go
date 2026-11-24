@@ -8,7 +8,7 @@ package migrations
 import (
 	"embed"
 
-	"chaskicode.dev/saas/platform/kit/db"
+	"chaskicode.dev/saas/core/kit/db"
 )
 
 //go:embed *.sql

@@ -1,11 +1,11 @@
 import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { AnyRouter } from "@tanstack/react-router";
 import { createContext, type ReactNode, useContext } from "react";
-import { setTenantSource } from "@/platform/api/fetcher";
-import { createQueryClient } from "@/platform/api/query-client";
-import { createErrorHandler, type Destination } from "@/platform/errors/handle";
-import { createNotices, type Notices } from "@/platform/errors/notices";
-import { createLastTenantStore, type LastTenantStore } from "@/platform/tenant/last-tenant";
+import { setTenantSource } from "@/core/api/fetcher";
+import { createQueryClient } from "@/core/api/query-client";
+import { createErrorHandler, type Destination } from "@/core/errors/handle";
+import { createNotices, type Notices } from "@/core/errors/notices";
+import { createLastTenantStore, type LastTenantStore } from "@/core/tenant/last-tenant";
 
 /** What every platform screen may use; also the router's context. */
 export type PlatformContext = {

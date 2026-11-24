@@ -45,7 +45,7 @@ RLS protege contra **omisiones** del código. No protege contra una aplicación 
 - Las previsualizaciones van en **otro dominio registrable** (`x-preview.com`), con su propia API y base de datos.
 - `ALLOWED_ORIGINS` de producción: lista cerrada, sin comodines.
 - Fuera de desarrollo, la API no arranca si `FRONTEND_ORIGIN`, `FRONT_BASE_URL`, `WORKOS_REDIRECT_URI` o cualquier origen de `ALLOWED_ORIGINS` no es `https` (paso S1), ni sin SMTP (5.6.7). `APP_ENV` solo admite `development`, `staging` y `production`.
-- Las migraciones van dentro del binario: el despliegue ejecuta `api migrate` (con `MIGRATIONS_DATABASE_URL`, `app_owner`) antes de arrancar la versión nueva (`docs/platform/runbooks/release.md`).
+- Las migraciones van dentro del binario: el despliegue ejecuta `api migrate` (con `MIGRATIONS_DATABASE_URL`, `app_owner`) antes de arrancar la versión nueva (`docs/core/runbooks/release.md`).
 - Elimina los registros DNS de `x.com` que apunten a servicios que ya no uses.
 - La API solo es accesible por Cloudflare Tunnel, en staging y en producción; la IP del cliente se toma de `CF-Connecting-IP` (`TRUSTED_CLIENT_IP_HEADER`, que lo tiene por defecto en esos dos entornos), nunca de `X-Forwarded-For`.
 - Las extensiones de Postgres (`citext`, `pgcrypto`, `pg_trgm`) se instalan en un esquema propio, `extensions`.
@@ -125,7 +125,7 @@ WorkOS no informa de si un login tuvo MFA: el access token no trae `amr` ni nada
 5. **Baja** (`DELETE /me/mfa/totp/{id}`): con la MFA reciente del punto 2 si el usuario tiene un factor verificado. El último factor verificado no se puede quitar mientras un rol del usuario, en un tenant activo, exija MFA (`403 mfa.last_factor_required`). La borra en la BD y en WorkOS en la misma transacción; un disparador audita cada baja (`mfa.factor_removed`), la haga quien la haga.
 6. **Por rol** (5.4.3): si el rol exige MFA y `mfa_auth_time` es nulo o más antiguo que su máximo, `403 auth.mfa_required` si el usuario tiene un factor verificado (el front pide un código) o `403 auth.mfa_enrollment_required` si no (el front lleva al alta).
 7. **Primera alta** sin factor previo: es confianza en el primer uso. Quien tenga la sesión puede dar de alta un factor propio; el riesgo es el mismo que el de la sesión, y la cookie robada deja de valer al verificar.
-8. **Recuperación**: sin factor (dispositivo perdido), un administrador lo borra en WorkOS y en la BD con su motivo (`docs/platform/runbooks/auth.md`); el comando de administración llega en el paso 7 (issue #18). Sin códigos de recuperación en esta versión (issue #19).
+8. **Recuperación**: sin factor (dispositivo perdido), un administrador lo borra en WorkOS y en la BD con su motivo (`docs/core/runbooks/auth.md`); el comando de administración llega en el paso 7 (issue #18). Sin códigos de recuperación en esta versión (issue #19).
 
 `app_runtime` no tiene ningún permiso sobre `mfa_factors` ni `mfa_challenges`, ni `UPDATE` sobre `sessions.mfa_auth_time` o `token_hash`: todo pasa por las funciones de la sección 7.4.
 
@@ -137,7 +137,7 @@ WorkOS no informa de si un login tuvo MFA: el access token no trae `amr` ni nada
 | `WithUserTx(ctx, fn)` | Solo `app.user_id` | Flujos del usuario sin tenant: middleware de tenant, `/me`, `POST /tenants`, aceptar invitación |
 | `WithAnonTx(ctx, fn)` | Nada | Login, callback y eventos de auditoría sin usuario |
 
-Las tres viven en `platform/kit/db`. Las dos últimas solo pueden llamar a funciones `SECURITY DEFINER` o tocar tablas de identidad, nunca tablas de negocio: sin `app.tenant_id`, RLS hace fallar cualquier intento.
+Las tres viven en `core/kit/db`. Las dos últimas solo pueden llamar a funciones `SECURITY DEFINER` o tocar tablas de identidad, nunca tablas de negocio: sin `app.tenant_id`, RLS hace fallar cualquier intento.
 
 No se anidan: dentro de una, llamar a otra falla (`ErrNestedTx`). La única excepción es `db.Independent(ctx)`: la siguiente transacción abre otra conexión del pool y hace commit pase lo que pase con la exterior. Es para escrituras que deben sobrevivir al rollback de quien llama; hoy, solo la auditoría de `authz.denied` (5.4.5). Fija `lock_timeout` (2 s): la transacción exterior sigue abierta y podría tener bloqueada una fila que necesite una clave foránea de la escritura (por ejemplo, `tenants … FOR UPDATE`); sin ese límite sería un interbloqueo que Postgres no detecta.
 
@@ -154,8 +154,8 @@ Qué exige cada ruta lo declara el contrato OpenAPI con `security`: por defecto,
 1. **Sesión**: busca el hash con un join a `users`. `401` si está revocada o caducada (inactividad comparada con el `last_seen_at` **anterior**) o si el usuario está deshabilitado. Después actualiza `last_seen_at`, como mucho una vez cada 5 minutos.
 2. **Tenant**: valida que `X-Tenant-ID` es un UUID y, con `WithUserTx`, llama a `auth_membership(tenant_id)`: rol, estado del tenant y del usuario. Si algo falla (cabecera ausente o mal formada, tenant inexistente o suspendido, sin membresía, usuario deshabilitado), el mismo `403 auth.tenant_forbidden`. **No se audita**: cualquiera con sesión podría llenar el registro con UUIDs inventados, y en el de otro tenant no puede entrar (sección 7.4, `TN031`). Se registra en el log a nivel `Warn`, con `user_id`, el motivo y el tenant pedido solo si es un UUID válido.
 3. **MFA del rol**: si el rol la requiere y `mfa_auth_time` es nulo o más antiguo que la antigüedad máxima del rol: `403 auth.mfa_required` si el usuario tiene un factor verificado, `403 auth.mfa_enrollment_required` si no (5.2.6).
-4. **Principal** en el contexto (`platform/kit/authctx`): `UserID`, `TenantID`, `Role`, `Permissions`, `Scope`. `user_id` y `tenant_id`, a los logs, también al registro de acceso.
-5. **Caso de uso**: `Authorizer.Require(ctx, perm)` (`platform/kit/authz`), en cualquier punto del caso de uso, también dentro de su transacción. Sin el permiso: `403 authz.denied` y el evento `authz.denied` en la auditoría del tenant, escrito en una transacción propia (`db.Independent`, 5.3) que sobrevive al rollback de quien llama. Si no se puede auditar, deniega igualmente y lo registra en el log como `Error`.
+4. **Principal** en el contexto (`core/kit/authctx`): `UserID`, `TenantID`, `Role`, `Permissions`, `Scope`. `user_id` y `tenant_id`, a los logs, también al registro de acceso.
+5. **Caso de uso**: `Authorizer.Require(ctx, perm)` (`core/kit/authz`), en cualquier punto del caso de uso, también dentro de su transacción. Sin el permiso: `403 authz.denied` y el evento `authz.denied` en la auditoría del tenant, escrito en una transacción propia (`db.Independent`, 5.3) que sobrevive al rollback de quien llama. Si no se puede auditar, deniega igualmente y lo registra en el log como `Error`.
 6. **Datos**: `WithTenantTx`.
 
 El rol del middleware sirve para autorizar la petición, y se lee de la BD **en cada petición**: un cambio de rol o una expulsión surten efecto en la siguiente petición, sin esperar a que caduque la sesión. Las operaciones que dependen del rol del actor para modificar otros roles **lo releen y bloquean dentro de su transacción**: la función de la BD lo relee tras bloquear el tenant y rechaza si ya no es el que usó Go (sección 5.7).
@@ -194,7 +194,7 @@ Todas las respuestas llevan `Cache-Control: no-store`.
 6. La misma función registra `invitation.accepted` y `membership.created`: sin `app.tenant_id`, `record_audit` no admite eventos del tenant (`TN031`).
 7. **Entrega del enlace** (puerto `InvitationSender` del módulo `identity`, `Send(ctx, InvitationMessage)`: destinatario, enlace, tenant, rol y quién invita, el miembro que crea o reenvía esa invitación, por su nombre o, si no tiene, por su email). El enlace es `FRONT_BASE_URL/invite#token=…`; `FRONT_BASE_URL` es por defecto `FRONTEND_ORIGIN` y se valida al arrancar.
    - Se llama **después de confirmar la transacción**: crear y reenviar. Si falla, se registra en el log como `Error`, sin el enlace, y la invitación queda creada: el remedio es reenviarla. No hay reintentos (no hay cola todavía).
-   - **Adaptador SMTP** (`adapters/smtpsender`, paso S1): un relay SMTP genérico, sin SDK de ningún proveedor (librería `github.com/wneessen/go-mail`). **Obligatorio fuera de desarrollo**: sin `SMTP_HOST`, usuario y contraseña, la API no arranca. TLS siempre, implícito o STARTTLS que debe salir bien (`SMTP_TLS`), con el certificado verificado; no hay modo en claro. Timeouts de conexión y de cada orden (`SMTP_TIMEOUT`). Configuración y DNS en `docs/platform/runbooks/email.md`.
+   - **Adaptador SMTP** (`adapters/smtpsender`, paso S1): un relay SMTP genérico, sin SDK de ningún proveedor (librería `github.com/wneessen/go-mail`). **Obligatorio fuera de desarrollo**: sin `SMTP_HOST`, usuario y contraseña, la API no arranca. TLS siempre, implícito o STARTTLS que debe salir bien (`SMTP_TLS`), con el certificado verificado; no hay modo en claro. Timeouts de conexión y de cada orden (`SMTP_TIMEOUT`). Configuración y DNS en `docs/core/runbooks/email.md`.
    - **El email**, en español, texto y HTML: quién invita, el tenant, el rol y el enlace. El nombre del tenant y el de quien invita los escriben usuarios: van sin caracteres de control ni de formato (sin saltos de línea ni marcas bidi), recortados a 80 caracteres y escapados en el HTML, y **nunca en el asunto**, que es fijo ("Tienes una invitación"), para que nadie use nuestro dominio para phishing.
    - **Adaptador de desarrollo**: sin `SMTP_HOST`, escribe el enlace completo en el log (`invitation link (development only)`, con el email enmascarado). La API no arranca con él fuera de desarrollo. En desarrollo, `mise.toml` envía a Mailpit (`compose.yaml`) por STARTTLS; `SMTP_TLS_SKIP_VERIFY` (su certificado es autofirmado) solo se admite en desarrollo.
    - El token solo va en el enlace (fragmento). Salvo en esa línea del adaptador de desarrollo, el token y su hash no aparecen en ningún log, error, métrica, respuesta ni evento de auditoría; los errores de envío SMTP pierden los destinatarios y las respuestas del servidor, que pueden repetirlos.
@@ -330,7 +330,7 @@ CREATE TABLE case_documents (
 CREATE INDEX case_documents_tenant_case_idx ON case_documents (tenant_id, case_id);
 ```
 
-Los patrones completos, listos para copiar, están en `docs/platform/patterns.md`.
+Los patrones completos, listos para copiar, están en `docs/core/patterns.md`.
 
 **Políticas restrictivas adicionales.** Una tabla puede añadir más políticas `AS RESTRICTIVE` para estrechar una operación concreta; nunca políticas permisivas. `memberships` tiene una: con alcance `own`, el usuario puede leer su propia membresía, pero no modificarla. Desde la migración 00005 `app_runtime` ya no tiene `UPDATE` ni `DELETE` en `memberships` (se abandona el tenant con `leave_tenant()`), y la política queda como segunda capa por si un permiso se concede más adelante.
 
@@ -426,9 +426,9 @@ Ya no existe ninguna función que devuelva datos de **otro** miembro.
 
 ### 7.5 Dónde vive cada pieza
 
-- `platform/kit/authctx`: `Principal`, `Permission`, `Scope` y su lectura y escritura en el contexto.
-- `platform/kit/db`: `WithTenantTx`, `WithUserTx` y `WithAnonTx`.
-- `platform/identity`: usuarios, identidades, sesiones, tenants, membresías, invitaciones y los middlewares de sesión y tenant.
+- `core/kit/authctx`: `Principal`, `Permission`, `Scope` y su lectura y escritura en el contexto.
+- `core/kit/db`: `WithTenantTx`, `WithUserTx` y `WithAnonTx`.
+- `core/identity`: usuarios, identidades, sesiones, tenants, membresías, invitaciones y los middlewares de sesión y tenant.
 - Defensa en profundidad: las consultas de sqlc incluyen `WHERE tenant_id = $1`.
 
 ### 7.6 Trabajos de River
@@ -444,7 +444,7 @@ Ya no existe ninguna función que devuelva datos de **otro** miembro.
 - **Roles** definidos en código por cada app. La plantilla trae:
   - `owner`: reservado, todos los permisos, incluido `tenant:own`;
   - `admin` y `member`.
-- **Al arrancar**, la app valida su catálogo (`app.Roles` en `api/app/app.go`, con `platform/kit/authz`) y no arranca si falla: ningún rol salvo `owner` puede tener `tenant:own`, `owner` no se puede renombrar ni eliminar y tiene todos los permisos de plataforma y de los demás roles. Avisa, con un error en el log por cada uno, de los roles de `roles_in_use()` que no existen en el código.
+- **Al arrancar**, la app valida su catálogo (`app.Roles` en `api/app/app.go`, con `core/kit/authz`) y no arranca si falla: ningún rol salvo `owner` puede tener `tenant:own`, `owner` no se puede renombrar ni eliminar y tiene todos los permisos de plataforma y de los demás roles. Avisa, con un error en el log por cada uno, de los roles de `roles_in_use()` que no existen en el código.
 - Gracias a `tenant:own`, **ningún rol puede incluir a `owner`**: la regla de inclusión ya impide que un admin conceda owner. Además, la regla "solo un owner concede owner" se comprueba explícitamente.
 - **Cada rol declara** si requiere MFA y su antigüedad máxima.
 - **Inclusión**: los permisos de A son un subconjunto de los de B. "Estrictamente incluido": subconjunto propio.
@@ -457,7 +457,7 @@ Ya no existe ninguna función que devuelva datos de **otro** miembro.
 
 El email del invitado no va en `metadata`. Los eventos de miembros (`membership.*`) llevan `target_type = 'user'` y el `user_id` del afectado en `target_id`, el actor en `actor_user_id`, y el rol (o los dos roles) y el id de la membresía en `metadata`; los escriben las propias funciones de la BD. `tenant.updated` guarda el nombre del tenant, que puede ser el de una persona (un despacho a su nombre). Retención configurable.
 
-**Telemetría.** Trazas, métricas y errores siguen el ADR 0004: solo atributos de su lista; nunca `user_id`, emails, IPs, argumentos SQL, cuerpos, cabeceras, query strings ni tokens. `auth.tenant_forbidden` se cuenta sin `tenant_id`, por el mismo motivo que no se audita (5.4.2). Detalle en `docs/platform/runbooks/observability.md`.
+**Telemetría.** Trazas, métricas y errores siguen el ADR 0004: solo atributos de su lista; nunca `user_id`, emails, IPs, argumentos SQL, cuerpos, cabeceras, query strings ni tokens. `auth.tenant_forbidden` se cuenta sin `tenant_id`, por el mismo motivo que no se audita (5.4.2). Detalle en `docs/core/runbooks/observability.md`.
 
 ## 10. API
 
@@ -501,9 +501,9 @@ Decisión del paso 8a. El front (`web/`, detalle en `web/README.md`) no guarda e
 - **`X-Tenant-ID`**: lo pone el fetcher del cliente generado con el `$tenantId` de la ruta activa, y **solo** en las operaciones cuyo `security` en el contrato incluye `tenant` (`web/src/gen/routeSecurity.ts`, generado del contrato como `routegen`). Llamar a una de ellas fuera de `/t/$tenantId` es un error del front, no una petición sin cabecera.
 - **Caché**: las claves de TanStack Query de las operaciones con tenant incluyen el de la ruta, para que `/t/B` nunca muestre datos leídos en `/t/A`.
 - **Último tenant usado**: lo único que se guarda (`localStorage`), y solo para redirigir desde `/`. Se usa si `GET /me` lo sigue listando como activo; si no, o si da `403 auth.tenant_forbidden`, se borra y se va al selector (`/tenants`, con aviso en el segundo caso).
-- **Errores**: `401` lleva a `/login` con `return_to` de la ruta actual (el servidor lo valida, 5.1.1); `403 auth.mfa_required` a la verificación (challenge y código, 5.2) y `auth.mfa_enrollment_required` al alta, y las dos vuelven a la ruta. Tras verificar, la sesión se sustituye y el front invalida toda su caché. Se decide en un solo sitio (`web/src/platform/errors/handle.ts`), nunca en cada pantalla.
+- **Errores**: `401` lleva a `/login` con `return_to` de la ruta actual (el servidor lo valida, 5.1.1); `403 auth.mfa_required` a la verificación (challenge y código, 5.2) y `auth.mfa_enrollment_required` al alta, y las dos vuelven a la ruta. Tras verificar, la sesión se sustituye y el front invalida toda su caché. Se decide en un solo sitio (`web/src/core/errors/handle.ts`), nunca en cada pantalla.
 - **Permisos**: el front oculta lo que el rol no permite según `GET /tenant`; es solo UX, la API los comprueba en cada caso de uso (5.4.5). Los roles que ofrece al cambiar un rol o invitar son los `can_assign` y `can_offer` de `GET /tenant/roles` (paso 8b), nunca una lista propia.
-- **Invitación** (paso 8b, 5.6.3): al arrancar, antes de crear el router, el front quita el fragmento de `/invite#token=…` con `history.replaceState` y guarda el token en `sessionStorage`. Sin sesión, `GET /me` da `401` y va a `/login?return_to=/invite`; `return_to` nunca lleva el fragmento de ninguna URL. Con sesión, el token sale de `sessionStorage` pase lo que pase y va a `POST /invitations/accept`; después, a `/t/$tenantId`. `Referrer-Policy: no-referrer` en `index.html` para toda la app y, en producción, como cabecera del hosting (`docs/platform/runbooks/deploy.md`).
+- **Invitación** (paso 8b, 5.6.3): al arrancar, antes de crear el router, el front quita el fragmento de `/invite#token=…` con `history.replaceState` y guarda el token en `sessionStorage`. Sin sesión, `GET /me` da `401` y va a `/login?return_to=/invite`; `return_to` nunca lleva el fragmento de ninguna URL. Con sesión, el token sale de `sessionStorage` pase lo que pase y va a `POST /invitations/accept`; después, a `/t/$tenantId`. `Referrer-Policy: no-referrer` en `index.html` para toda la app y, en producción, como cabecera del hosting (`docs/core/runbooks/deploy.md`).
 - **`429`**: el front muestra la espera de `Retry-After` (sección 6) en el aviso de la plataforma.
 
 ## 11. Pruebas obligatorias
@@ -571,11 +571,11 @@ Vincular identidades desde la sesión, borrado de un tenant (será un comando de
 ## 14. Plan de implementación
 
 1. **Esquema y RLS**: esquema `extensions`, roles de BD, tablas, políticas, funciones `SECURITY DEFINER`, usuario de sistema y tests de estructura de la BD.
-2. **Transacciones y contexto**: `platform/kit/authctx`, `WithTenantTx`, `WithUserTx`, `WithAnonTx`, y tests de aislamiento, pool y alcance `own` con tablas de ejemplo (incluida una tabla de acceso).
+2. **Transacciones y contexto**: `core/kit/authctx`, `WithTenantTx`, `WithUserTx`, `WithAnonTx`, y tests de aislamiento, pool y alcance `own` con tablas de ejemplo (incluida una tabla de acceso).
 3. **Login y sesiones**: adaptador de WorkOS, intentos, `/auth/*`, CSRF, CORS, IP de confianza y límite de peticiones.
 4. **Principal y permisos**: middlewares de sesión y tenant, MFA por rol verificada por la app (5.2), `authz`, catálogo de roles con su validación al arrancar, y `/me`.
 5. **Tenants, invitaciones, miembros y auditoría**, con la revocación automática y el evento `identity.member_removed`. Se hace en tres partes: 5a, tenants y miembros (hecho, ADR 0003); 5b, invitaciones (hecho: 5.6 y 5.7.5; queda la revocación al deshabilitar, paso 7; el email real llegó con S1); 5c, consulta de la auditoría.
 6. **Trabajos**: workers de usuario y de sistema.
 7. **Administración**: deshabilitar y borrar usuario.
 8. **Front** (hecho, 10.1 y `web/README.md`): login (también al caducar la MFA de un rol), selector de tenant, `X-Tenant-ID`, invitaciones y miembros. 8a, base, login, tenant y MFA; 8b, miembros, invitaciones, `/invite`, renombrar el tenant, `GET /tenant/roles`, `Retry-After` en los `429` y Playwright en CI.
-9. **S1, preparar la API para salir de desarrollo** (hecho): https fuera de desarrollo, migraciones en el binario (`api migrate`), email por SMTP (5.6.7) e imagen publicada con procedencia, SBOM y escaneo (`docs/platform/runbooks/release.md`). Servidor, Cloudflare, copias y observabilidad: S2 a S4.
+9. **S1, preparar la API para salir de desarrollo** (hecho): https fuera de desarrollo, migraciones en el binario (`api migrate`), email por SMTP (5.6.7) e imagen publicada con procedencia, SBOM y escaneo (`docs/core/runbooks/release.md`). Servidor, Cloudflare, copias y observabilidad: S2 a S4.

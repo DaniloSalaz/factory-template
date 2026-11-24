@@ -1,4 +1,4 @@
-import { paths } from "@/platform/paths";
+import { paths } from "@/core/paths";
 
 // The token of an invitation link (/invite#token=…, auth-y-tenancy §5.6.3). The fragment never
 // reaches a server nor a Referer, and it must not stay in the URL either: the history,

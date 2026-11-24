@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"chaskicode.dev/saas/platform/health/domain"
-	"chaskicode.dev/saas/platform/health/usecases"
-	"chaskicode.dev/saas/platform/kit/apperr"
+	"chaskicode.dev/saas/core/health/domain"
+	"chaskicode.dev/saas/core/health/usecases"
+	"chaskicode.dev/saas/core/kit/apperr"
 )
 
 type fakeDBChecker struct {

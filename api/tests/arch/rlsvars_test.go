@@ -21,7 +21,7 @@ var rlsVarPatterns = []*regexp.Regexp{
 
 // rlsVarViolations lists every Go file under root, tests and generated code included,
 // that calls the function setting RLS variables, or names one of them, outside
-// platform/kit/db and tests/db, the schema tests that check RLS with raw SQL. Fixtures
+// core/kit/db and tests/db, the schema tests that check RLS with raw SQL. Fixtures
 // under tests/arch/testdata are checked by their own test.
 func rlsVarViolations(root string) ([]string, error) {
 	var out []string
@@ -35,7 +35,7 @@ func rlsVarViolations(root string) ([]string, error) {
 		}
 		rel = filepath.ToSlash(rel)
 		if d.IsDir() {
-			if rel == "platform/kit/db" || rel == "tests/db" || rel == "tests/arch/testdata" {
+			if rel == "core/kit/db" || rel == "tests/db" || rel == "tests/arch/testdata" {
 				return filepath.SkipDir
 			}
 			return nil
@@ -51,7 +51,7 @@ func rlsVarViolations(root string) ([]string, error) {
 			for _, re := range rlsVarPatterns {
 				if m := re.FindString(line); m != "" {
 					out = append(out, fmt.Sprintf(
-						"[rls-vars-only-in-db] %s:%d mentions %q: only platform/kit/db (and the schema "+
+						"[rls-vars-only-in-db] %s:%d mentions %q: only core/kit/db (and the schema "+
 							"tests in tests/db) sets or reads "+
 							"the RLS variables; run the statements inside db.WithTenantTx, WithUserTx or "+
 							"WithAnonTx, which set them for you", rel, i+1, m))
@@ -78,7 +78,7 @@ func TestRLSVarsOnlyInDB(t *testing.T) {
 	}
 }
 
-// The fixture proves the rule catches each kind of mention and allows platform/kit/db,
+// The fixture proves the rule catches each kind of mention and allows core/kit/db,
 // tests/db and look-alike names, but not the rest of tests/.
 func TestRLSVarsOnlyInDB_DetectsViolations(t *testing.T) {
 	t.Parallel()
@@ -92,12 +92,12 @@ func TestRLSVarsOnlyInDB_DetectsViolations(t *testing.T) {
 		file string
 		want bool
 	}{
-		{"platform/a/adapters/postgres/setconfig.go", true},
-		{"platform/a/adapters/postgres/setlocal_test.go", true},
+		{"core/a/adapters/postgres/setconfig.go", true},
+		{"core/a/adapters/postgres/setlocal_test.go", true},
 		{"gen/sqlc/a/query.sql.go", true},
-		{"platform/b/userid.go", true},
-		{"platform/b/allowed.go", false},
-		{"platform/kit/db/tx.go", false},
+		{"core/b/userid.go", true},
+		{"core/b/allowed.go", false},
+		{"core/kit/db/tx.go", false},
 		{"tests/db/rls_test.go", false},
 		{"tests/integration/a/rls_test.go", true},
 	}

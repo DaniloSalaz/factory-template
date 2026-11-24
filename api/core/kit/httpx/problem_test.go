@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"chaskicode.dev/saas/platform/kit/apperr"
-	"chaskicode.dev/saas/platform/kit/config"
-	"chaskicode.dev/saas/platform/kit/httpx"
-	"chaskicode.dev/saas/platform/kit/logx"
+	"chaskicode.dev/saas/core/kit/apperr"
+	"chaskicode.dev/saas/core/kit/config"
+	"chaskicode.dev/saas/core/kit/httpx"
+	"chaskicode.dev/saas/core/kit/logx"
 )
 
 func TestWriteProblem(t *testing.T) {

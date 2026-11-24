@@ -2,16 +2,16 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import { getGetCurrentTenantQueryKey, getGetMeQueryKey, useUpdateCurrentTenant } from "@/gen/api";
-import { ErrorText } from "@/platform/components/ErrorText";
-import { Page } from "@/platform/components/Page";
-import { errorCode, errorMessage } from "@/platform/errors/message";
-import { can, useCurrentTenant } from "@/platform/tenant/use-tenant";
-import { texts } from "@/platform/texts";
-import { Badge } from "@/platform/ui/badge";
-import { Button } from "@/platform/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/platform/ui/card";
-import { Input } from "@/platform/ui/input";
-import { Label } from "@/platform/ui/label";
+import { ErrorText } from "@/core/components/ErrorText";
+import { Page } from "@/core/components/Page";
+import { errorCode, errorMessage } from "@/core/errors/message";
+import { can, useCurrentTenant } from "@/core/tenant/use-tenant";
+import { texts } from "@/core/texts";
+import { Badge } from "@/core/ui/badge";
+import { Button } from "@/core/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/core/ui/card";
+import { Input } from "@/core/ui/input";
+import { Label } from "@/core/ui/label";
 
 export const Route = createFileRoute("/_shell/t/$tenantId/")({
   component: TenantHome,

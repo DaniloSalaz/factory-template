@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	platformmigrations "chaskicode.dev/saas/platform/migrations"
+	coremigrations "chaskicode.dev/saas/core/migrations"
 	"chaskicode.dev/saas/tests/testkit"
 )
 
@@ -29,7 +29,7 @@ func TestMigrateCommand(t *testing.T) {
 	ctx := t.Context()
 	pg := startDB(t)
 
-	embedded, err := fs.Glob(platformmigrations.Set().FS, "*.sql")
+	embedded, err := fs.Glob(coremigrations.Set().FS, "*.sql")
 	if err != nil || len(embedded) == 0 {
 		t.Fatalf("embedded platform migrations: %v %v", embedded, err)
 	}

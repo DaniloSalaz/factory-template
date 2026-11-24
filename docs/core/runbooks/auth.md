@@ -1,7 +1,7 @@
 # Runbook: login con WorkOS AuthKit
 
-Diseño: `docs/platform/designs/auth-y-tenancy.md` (secciones 5.1, 5.2, 5.5, 5.7, 6 y 13),
-`docs/platform/adr/0002-mfa-opcional-por-rol.md` y `docs/platform/adr/0003-invariante-owner.md`.
+Diseño: `docs/core/designs/auth-y-tenancy.md` (secciones 5.1, 5.2, 5.5, 5.7, 6 y 13),
+`docs/core/adr/0002-mfa-opcional-por-rol.md` y `docs/core/adr/0003-invariante-owner.md`.
 
 ## Variables
 
@@ -419,7 +419,7 @@ psql_app() { docker compose exec -T postgres psql -U app_runtime -d factory -v O
 
 ## Prueba manual: tenants y miembros
 
-Diseño: 5.5 y 5.7, `docs/platform/adr/0003-invariante-owner.md`. Sin navegador y solo en local:
+Diseño: 5.5 y 5.7, `docs/core/adr/0003-invariante-owner.md`. Sin navegador y solo en local:
 las sesiones se crean como en la opción B de la sección anterior. Mismas reglas:
 **preparar** con el superusuario `factory` (sesiones, y las membresías que llegarán con
 las invitaciones del paso 5b); **comprobar** con la API o con `app_runtime`.

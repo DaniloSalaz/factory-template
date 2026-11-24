@@ -6,9 +6,9 @@ import (
 	"slices"
 	"strconv"
 
-	"chaskicode.dev/saas/platform/kit/apperr"
-	"chaskicode.dev/saas/platform/kit/clientip"
-	"chaskicode.dev/saas/platform/kit/ratelimit"
+	"chaskicode.dev/saas/core/kit/apperr"
+	"chaskicode.dev/saas/core/kit/clientip"
+	"chaskicode.dev/saas/core/kit/ratelimit"
 )
 
 // ClientIP stores the request's client address (see clientip.Resolver) in its context,

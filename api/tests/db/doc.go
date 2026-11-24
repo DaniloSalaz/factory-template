@@ -1,7 +1,7 @@
 // Package db checks the database schema and its row-level security against a real
 // Postgres, bootstrapped and migrated like a deployment, with the platform's and the
 // app's migrations (testkit/migrationsets): it lives under api/tests, which may import
-// the app, unlike anything under platform/.
+// the app, unlike anything under core/.
 //
 //   - rules.go (tables with tenant_id, auth-y-tenancy §7.3), functions.go (SECURITY DEFINER
 //     functions, 7.4) and privileges.go (the snapshot of app_runtime's privileges) hold

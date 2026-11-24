@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"chaskicode.dev/saas/platform/kit/authctx"
+	"chaskicode.dev/saas/core/kit/authctx"
 )
 
 // The transaction helpers refuse to run, before taking a connection, when the context

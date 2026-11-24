@@ -12,7 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"chaskicode.dev/saas/platform/kit/db"
+	"chaskicode.dev/saas/core/kit/db"
 )
 
 // Each test uses its own version tables and zz_mig_* tables (no tenant_id, so the
