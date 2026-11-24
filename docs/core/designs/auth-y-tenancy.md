@@ -9,7 +9,7 @@ Dar a todas las apps de la fábrica una identidad, una separación por cliente (
 - un usuario de un tenant **nunca** pueda leer ni modificar datos de otro, aunque un desarrollador o un agente olvide un filtro;
 - dentro de un tenant, un usuario con alcance restringido (el cliente de un despacho) nunca vea datos ni personas de otros, por el mismo motivo;
 - cambiar de proveedor de identidad sea cambiar un adaptador más una migración controlada, nunca perder usuarios;
-- cada app defina sus propios roles sin tocar la plataforma.
+- cada app defina sus propios roles sin tocar el core.
 
 ### Frontera de confianza
 
@@ -33,7 +33,7 @@ RLS protege contra **omisiones** del código. No protege contra una aplicación 
 | Aislamiento | RLS en todas las tablas con `tenant_id` y en `tenants` (por su `id`), con alcance declarado y comprobado por test | Alcance opcional |
 | Escritura de tenants y membresías | Solo con funciones `SECURITY DEFINER` (`create_tenant`, `accept_invitation`, `change_member_role`, `remove_member`, `leave_tenant`); `app_runtime` no tiene `INSERT`, `UPDATE (role)` ni `DELETE` en `memberships` ni `INSERT` o `DELETE` en `tenants`, y en `tenants` solo actualiza `name` | Escritura directa filtrada por RLS: un fallo del código podría crear un tenant sin owner, una membresía sin invitación o quitar el último owner (ADR 0003) |
 | Al menos un owner por tenant activo | Lo garantiza la BD: las funciones de miembros bloquean la fila del tenant y cuentan owners (ADR 0003) | Solo en Go: dos owners que se degradan a la vez dejarían el tenant sin ninguno. Un disparador de restricción: ADR 0003 |
-| Rol `owner` | Reservado por la plataforma; solo un owner concede owner | Tratarlo con la regla general de inclusión |
+| Rol `owner` | Reservado por el core; solo un owner concede owner | Tratarlo con la regla general de inclusión |
 | Invitaciones de quien pierde permisos | Se revocan al degradar, expulsar o deshabilitar a quien invitó | Revalidar a quien invitó al aceptar |
 | MFA | Opcional para todos y exigida solo por los roles del catálogo que lo dicen (ADR 0002). La verifica la app después del login, con la API de MFA de WorkOS: solo un `valid: true` da MFA a la sesión, que se sustituye por una nueva con otro token (5.2) | Exigirla a todos en el panel (`Required`) y deducirla del método de login: obliga a todos los usuarios y WorkOS no informa de si la hubo (sección 13). Deducirla de "tiene un factor dado de alta": no prueba nada de la sesión |
 | Locales | Fuera de esta versión | — |
@@ -63,7 +63,7 @@ Sin `tenant_id` ni RLS. Solo las consultas del módulo `identity` las tocan; un 
 - **mfa_factors**: `id`, `user_id` (`ON DELETE CASCADE`), `provider`, `provider_factor_id` (único con `provider`), `verified_at`, `last_code_hash` y `last_code_at` (el último código aceptado, para no aceptarlo otra vez). **mfa_challenges**: `id`, `factor_id`, `session_id`, `provider_challenge_id`, `expires_at` (5 min), `consumed_at`, `completed_at`. Solo las escriben sus funciones (7.4).
 - **sessions**: `id`, `token_hash` (único), `user_id`, `auth_time`, `mfa_auth_time` (nullable; solo lo fija `mark_session_mfa`, 5.2), `last_seen_at`, `idle_expires_at`, `absolute_expires_at`, `ip_prefix`, `user_agent`, `provider_session_id` (nullable), `revoked_at`.
 
-### 4.2 Tablas de plataforma bajo RLS
+### 4.2 Tablas de core bajo RLS
 
 Todas con RLS, la política estándar y su alcance declarado. `tenants` no tiene `tenant_id`: su política compara su propio `id` con `app.tenant_id`, así que la aplicación solo lee y renombra el tenant actual. Los flujos sin tenant (middleware de tenant, `/me`, `POST /tenants`, aceptar invitación, trabajos de sistema) leen `tenants` a través de las funciones `SECURITY DEFINER` (sección 7.4).
 
@@ -440,11 +440,11 @@ Ya no existe ninguna función que devuelva datos de **otro** miembro.
 ## 8. Permisos
 
 - **Formato** `recurso:accion`, más `scope:tenant`.
-- **Permisos de plataforma**: `members:read`, `members:invite`, `members:manage`, `audit:read`, `tenant:update` (renombrar el tenant), y `tenant:own`, **reservado al rol `owner`**.
+- **Permisos de core**: `members:read`, `members:invite`, `members:manage`, `audit:read`, `tenant:update` (renombrar el tenant), y `tenant:own`, **reservado al rol `owner`**.
 - **Roles** definidos en código por cada app. La plantilla trae:
   - `owner`: reservado, todos los permisos, incluido `tenant:own`;
   - `admin` y `member`.
-- **Al arrancar**, la app valida su catálogo (`app.Roles` en `api/app/app.go`, con `core/kit/authz`) y no arranca si falla: ningún rol salvo `owner` puede tener `tenant:own`, `owner` no se puede renombrar ni eliminar y tiene todos los permisos de plataforma y de los demás roles. Avisa, con un error en el log por cada uno, de los roles de `roles_in_use()` que no existen en el código.
+- **Al arrancar**, la app valida su catálogo (`app.Roles` en `api/app/app.go`, con `core/kit/authz`) y no arranca si falla: ningún rol salvo `owner` puede tener `tenant:own`, `owner` no se puede renombrar ni eliminar y tiene todos los permisos de core y de los demás roles. Avisa, con un error en el log por cada uno, de los roles de `roles_in_use()` que no existen en el código.
 - Gracias a `tenant:own`, **ningún rol puede incluir a `owner`**: la regla de inclusión ya impide que un admin conceda owner. Además, la regla "solo un owner concede owner" se comprueba explícitamente.
 - **Cada rol declara** si requiere MFA y su antigüedad máxima.
 - **Inclusión**: los permisos de A son un subconjunto de los de B. "Estrictamente incluido": subconjunto propio.
@@ -504,7 +504,7 @@ Decisión del paso 8a. El front (`web/`, detalle en `web/README.md`) no guarda e
 - **Errores**: `401` lleva a `/login` con `return_to` de la ruta actual (el servidor lo valida, 5.1.1); `403 auth.mfa_required` a la verificación (challenge y código, 5.2) y `auth.mfa_enrollment_required` al alta, y las dos vuelven a la ruta. Tras verificar, la sesión se sustituye y el front invalida toda su caché. Se decide en un solo sitio (`web/src/core/errors/handle.ts`), nunca en cada pantalla.
 - **Permisos**: el front oculta lo que el rol no permite según `GET /tenant`; es solo UX, la API los comprueba en cada caso de uso (5.4.5). Los roles que ofrece al cambiar un rol o invitar son los `can_assign` y `can_offer` de `GET /tenant/roles` (paso 8b), nunca una lista propia.
 - **Invitación** (paso 8b, 5.6.3): al arrancar, antes de crear el router, el front quita el fragmento de `/invite#token=…` con `history.replaceState` y guarda el token en `sessionStorage`. Sin sesión, `GET /me` da `401` y va a `/login?return_to=/invite`; `return_to` nunca lleva el fragmento de ninguna URL. Con sesión, el token sale de `sessionStorage` pase lo que pase y va a `POST /invitations/accept`; después, a `/t/$tenantId`. `Referrer-Policy: no-referrer` en `index.html` para toda la app y, en producción, como cabecera del hosting (`docs/core/runbooks/deploy.md`).
-- **`429`**: el front muestra la espera de `Retry-After` (sección 6) en el aviso de la plataforma.
+- **`429`**: el front muestra la espera de `Retry-After` (sección 6) en el aviso del core.
 
 ## 11. Pruebas obligatorias
 

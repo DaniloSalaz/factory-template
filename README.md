@@ -16,7 +16,7 @@ módulo → implementación.
 ```sh
 mise install && mise run hooks:install   # herramientas y hook de pre-commit (rechaza commits en main)
 mise run up        # Postgres 18 (en un volumen nuevo crea roles y extensiones), Mailpit y LGTM
-mise run migrate   # migraciones de plataforma y después de app, como app_owner, con `api migrate`
+mise run migrate   # migraciones de core y después de app, como app_owner, con `api migrate`
 mise run dev       # API en http://localhost:8080, como app_runtime (descifra secrets.env)
 cd web && npm run dev   # front en http://localhost:5173, con proxy de /auth y /api a la API
 ```
@@ -59,3 +59,4 @@ descifra ficheros dotenv, así que `mise run dev` usa `sops exec-env`.
 - [ADR 0003 — Invariante del owner](docs/core/adr/0003-invariante-owner.md)
 - [ADR 0004 — Telemetría sin datos personales](docs/core/adr/0004-telemetria-y-datos-personales.md)
 - [ADR 0005 — Estructura plataforma / app / gen](docs/core/adr/0005-estructura-plataforma-app-gen.md)
+- [ADR 0006 — La zona de la plantilla se llama core](docs/core/adr/0006-zona-core.md)

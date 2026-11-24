@@ -1,10 +1,10 @@
 # Estructura del repo
 
-Estructura de factory-template tal como está construida, tras la reorganización de los PRs 1 a 8 (decisión en [ADR 0005](adr/0005-estructura-plataforma-app-gen.md)). Lo que aún no existe se marca **(fase 2)** o **(aún no)**, y lo que solo ilustra la forma, **(ejemplo)**. Si el repo y este documento no coinciden, se corrige el que esté mal en el mismo PR.
+Estructura de factory-template tal como está construida, tras la reorganización de los PRs 1 a 8 (decisión en [ADR 0005](adr/0005-estructura-plataforma-app-gen.md); el nombre `core` de la zona de la plantilla, en [ADR 0006](adr/0006-zona-core.md)). Lo que aún no existe se marca **(fase 2)** o **(aún no)**, y lo que solo ilustra la forma, **(ejemplo)**. Si el repo y este documento no coinciden, se corrige el que esté mal en el mismo PR.
 
 ## Estructura de carpetas
 
-Idea única: **cada zona tiene tres partes, `core/` (de la plantilla), `app/` (de cada app) y `gen/` (generado)**. Marcas: **[P]** plataforma, no se toca desde una app (se cambia en factory-template y llega por sincronización); **[A]** de la app; **[G]** generado, nunca a mano (`mise run generate`); **[C]** compartido, lo tocan ambas partes y se mantiene al mínimo.
+Idea única: **cada zona tiene tres partes, `core/` (de la plantilla), `app/` (de cada app) y `gen/` (generado)**. Marcas: **[P]** core, no se toca desde una app (se cambia en factory-template y llega por sincronización); **[A]** de la app; **[G]** generado, nunca a mano (`mise run generate`); **[C]** compartido, lo tocan ambas partes y se mantiene al mínimo.
 
 ```text
 factory-template/
@@ -13,7 +13,7 @@ factory-template/
 │   ├── go.mod                            [P] module chaskicode.dev/saas (igual en todas las apps, nunca se renombra)
 │   ├── go.sum                            [G]
 │   ├── main.go                           [P] composition root: config, BD, módulos, servidor
-│   ├── migrate.go                        [P] `api migrate`: plataforma primero, app después
+│   ├── migrate.go                        [P] `api migrate`: core primero, app después
 │   ├── migrate_integration_test.go       [P] junto a su código: es de `package main`
 │   ├── version.go  version_test.go       [P]
 │   ├── Dockerfile  .dockerignore         [P]
@@ -86,7 +86,7 @@ factory-template/
 │   │   ├── integration/<p>/                  un paquete por su API pública (health, migrations…)
 │   │   └── testkit/                          Postgres con Testcontainers
 │   │       ├── testkit.go
-│   │       └── migrationsets/                plataforma + app (solo para tests/ y app/)
+│   │       └── migrationsets/                core + app (solo para tests/ y app/)
 │   │
 │   └── tools/                            [P]
 │       ├── routegen/                         seguridad por ruta
@@ -104,7 +104,7 @@ factory-template/
 │   ├── index.html  .gitignore            [P]
 │   ├── .env.development  .env.production   [P]
 │   ├── scripts/                          [P] gen-route-security.ts
-│   ├── e2e/                              [P] recorridos de plataforma
+│   ├── e2e/                              [P] recorridos de core
 │   │   ├── *.spec.ts  db.ts  fixtures.ts
 │   │   ├── global-setup.ts
 │   │   └── app/                          [A] recorridos de la app
@@ -163,7 +163,7 @@ factory-template/
 ├── README.md  mise.toml                  [C]
 ├── compose.yaml  .env.example            [C]
 ├── secrets.env  .sops.yaml               [A]
-├── .template-paths                       [P] rutas de plataforma que vigila el CI de la app (fase 2.1)
+├── .template-paths                       [P] rutas de core que vigila el CI de la app (fase 2.1)
 ├── .template-version                     [A] commit de la plantilla del último sync (fase 2.1)
 ├── renovate.json  .editorconfig
 └── .gitignore  LICENSE
@@ -188,7 +188,7 @@ Todas fallan en `mise run ci` con un mensaje que dice qué regla es y cómo arre
 | Regla | Qué impide | Dónde se comprueba |
 | --- | --- | --- |
 | `[domain-pure]` | que `domain/` importe algo distinto de la stdlib y `kit/apperr` | depguard (`api/.golangci.yml`); fixtures en `api/tests/arch/lintrules_test.go` |
-| `[core-no-modules]` | que `core/kit` importe un módulo de plataforma | depguard; `lintrules_test.go` |
+| `[core-no-modules]` | que `core/kit` importe un módulo de core | depguard; `lintrules_test.go` |
 | `[apperr-stdlib-only]` | que `kit/apperr` importe algo fuera de la stdlib | depguard; `lintrules_test.go` |
 | `[authctx-stdlib-only]` | que `kit/authctx` importe algo fuera de la stdlib | depguard; `lintrules_test.go` |
 | `[authz-in-use-cases]` | comprobar permisos en `adapters/http` | depguard; `lintrules_test.go` |
@@ -201,17 +201,17 @@ Todas fallan en `mise run ci` con un mensaje que dice qué regla es y cómo arre
 | `[contract-duplicate]` | que `app.yaml` repita una ruta, `operationId` o componente de `core.yaml` | `api/tools/specmerge` (`mise run generate`) |
 | `[contract-core-owned]` | que `app.yaml` redefina tags, `securitySchemes`, seguridad raíz o cabecera de tenant | `api/tools/specmerge` |
 | `[contract-module-key]` | una operación sin exactamente un tag de módulo | `api/tools/specmerge` |
-| `[core-migrations-alone]` | que una migración de plataforma dependa de la app | `api/tests/integration/migrations` (`TestCoreMigrationsApplyAlone`) |
+| `[core-migrations-alone]` | que una migración de core dependa de la app | `api/tests/integration/migrations` (`TestCoreMigrationsApplyAlone`) |
 | `[runtime-privileges]` | que los permisos de `app_runtime` difieran de la foto `.golden` | `api/tests/db/schema_test.go` |
 | `[security-definer]` | una función `SECURITY DEFINER` que no sea de `app_security`, sin `search_path` fijo, ejecutable por otro que `app_runtime` o que reciba el usuario por parámetro | `api/tests/db/functions.go` |
 
 ## Decisiones de estructura
 
-- **Module path neutro:** `chaskicode.dev/saas`. Es una etiqueta, no una URL que tenga que resolver: igual en todas las apps y nunca se renombra, para que los ficheros de plataforma sean idénticos en la plantilla y en cada app. La identidad de cada app (nombre, imagen, base de datos) va en configuración.
+- **Module path neutro:** `chaskicode.dev/saas`. Es una etiqueta, no una URL que tenga que resolver: igual en todas las apps y nunca se renombra, para que los ficheros de core sean idénticos en la plantilla y en cada app. La identidad de cada app (nombre, imagen, base de datos) va en configuración.
 - **Sin `internal/` ni `cmd/`:** el backend es un único binario que nadie importa; quitarlos ahorra dos niveles.
-- **Migraciones separadas** (`core/migrations` y `app/migrations`), cada una con su tabla de versiones de goose (`goose_db_version` y `goose_app_db_version`); `api migrate` aplica primero plataforma. Una migración de app puede referenciar tablas de plataforma, nunca al revés. Así una migración nueva de la plantilla no choca con la numeración de la app.
+- **Migraciones separadas** (`core/migrations` y `app/migrations`), cada una con su tabla de versiones de goose (`goose_db_version` y `goose_app_db_version`); `api migrate` aplica primero core. Una migración de app puede referenciar tablas de core, nunca al revés. Así una migración nueva de la plantilla no choca con la numeración de la app.
 - **Contrato separado** (`core.yaml` y `app.yaml`), unido por `api/tools/specmerge` en `openapi.gen.yaml` dentro de `mise run generate`; cada módulo genera su paquete desde su `codegen.yaml`.
-- **Un único punto de enganche por lado:** `api/app/app.go` (módulos y roles) y `web/src/app/registry.ts` (nombre, logo, menú). La plataforma no importa nada más de `app/`, comprobado por tests de arquitectura.
+- **Un único punto de enganche por lado:** `api/app/app.go` (módulos y roles) y `web/src/app/registry.ts` (nombre, logo, menú). El core no importa nada más de `app/`, comprobado por tests de arquitectura.
 - **Mismo nombre de funcionalidad en back y front:** `api/app/modules/<x>` ↔ `web/src/app/features/<x>` ↔ `docs/app/modules/<x>.md`.
 - **Instrucciones en capas:** `AGENTS.md` de la raíz (lo que necesita cualquier sesión), `AGENTS.md` de carpeta para reglas internas (`core/identity`, `core/kit`, `core/kit/db`), cada uno con su `CLAUDE.md` (`@AGENTS.md`), y `APP.md` para lo propio de la app.
 - **Sincronización con la plantilla:** la app se crea clonando la plantilla (no con el botón "Use this template" de GitHub, que crea una historia sin ancestro común) y recibe mejoras con un remoto `template` y `git merge`. Que el CI de la app falle si cambian las rutas de `.template-paths` respecto a `.template-version` es de la fase 2.1.

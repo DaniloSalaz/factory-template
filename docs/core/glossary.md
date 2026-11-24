@@ -1,5 +1,6 @@
 # Glosario
 
+- **core**: la zona de la plantilla (antes «plataforma»): `api/core/`, `web/src/core/`, `api-spec/core.yaml` y `docs/core/`. Una app no la edita; llega por sincronización. Su contraparte es **app** (lo de cada app) y **gen** (lo generado). Nombre decidido en [ADR 0006](adr/0006-zona-core.md).
 - **Módulo**: unidad de negocio autocontenida en `api/core/<m>` (salvo `kit`); solo expone `module.go`.
 - **Dominio**: tipos y reglas de negocio del módulo, sin dependencias de infraestructura.
 - **Caso de uso**: operación de la aplicación en `usecases/`; orquesta dominio y puertos.

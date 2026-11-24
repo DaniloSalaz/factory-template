@@ -6,7 +6,7 @@ tenancy, sección 7.3). Todos están aplicados en las tablas de ejemplo de
 de estructura y los tests de comportamiento de `core/kit/db`.
 
 El test de estructura (reglas en `api/tests/db/rules.go`, aplicadas a
-las migraciones de plataforma y de app por `api/tests/db/schema_test.go`) comprueba en
+las migraciones de core y de app por `api/tests/db/schema_test.go`) comprueba en
 cada tabla con `tenant_id`: RLS activo y forzado, `tenant_isolation`, el alcance declarado, las
 claves foráneas compuestas hacia otras tablas con `tenant_id` y, en las tablas de acceso,
 sus políticas de escritura. Cada mensaje dice qué falta y cómo añadirlo.

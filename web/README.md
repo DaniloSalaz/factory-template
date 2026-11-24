@@ -13,7 +13,7 @@ npm run build      # routes, luego tsc -b, luego vite build
 npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.yaml, y luego routes
 ```
 
-## Plataforma y app
+## Core y app
 
 |                | `src/core/`                                                                                                                       | `src/app/`                                                                                                                                                                                             |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -22,10 +22,10 @@ npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.y
 | Hoy            | Lo del paso 8a y, del 8b, miembros, invitaciones, `/invite` y el renombrado del tenant                                                | Una funcionalidad de ejemplo (`features/example/`, con su ruta `routes/example.tsx`), su entrada en la navegación (`registry.ts`), sus textos (`texts.ts`), el tema (`theme.css`) y el logo (`brand/`) |
 
 - **Registro**: `src/app/registry.ts` exporta el nombre de la app, su logo y las entradas
-  de la navegación del tenant (con el permiso que las muestra, si lo hay). La plataforma lo
-  lee solo en `src/core/app-registry.ts`: es el único fichero de `platform` que importa
+  de la navegación del tenant (con el permiso que las muestra, si lo hay). El core lo
+  lee solo en `src/core/app-registry.ts`: es el único fichero de `core` que importa
   `app`, y `src/core/__tests__/architecture.test.ts` lo comprueba (`[core-imports-app]`).
-- **Rutas**: las de la plataforma están listadas en `src/core/routes.ts` (rutas
+- **Rutas**: las del core están listadas en `src/core/routes.ts` (rutas
   virtuales de TanStack Router, cada una en su fichero). Las de la app son rutas por
   fichero bajo `src/app/routes/` y se montan dentro de `/t/$tenantId`: `example.tsx` es
   `/t/$tenantId/example`, con el layout del tenant (navegación y `GET /tenant` ya
@@ -41,16 +41,16 @@ npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.y
   carpetas que necesite. Una funcionalidad no importa nada de otra: lo que compartan va en
   `src/app/shared/` (`[feature-boundaries]`, en el mismo test de arquitectura). El ejemplo
   es `features/example/` (`pages/ExamplePage.tsx` y su test).
-- **Pantallas del tenant de la plataforma**: `/t/$tenantId/members` (`members:read`) e
+- **Pantallas del tenant del core**: `/t/$tenantId/members` (`members:read`) e
   `/t/$tenantId/invitations` (`members:invite`) van en la navegación del tenant antes que
   las de la app. Los roles que se pueden asignar u ofrecer salen de `GET /tenant/roles`
   (`can_assign`, `can_offer`), nunca de una lista escrita en el front.
 - **Marca**: `src/app/theme.css` (colores, radios y tipografía de shadcn como variables
   CSS; tema neutro por defecto) y `src/app/brand/`. Cambiar de marca es sustituir esos dos
-  sitios, sin tocar `platform`. `src/core/styles.css` solo conecta esas variables con
+  sitios, sin tocar `core`. `src/core/styles.css` solo conecta esas variables con
   Tailwind.
 - **Composición**: `src/router.ts` y `src/main.tsx` (fuera de las dos carpetas) unen la
-  plataforma, el árbol de rutas y los estilos, como `main.go` en el backend.
+  core, el árbol de rutas y los estilos, como `main.go` en el backend.
 - Un componente nuevo de shadcn (`npx shadcn@4.23.0 add <x>`) va a `src/core/ui`
   (`components.json`).
 
@@ -71,7 +71,7 @@ npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.y
 - **Errores en un solo sitio** (`core/errors/handle.ts`), conectado a la caché de
   TanStack Query (`core/api/query-client.ts`). Ningún componente decide estos casos:
 
-  | Respuesta                          | Qué hace la plataforma                                           |
+  | Respuesta                          | Qué hace el core                                           |
   | ---------------------------------- | ---------------------------------------------------------------- |
   | `401`                              | `/login?return_to=<ruta actual>`, nunca con el fragmento         |
   | `403 auth.mfa_required`            | `/account/mfa/verify` (challenge + código) y vuelta a la ruta    |
@@ -113,14 +113,14 @@ npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.y
 ## Tests
 
 - **Unitarios** (`src/**/__tests__/**/*.test.ts(x)`, Vitest + Testing Library, jsdom): los de
-  la plataforma en `src/core/__tests__/`, con las subcarpetas del código que prueban; los
+  el core en `src/core/__tests__/`, con las subcarpetas del código que prueban; los
   de una funcionalidad, en su `__tests__/`; siempre con imports `@/`. Cubren el manejo de errores
   por código (incluidos todos los de miembros e invitaciones), `X-Tenant-ID` según el
   contrato, último tenant, caché por tenant, verificación de MFA, el flujo de `/invite`
   (fragmento quitado antes de crear el router, token nunca en `return_to` ni en la URL,
   `sessionStorage` vacío tras aceptar o fallar) y las reglas de arquitectura (`[core-imports-app]` y `[feature-boundaries]`). Usan `tsconfig.test.json`, que añade los tipos de Node
   sin dárselos al código del navegador.
-- **Playwright**: los recorridos de la plataforma en `e2e/` y los de la app en `e2e/app/`
+- **Playwright**: los recorridos del core en `e2e/` y los de la app en `e2e/app/`
   (con los mismos `e2e/db.ts` y `e2e/fixtures.ts`), contra la API real local: Postgres arrancado y migrado
   (`mise run up && mise run migrate`) y la API en marcha (`mise run dev`); Playwright arranca
   Vite si no está. Las sesiones se siembran por SQL como en `docs/core/runbooks/auth.md`, sin

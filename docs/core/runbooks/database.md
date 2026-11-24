@@ -62,7 +62,7 @@ su migración dice quién la usa y cómo. En la misma migración que crea la tab
    (`GRANT UPDATE (col, …)`), nunca de toda la tabla. Añade los permisos nuevos a
    `api/tests/db/testdata/runtime_privileges.golden`, a mano, y
    justifícalos en el PR: es una decisión de seguridad, y el test falla mostrando el diff
-   hasta que el fichero coincide. La foto cubre los permisos de plataforma y de app: la
+   hasta que el fichero coincide. La foto cubre los permisos de core y de app: la
    compara `TestSchema` sobre una base de datos con los dos conjuntos de migraciones.
 3. `GRANT` a `app_admin` si los comandos de administración la tocan.
 4. Si una función `SECURITY DEFINER` la usa, `GRANT` a `app_security` de lo justo.
@@ -78,13 +78,13 @@ de la app:
 
 | Conjunto | Carpeta | Tabla de versiones | Quién lo cambia |
 |---|---|---|---|
-| plataforma | `api/core/migrations/` | `goose_db_version` (la de siempre de goose) | la plantilla |
+| core | `api/core/migrations/` | `goose_db_version` (la de siempre de goose) | la plantilla |
 | app | `api/app/migrations/` | `goose_app_db_version` | cada app |
 
 Los dos van **dentro del binario** (`go:embed`). `api migrate` aplica, con
 `MIGRATIONS_DATABASE_URL` (`app_owner`) y nada más de la configuración de la API, primero
-las pendientes de plataforma y después las de app, y registra en el log qué versiones
-aplicó de cada conjunto (`set`). Si plataforma falla, app no se ejecuta; no arranca el
+las pendientes de core y después las de app, y registra en el log qué versiones
+aplicó de cada conjunto (`set`). Si core falla, app no se ejecuta; no arranca el
 servidor y sale con código distinto de 0 si algo falla. `mise run migrate` ejecuta lo
 mismo en local (`go run . migrate`). La API de migración es `db.Migrate` de
 `api/core/kit/db`, que recibe la lista ordenada de conjuntos (`db.MigrationSet`).
@@ -93,17 +93,17 @@ Una nueva:
 
 ```sh
 mise run migration:new <nombre>            # de la app, en api/app/migrations
-mise run migration:new:core <nombre>   # de plataforma: solo en factory-template
+mise run migration:new:core <nombre>   # de core: solo en factory-template
 ```
 
 Reglas:
 
-- Una migración de app puede usar tablas, funciones y tipos de plataforma; una de
-  plataforma **nunca** referencia nada de la app. En una base de datos nueva las de
-  plataforma se aplican antes, sin las de app: `TestCoreMigrationsApplyAlone`
+- Una migración de app puede usar tablas, funciones y tipos de core; una de
+  core **nunca** referencia nada de la app. En una base de datos nueva las de
+  core se aplican antes, sin las de app: `TestCoreMigrationsApplyAlone`
   (`api/core/migrations`) lo comprueba y falla con `[core-migrations-alone]`.
   No lo ve todo: Postgres no resuelve los nombres del cuerpo de una función `plpgsql`
-  hasta que se ejecuta, así que una función de plataforma que nombra una tabla de app
+  hasta que se ejecuta, así que una función de core que nombra una tabla de app
   pasa el test. Eso se revisa en el PR.
 - Una migración fusionada en `main` es inmutable; los cambios van en una nueva.
 - Sin migraciones de relleno: el conjunto de app vacío (como en la plantilla) aplica
@@ -113,8 +113,8 @@ Reglas:
   equivocada.
 
 Base de datos existente (creada antes de separar los conjuntos): no hay nada que hacer.
-`goose_db_version` sigue siendo la tabla de plataforma, con las mismas versiones, y
-`api migrate` dice que no hay migraciones de plataforma pendientes. La primera vez crea
+`goose_db_version` sigue siendo la tabla de core, con las mismas versiones, y
+`api migrate` dice que no hay migraciones de core pendientes. La primera vez crea
 `goose_app_db_version` con solo la fila `version_id = 0` que goose pone en toda tabla
 nueva, y aplica cero de app.
 
@@ -122,10 +122,10 @@ Esto vale para una base de datos cuya secuencia única solo tenía las migracion
 plantilla. Una app creada antes de la separación que añadió migraciones propias a
 `api/migrations/` (por ejemplo `00007_x.sql`) las tiene registradas en
 `goose_db_version`. Si solo las mueve, goose reaplicaría las suyas en el conjunto de app
-y se saltaría sin avisar las de plataforma con esos números. Hay que traspasarlas, una
+y se saltaría sin avisar las de core con esos números. Hay que traspasarlas, una
 vez y antes de desplegar el binario nuevo:
 
-1. Sea `N` la última versión de plataforma que tenía la app (6 en esta plantilla). En el
+1. Sea `N` la última versión de core que tenía la app (6 en esta plantilla). En el
    repo, mueve cada migración propia de `api/migrations/` a `api/app/migrations/` con el
    número menos `N` (`00007_x.sql` → `00001_x.sql`), sin cambiar su contenido.
 2. En cada entorno, como `app_owner` y en una transacción, crea la tabla de app con la
@@ -149,17 +149,17 @@ vez y antes de desplegar el binario nuevo:
    ```
 
    (con `psql -v ON_ERROR_STOP=1 -v n=6 …`).
-3. Despliega: `api migrate` encuentra las de app ya aplicadas y aplica las de plataforma
+3. Despliega: `api migrate` encuentra las de app ya aplicadas y aplica las de core
    que falten, aunque tengan los números que antes eran de la app.
 
 El procedimiento se probó sobre una base de datos con una `00007` propia de la app y una
-`00007` nueva de plataforma.
+`00007` nueva de core.
 
 Tests: `testkit.New`/`testkit.Start` (`api/tests/testkit`) reciben los conjuntos a aplicar.
-`migrationsets.All()` (`api/tests/testkit/migrationsets`) devuelve los de plataforma y app en
+`migrationsets.All()` (`api/tests/testkit/migrationsets`) devuelve los de core y app en
 el orden de `api migrate`; con ellos corren los tests de `api/tests/db`: las reglas de RLS,
 las funciones `SECURITY DEFINER`, los miembros, las invitaciones y la foto de permisos. Los
-módulos de plataforma pasan `migrations.Set()` de `api/core/migrations`, y
+módulos de core pasan `migrations.Set()` de `api/core/migrations`, y
 `TestCoreMigrationsApplyAlone` (`api/tests/integration/migrations`) comprueba que se
 aplica sola. Los tests de `core/kit`, que no pueden importarlo (`[core-no-modules]`),
 pasan `testkit.CoreFromSource()`, el mismo conjunto leído del disco (un test comprueba
