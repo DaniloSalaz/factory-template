@@ -85,19 +85,22 @@ otra estrategia para todo el merge: resolvería en silencio a favor de un lado.
 
 - **En un fichero [C]** (`mise.toml`, `README.md`, `compose.yaml`, `.env.example`,
   `api/go.mod`, `api/sqlc.yaml`, `web/package.json`…): conserva los dos cambios. Ejemplo,
-  `mise.toml` cuando la plantilla sube la versión de una herramienta y la app la había
-  cambiado en la misma línea:
+  `mise.toml` cuando la plantilla cambia un valor por defecto que la app también había
+  cambiado, y la app había añadido una variable propia justo debajo:
 
   ```text
   <<<<<<< HEAD
-  node = "26.14.0"          # la app
+  LOG_LEVEL = "warn"
+  APP_DEMO_FLAG = "on"
   =======
-  node = "26.13.2"          # la plantilla
+  LOG_LEVEL = "info"
   >>>>>>> refs/remotes/template/main
   ```
 
-  Decide qué valor vale para los dos (normalmente el más reciente, o el de la plantilla
-  si el cambio de la app era provisional), borra los marcadores y deja una sola línea. Si
+  Decide qué valor vale para la línea que cambiaron los dos (el de la plantilla salvo que
+  la app tenga un motivo), conserva lo que solo añadió la app (`APP_DEMO_FLAG`) y borra los
+  marcadores. Resuelve `mise.toml` antes que nada: con marcadores dentro, ninguna tarea de
+  `mise` arranca. Si
   el cambio de la app es algo que la plantilla también debería tener, apúntalo en
   `FACTORY_NOTES.md` («Candidatos a subir al core»). En `api/go.mod` y
   `web/package-lock.json` resuelve el manifiesto y regenera el resto (`cd api; and go mod tidy`,
