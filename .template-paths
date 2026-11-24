@@ -1,0 +1,55 @@
+# Rutas de core ([P] en docs/core/estructura.md): una app nunca las edita; cambian en
+# factory-template y llegan con `mise run template:sync`. `mise run template:check` falla
+# en la app si alguna difiere del commit de .template-version (ADR 0007).
+#
+# Una ruta o glob por línea, relativa a la raíz. Terminada en `/`, la carpeta entera; `*`
+# no cruza `/` y `**` sí; `!` delante excluye (lo [A] dentro de una carpeta [P]). Lo [C],
+# lo [A] y lo [G] no entra.
+
+# Raíz
+AGENTS.md
+CLAUDE.md
+CHANGELOG.md
+.template-paths
+
+# Backend: composition root, build, lint, tests no unitarios y herramientas
+api/*.go
+api/Dockerfile
+api/.dockerignore
+api/.golangci.yml
+api/core/
+api/tests/
+api/tools/
+
+# Contrato
+api-spec/core.yaml
+
+# Frontend
+web/README.md
+web/vite.config.ts
+web/vitest.config.ts
+web/tsconfig*.json
+web/biome.json
+web/components.json
+web/playwright.config.ts
+web/orval.config.ts
+web/tsr.config.json
+web/index.html
+web/.gitignore
+web/.env.development
+web/.env.production
+web/scripts/
+web/e2e/
+!web/e2e/app/
+web/src/main.tsx
+web/src/router.ts
+web/src/test-setup.ts
+web/src/vite-env.d.ts
+web/src/core/
+
+# Documentación, infraestructura, CI y herramientas del editor y de los agentes
+docs/core/
+infra/
+.github/
+.claude/skills/
+.vscode/settings.json

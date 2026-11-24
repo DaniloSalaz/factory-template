@@ -17,5 +17,6 @@ Punto de entrada de cada proyecto nuevo. Se trabaja en este orden; cada paso par
 | [`glossary.md`](glossary.md) | Términos del negocio y su significado |
 | [`modules/`](modules/README.md) | Diseño de cada módulo |
 | [`adr/`](adr/README.md) | Decisiones propias de la app |
+| [`FACTORY_NOTES.md`](../../FACTORY_NOTES.md) | Fricciones con el core, candidatos a subir a la plantilla y lo ya resuelto |
 
 Lo de la plantilla (identidad, tenants, base de datos, despliegue) está en [`docs/core/`](../core/estructura.md).
