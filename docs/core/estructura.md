@@ -10,7 +10,7 @@ Idea única: **cada zona tiene tres partes, `core/` (de la plantilla), `app/` (d
 factory-template/
 │
 ├── api/                                  BACKEND (Go)
-│   ├── go.mod                            [P] module chaskicode.dev/saas (igual en todas las apps, nunca se renombra)
+│   ├── go.mod                            [C] module chaskicode.dev/saas (igual en todas las apps, nunca se renombra)
 │   ├── go.sum                            [G]
 │   ├── main.go                           [P] composition root: config, BD, módulos, servidor
 │   ├── migrate.go                        [P] `api migrate`: core primero, app después
@@ -152,19 +152,21 @@ factory-template/
 │   └── deploy/                               Kamal (aún no)
 ├── .github/                              [P]
 │   ├── workflows/                            ci.yml  release.yml
-│   ├── scripts/                              changes.sh
+│   ├── scripts/                              changes.sh, template-{init,sync,check}.sh
 │   └── CODEOWNERS  pull_request_template.md
 ├── .claude/skills/                       [P] (fase 2.3)
 ├── .vscode/settings.json                 [P] anidado de ficheros (_test.go bajo su fichero)
 │
 ├── AGENTS.md                             [P] reglas para cualquier agente
 ├── APP.md                                [A] qué es esta app y sus reglas
+├── FACTORY_NOTES.md                      [A] fricciones con el core y candidatos a subir a la plantilla
+├── CHANGELOG.md                          [P] versiones de la plantilla y cómo migrar a cada una
 ├── CLAUDE.md                             [P] @AGENTS.md + @APP.md
 ├── README.md  mise.toml                  [C]
 ├── compose.yaml  .env.example            [C]
 ├── secrets.env  .sops.yaml               [A]
-├── .template-paths                       [P] rutas de core que vigila el CI de la app (fase 2.1)
-├── .template-version                     [A] commit de la plantilla del último sync (fase 2.1)
+├── .template-paths                       [P] rutas de core que vigila el CI de la app (`template:check`)
+├── .template-version                     [A] commit de la plantilla del último sync (solo en las apps)
 ├── renovate.json  .editorconfig
 └── .gitignore  LICENSE
 ```
@@ -214,7 +216,7 @@ Todas fallan en `mise run ci` con un mensaje que dice qué regla es y cómo arre
 - **Un único punto de enganche por lado:** `api/app/app.go` (módulos y roles) y `web/src/app/registry.ts` (nombre, logo, menú). El core no importa nada más de `app/`, comprobado por tests de arquitectura.
 - **Mismo nombre de funcionalidad en back y front:** `api/app/modules/<x>` ↔ `web/src/app/features/<x>` ↔ `docs/app/modules/<x>.md`.
 - **Instrucciones en capas:** `AGENTS.md` de la raíz (lo que necesita cualquier sesión), `AGENTS.md` de carpeta para reglas internas (`core/identity`, `core/kit`, `core/kit/db`), cada uno con su `CLAUDE.md` (`@AGENTS.md`), y `APP.md` para lo propio de la app.
-- **Sincronización con la plantilla:** la app se crea clonando la plantilla (no con el botón "Use this template" de GitHub, que crea una historia sin ancestro común) y recibe mejoras con un remoto `template` y `git merge`. Que el CI de la app falle si cambian las rutas de `.template-paths` respecto a `.template-version` es de la fase 2.1.
+- **Sincronización con la plantilla** ([ADR 0007](adr/0007-sincronizacion-con-apps.md), [runbook](runbooks/template-sync.md)): la app se crea clonando la plantilla (no con el botón "Use this template" de GitHub, que crea una historia sin ancestro común) y recibe mejoras con un remoto `template` y `git merge` (`mise run template:init`, `template:sync`). `.template-paths` lista las rutas [P]; `mise run template:check`, en el CI de la app, falla si alguna difiere del commit de `.template-version`. `api/go.mod` es [C] para que una app pueda añadir dependencias de Go.
 - **Generador de módulos (fase 2):** `api/tools/genmodule` (`mise run module:new name=…`) sustituye al antiguo `tools/gen-module/` de la raíz, que se borró en el PR 8.
 - **Módulos por empresa (aún no construido):** cada módulo tiene una clave única (su `tag` del contrato) usada igual en back, front y BD, para poder añadir más adelante una tabla `tenant_modules` y un middleware que responda `403 module.disabled`, sin tocar los módulos.
 - **De alora** se conservan la organización por funcionalidad, la carpeta de cada funcionalidad del front (`pages/`, `components/`, `hooks/`, `__tests__/`), las convenciones de nombres y la paginación estándar. No se traen las clases base genéricas (`BaseService`), el TypeScript no estricto, los DTOs duplicados a mano ni los ficheros `.backup`.
