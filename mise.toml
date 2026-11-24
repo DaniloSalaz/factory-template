@@ -253,9 +253,22 @@ description = "Scan the API image; fail on HIGH or CRITICAL"
 depends = ["docker:build"]
 run = "trivy image --quiet --severity HIGH,CRITICAL --exit-code 1 factory-template-api:ci"
 
+[tasks."template:init"]
+description = "In a fresh clone of the template: origin becomes the `template` remote and .template-version records the commit"
+run = ".github/scripts/template-init.sh"
+
+[tasks."template:sync"]
+description = "On a branch with a clean tree: merge template/main, update .template-version and regenerate (conflicts by hand)"
+run = ".github/scripts/template-sync.sh"
+
+[tasks."template:check"]
+description = "Fail if a path of .template-paths differs from the template commit in .template-version (passes in the template)"
+run = ".github/scripts/template-check.sh"
+
 [tasks.ci]
 description = "Run locally what CI runs (needs Docker for integration tests)"
 run = [
+  { task = "template:check" },
   { task = "lint:go" },
   { task = "lint:actions" },
   { task = "arch" },

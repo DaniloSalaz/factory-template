@@ -157,6 +157,26 @@ jobs:
           install_args: gitleaks
       - run: mise run security:gitleaks
 
+  # Always runs: docs/core/ and other core paths count as documentation for `changes`.
+  # Passes in the template; in an app, fails if a core path (.template-paths) differs from
+  # the template commit in .template-version. See docs/core/runbooks/template-sync.md.
+  template:
+    name: template
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the commit of .template-version is somewhere in the history
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
+        with:
+          version: ${{ env.MISE_VERSION }}
+          install: false # the check only needs git
+      - run: mise run template:check
+        env:
+          MISE_TASK_RUN_AUTO_INSTALL: "false"
+
   web:
     name: web
     needs: changes
@@ -306,11 +326,11 @@ jobs:
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [changes, gitleaks, lint, test, generate, security, web, e2e, docker]
+    needs: [changes, gitleaks, template, lint, test, generate, security, web, e2e, docker]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      # `changes` and `gitleaks` must succeed. The rest must succeed, or be skipped because
+      # `changes`, `gitleaks` and `template` must succeed. The rest must succeed, or be skipped because
       # `changes` said the change is documentation only.
       - name: Require every job to succeed or be skipped for documentation
         env:
@@ -324,8 +344,8 @@ jobs:
           while read -r job result; do
             echo "$job: $result"
             case "$job:$result" in
-              changes:success | gitleaks:success) ok=$((ok + 1)) ;;
-              changes:* | gitleaks:*) bad=1 ;;
+              changes:success | gitleaks:success | template:success) ok=$((ok + 1)) ;;
+              changes:* | gitleaks:* | template:*) bad=1 ;;
               *:success) ;;
               *:skipped) [ "$CODE" = "false" ] || bad=1 ;;
               *) bad=1 ;;
@@ -335,7 +355,7 @@ jobs:
               exit 1
             fi
           done <<< "$results"
-          if [ "$ok" -ne 2 ]; then
-            echo "::error::The results of 'changes' and 'gitleaks' are missing."
+          if [ "$ok" -ne 3 ]; then
+            echo "::error::The results of 'changes', 'gitleaks' or 'template' are missing."
             exit 1
           fi

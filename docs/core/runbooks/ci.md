@@ -18,11 +18,12 @@ los jobs pesados se saltan (ver [Cambios que solo tocan documentación](#cambios
 | `generate` | Une el contrato (`api-spec/core.yaml` + `api-spec/app.yaml` → `api-spec/openapi.gen.yaml`, con `api/tools/specmerge`), regenera sqlc, oapi-codegen (un paquete por `codegen.yaml` de módulo), orval y la seguridad por ruta del front (`web/src/gen/routeSecurity.ts`) y falla si cambia algo en `api/gen`, `web/src/gen` o `api-spec/openapi.gen.yaml` (`gen/openapi/` se regenera desde cero: el paquete de un módulo sin `codegen.yaml` aparece como borrado) | `mise run generate:check` |
 | `security` | govulncheck y `trivy fs` (dependencias y Dockerfile), fallando con HIGH o CRITICAL | `mise run security:govulncheck`, `mise run security:trivy` |
 | `gitleaks` | gitleaks sobre todo el historial. Se ejecuta siempre, también si solo cambia documentación | `mise run security:gitleaks` |
+| `template` | En una app, que ninguna ruta de `.template-paths` difiera del commit de la plantilla de `.template-version` (necesita `fetch-depth: 0`); en la plantilla, sin `.template-version`, pasa sin comprobar nada. Se ejecuta siempre: `docs/core/` es documentación para `changes` y también es core ([template-sync](template-sync.md)) | `mise run template:check` |
 | `web` | `npm ci`, Biome, `npm run build` (genera `web/src/gen/routeTree.gen.ts` con la CLI de TanStack Router, luego `tsc -b` y `vite build`; falla si el árbol no coincide con el commit) y los tests unitarios con Vitest, incluido el de arquitectura del front | `mise run web:check`, `mise run web:test` |
 | `e2e` | El recorrido de Playwright (`web/e2e`) contra la API real: Postgres 18 y Mailpit (el SMTP de desarrollo de `mise.toml`) como servicios, el bootstrap de `infra/db`, `mise run migrate`, la API compilada y arrancada con una `WORKOS_API_KEY` ficticia, y Vite (lo arranca Playwright). Sube las capturas (`web/e2e-screenshots/`) y las trazas (`web/test-results/`, todas en CI) como artefacto `e2e-screenshots-and-traces`; si falla, también el log de la API (`e2e-api-log`) | `mise run up && mise run migrate`, `mise run dev` y `mise run web:e2e` |
 | `docker` | Construye la imagen de la API (sin publicarla) y la escanea con Trivy | `mise run docker:scan` |
 | `release` (otro workflow) | Tras un push a `main` con el CI en verde y que no sea solo documentación: imagen multiplataforma en GHCR, atestaciones y Trivy de la imagen publicada (`docs/core/runbooks/release.md`) | `mise run docker:build`, `mise run docker:scan` |
-| `ci-ok` | Depende de todos los anteriores. Exige `success` en `changes` y `gitleaks`, y en los demás `success` o, solo con `code=false`, `skipped`. Cualquier fallo o cancelación lo hace fallar | — |
+| `ci-ok` | Depende de todos los anteriores. Exige `success` en `changes`, `gitleaks` y `template`, y en los demás `success` o, solo con `code=false`, `skipped`. Cualquier fallo o cancelación lo hace fallar | — |
 
 El job `e2e` no llama nunca a WorkOS: el arranque de la API solo comprueba que
 `WORKOS_API_KEY` existe (la usa para derivar la clave que sella los intentos de login y en
@@ -30,7 +31,7 @@ las llamadas de login y MFA), las sesiones se siembran por SQL (`web/e2e/db.ts`,
 entra en el contenedor de servicio con `docker exec`, `E2E_PG_CONTAINER`) y las pantallas de
 MFA usan respuestas simuladas. Si un test nuevo necesitara WorkOS, no cabe en este job.
 
-`mise run ci` ejecuta en orden: `lint:go`, `lint:actions`, `arch`, `test`, `test:integration`, `generate:check`,
+`mise run ci` ejecuta en orden: `template:check`, `lint:go`, `lint:actions`, `arch`, `test`, `test:integration`, `generate:check`,
 `security:govulncheck`, `security:gitleaks`, `web:check` y `web:test`. El job `e2e` no está
 en `ci` porque necesita Postgres y la API en marcha. Los escaneos de Trivy (`security:trivy`
 y `docker:scan`) no están en `ci` porque descargan su base de datos y tardan más; ejecútalos con
@@ -58,7 +59,8 @@ Ante cualquier duda, `code=true`: `before` todo ceros (rama nueva), un `git diff
 rango y qué fichero o motivo lo decidió.
 
 Con `code=false` se saltan `lint`, `test`, `generate`, `security` (govulncheck y trivy), `web`,
-`e2e` y `docker`. `gitleaks` se ejecuta siempre: un secreto también puede ir en un `.md`.
+`e2e` y `docker`. `gitleaks` se ejecuta siempre: un secreto también puede ir en un `.md`; y
+`template` también, porque `docs/core/` es core aunque sea documentación.
 
 | Caso | `ci-ok` |
 |---|---|
@@ -67,7 +69,7 @@ Con `code=false` se saltan `lint`, `test`, `generate`, `security` (govulncheck y
 | Solo `.github/` | ✅ si todo pasa (se ejecuta todo) |
 | Falla `changes` | ❌ (los pesados se saltan sin `code=false`) |
 | Falla un job pesado con código | ❌ |
-| Falla `gitleaks` | ❌ |
+| Falla `gitleaks` o `template` | ❌ |
 | Un job cancelado, o saltado con `code=true` | ❌ |
 
 `release` no publica imagen si el push a `main` solo cambió documentación. No recalcula el
@@ -125,6 +127,9 @@ que usan código no exportado, son de `package main` o importan el interior de s
 
 - **lint / arch**: el mensaje empieza por el nombre de la regla y dice cómo arreglarlo. Se corrige
   el código; un `//nolint` solo con un comentario que explique por qué.
+- **template** (solo en una app): lista los ficheros de core que difieren de la plantilla. Se
+  revierten (`git restore --source=$(cat .template-version) -- <fichero>`) y el cambio se hace
+  en factory-template ([template-sync](template-sync.md#si-el-core-necesita-un-cambio)).
 - **generate**: ejecuta `mise run generate` y commitea `api/gen` y `web/src/gen`.
 - **web** con `routeTree.gen.ts`: ejecuta `npm run build` en `web/` y commitea `web/src/gen/routeTree.gen.ts`.
   En local, `generate:check` también falla si has regenerado pero aún no has hecho `git add`.
