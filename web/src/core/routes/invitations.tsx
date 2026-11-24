@@ -1,15 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useId, useState } from "react";
-import {
-  getListInvitationsQueryKey,
-  type Invitation,
-  listInvitations,
-  useCreateInvitation,
-  useListTenantRoles,
-  useResendInvitation,
-  useRevokeInvitation,
-} from "@/gen/api";
 import { useCursorPages } from "@/core/api/use-cursor-pages";
 import { ErrorText } from "@/core/components/ErrorText";
 import { Page } from "@/core/components/Page";
@@ -22,6 +13,15 @@ import { Button } from "@/core/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/core/ui/card";
 import { Input } from "@/core/ui/input";
 import { Label } from "@/core/ui/label";
+import {
+  getListInvitationsQueryKey,
+  type Invitation,
+  listInvitations,
+  useCreateInvitation,
+  useListTenantRoles,
+  useResendInvitation,
+  useRevokeInvitation,
+} from "@/gen/api";
 
 // The tenant's invitations (auth-y-tenancy §5.6): pending and expired ones by cursor, inviting
 // with a role GET /tenant/roles says the caller may offer, resending (a new token and

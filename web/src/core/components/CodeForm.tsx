@@ -1,9 +1,9 @@
 import { useId, useState } from "react";
-import { useVerifyTOTP } from "@/gen/api";
 import { texts } from "@/core/texts";
 import { Button } from "@/core/ui/button";
 import { Input } from "@/core/ui/input";
 import { Label } from "@/core/ui/label";
+import { useVerifyTOTP } from "@/gen/api";
 import { ErrorText } from "./ErrorText";
 
 /**

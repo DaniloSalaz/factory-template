@@ -1,9 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { useCreateMFAChallenge, useGetMe } from "@/gen/api";
 import { paths } from "@/core/paths";
 import { texts } from "@/core/texts";
 import { buttonVariants } from "@/core/ui/button";
+import { useCreateMFAChallenge, useGetMe } from "@/gen/api";
 import { CodeForm } from "./CodeForm";
 import { ErrorText } from "./ErrorText";
 

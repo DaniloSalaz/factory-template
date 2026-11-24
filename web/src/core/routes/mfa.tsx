@@ -1,6 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { getGetMeQueryKey, type MFAFactor, useGetMe, useRemoveTOTP } from "@/gen/api";
 import { useCore } from "@/core/bootstrap";
 import { ErrorText } from "@/core/components/ErrorText";
 import { Page } from "@/core/components/Page";
@@ -9,6 +8,7 @@ import { formatDateTime, texts } from "@/core/texts";
 import { Badge } from "@/core/ui/badge";
 import { Button, buttonVariants } from "@/core/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/core/ui/card";
+import { getGetMeQueryKey, type MFAFactor, useGetMe, useRemoveTOTP } from "@/gen/api";
 
 export const Route = createFileRoute("/_shell/account/mfa/")({
   component: Mfa,

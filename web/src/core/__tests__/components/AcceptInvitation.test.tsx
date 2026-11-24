@@ -2,12 +2,12 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Me } from "@/gen/api";
 import { createQueryClient } from "@/core/api/query-client";
 import { AcceptInvitation } from "@/core/components/AcceptInvitation";
 import { actionFor } from "@/core/errors/handle";
 import { inviteTokenKey } from "@/core/invite/invite-token";
 import { texts } from "@/core/texts";
+import type { Me } from "@/gen/api";
 
 const me: Me = {
   user: { id: "u", email: "ana@example.test", display_name: "Ana" },

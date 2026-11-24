@@ -1,6 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
-import { getGetMeQueryKey, type Membership, useCreateTenant, useGetMe } from "@/gen/api";
 import { useCore } from "@/core/bootstrap";
 import { ErrorText } from "@/core/components/ErrorText";
 import { Page } from "@/core/components/Page";
@@ -12,6 +11,7 @@ import { Button } from "@/core/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/core/ui/card";
 import { Input } from "@/core/ui/input";
 import { Label } from "@/core/ui/label";
+import { getGetMeQueryKey, type Membership, useCreateTenant, useGetMe } from "@/gen/api";
 
 export const Route = createFileRoute("/_shell/tenants")({
   validateSearch: (search: Record<string, unknown>): { notice?: "tenant_forbidden" } =>

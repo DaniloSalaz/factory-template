@@ -16,10 +16,10 @@ npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.y
 ## Core y app
 
 |                | `src/core/`                                                                                                                       | `src/app/`                                                                                                                                                                                             |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Qué es         | Código de la plantilla: shell y layout, login, tenant, MFA, cuenta, manejo de errores, fetcher, componentes de shadcn (`core/ui`) | Lo propio de cada app                                                                                                                                                                                  |
-| Quién lo edita | La plantilla. Las apps **no** lo tocan                                                                                                | Cada app                                                                                                                                                                                               |
-| Hoy            | Lo del paso 8a y, del 8b, miembros, invitaciones, `/invite` y el renombrado del tenant                                                | Una funcionalidad de ejemplo (`features/example/`, con su ruta `routes/example.tsx`), su entrada en la navegación (`registry.ts`), sus textos (`texts.ts`), el tema (`theme.css`) y el logo (`brand/`) |
+| Quién lo edita | La plantilla. Las apps **no** lo tocan                                                                                            | Cada app                                                                                                                                                                                               |
+| Hoy            | Lo del paso 8a y, del 8b, miembros, invitaciones, `/invite` y el renombrado del tenant                                            | Una funcionalidad de ejemplo (`features/example/`, con su ruta `routes/example.tsx`), su entrada en la navegación (`registry.ts`), sus textos (`texts.ts`), el tema (`theme.css`) y el logo (`brand/`) |
 
 - **Registro**: `src/app/registry.ts` exporta el nombre de la app, su logo y las entradas
   de la navegación del tenant (con el permiso que las muestra, si lo hay). El core lo
@@ -71,7 +71,7 @@ npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.y
 - **Errores en un solo sitio** (`core/errors/handle.ts`), conectado a la caché de
   TanStack Query (`core/api/query-client.ts`). Ningún componente decide estos casos:
 
-  | Respuesta                          | Qué hace el core                                           |
+  | Respuesta                          | Qué hace el core                                                 |
   | ---------------------------------- | ---------------------------------------------------------------- |
   | `401`                              | `/login?return_to=<ruta actual>`, nunca con el fragmento         |
   | `403 auth.mfa_required`            | `/account/mfa/verify` (challenge + código) y vuelta a la ruta    |

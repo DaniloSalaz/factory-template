@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
-import { useCreateMFAChallenge, useEnrollTOTP } from "@/gen/api";
 import { texts } from "@/core/texts";
 import { Button } from "@/core/ui/button";
+import { useCreateMFAChallenge, useEnrollTOTP } from "@/gen/api";
 import { CodeForm } from "./CodeForm";
 import { ErrorText } from "./ErrorText";
 

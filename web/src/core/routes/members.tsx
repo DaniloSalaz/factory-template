@@ -1,6 +1,15 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { useCursorPages } from "@/core/api/use-cursor-pages";
+import { useCore } from "@/core/bootstrap";
+import { ErrorText } from "@/core/components/ErrorText";
+import { Page } from "@/core/components/Page";
+import { RoleSelect } from "@/core/components/RoleSelect";
+import { can, useCurrentTenant, useRouteTenantId } from "@/core/tenant/use-tenant";
+import { formatDateTime, texts } from "@/core/texts";
+import { Badge } from "@/core/ui/badge";
+import { Button } from "@/core/ui/button";
 import {
   getGetMeQueryKey,
   getListMembersQueryKey,
@@ -12,15 +21,6 @@ import {
   useListTenantRoles,
   useRemoveMember,
 } from "@/gen/api";
-import { useCursorPages } from "@/core/api/use-cursor-pages";
-import { useCore } from "@/core/bootstrap";
-import { ErrorText } from "@/core/components/ErrorText";
-import { Page } from "@/core/components/Page";
-import { RoleSelect } from "@/core/components/RoleSelect";
-import { can, useCurrentTenant, useRouteTenantId } from "@/core/tenant/use-tenant";
-import { formatDateTime, texts } from "@/core/texts";
-import { Badge } from "@/core/ui/badge";
-import { Button } from "@/core/ui/button";
 
 // The members of the tenant (auth-y-tenancy §5.7): GET /tenant/members by cursor, the role change
 // limited to the roles GET /tenant/roles says the caller may assign, removal and leaving.
