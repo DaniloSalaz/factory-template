@@ -9,6 +9,8 @@ Lo propio de esta app. Se carga junto a `AGENTS.md` (reglas de la plantilla); si
 Todo lo de la app está en [docs/app/](docs/app/README.md): problema, especificación, diseño de cada módulo y ADR propios.
 
 ## Reglas propias
+- La arquitectura, el stack y la metodología están decididos en `AGENTS.md` y `docs/core/`. Una sesión de producto no los debate: si algo del core estorba, lo apunta en [`FACTORY_NOTES.md`](FACTORY_NOTES.md) y sigue; si bloquea, para y pregunta.
+- Nunca se edita una ruta de `.template-paths` desde una app: el cambio se hace en factory-template y llega con `mise run template:sync` (`mise run template:check` lo comprueba en el CI; [runbook](docs/core/runbooks/template-sync.md)).
 <!-- Reglas de negocio o de código que solo valen para esta app, una por línea, con su porqué. -->
 
 ## Glosario
