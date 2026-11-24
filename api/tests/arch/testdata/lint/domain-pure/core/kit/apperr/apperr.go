@@ -1,4 +1,4 @@
-// Package apperr is the one platform package domain may import.
+// Package apperr is the one core package domain may import.
 package apperr
 
 // Code is used by the allowed domain file.

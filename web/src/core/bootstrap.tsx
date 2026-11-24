@@ -7,8 +7,8 @@ import { createErrorHandler, type Destination } from "@/core/errors/handle";
 import { createNotices, type Notices } from "@/core/errors/notices";
 import { createLastTenantStore, type LastTenantStore } from "@/core/tenant/last-tenant";
 
-/** What every platform screen may use; also the router's context. */
-export type PlatformContext = {
+/** What every core screen may use; also the router's context. */
+export type CoreContext = {
   queryClient: QueryClient;
   notices: Notices;
   lastTenant: LastTenantStore;
@@ -22,11 +22,11 @@ export function tenantOf(router: Pick<AnyRouter, "state">): string | undefined {
 }
 
 /**
- * createPlatform builds the query client, the error handler and the notices, and
+ * createCore builds the query client, the error handler and the notices, and
  * returns `attach` to connect them to the router once it exists (src/router.ts). The
  * tenant is always read from the active route, never stored.
  */
-export function createPlatform(): { context: PlatformContext; attach: (r: AnyRouter) => void } {
+export function createCore(): { context: CoreContext; attach: (r: AnyRouter) => void } {
   let router: AnyRouter | undefined;
   const routeTenant = () => (router ? tenantOf(router) : undefined);
   const notices = createNotices();
@@ -54,9 +54,9 @@ export function createPlatform(): { context: PlatformContext; attach: (r: AnyRou
   };
 }
 
-const Context = createContext<PlatformContext | null>(null);
+const Context = createContext<CoreContext | null>(null);
 
-export function PlatformProvider(props: { value: PlatformContext; children: ReactNode }) {
+export function CoreProvider(props: { value: CoreContext; children: ReactNode }) {
   return (
     <Context value={props.value}>
       <QueryClientProvider client={props.value.queryClient}>{props.children}</QueryClientProvider>
@@ -64,10 +64,10 @@ export function PlatformProvider(props: { value: PlatformContext; children: Reac
   );
 }
 
-export function usePlatform(): PlatformContext {
+export function useCore(): CoreContext {
   const ctx = useContext(Context);
   if (!ctx) {
-    throw new Error("usePlatform outside PlatformProvider");
+    throw new Error("useCore outside CoreProvider");
   }
   return ctx;
 }

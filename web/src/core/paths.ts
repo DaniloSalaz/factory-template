@@ -1,4 +1,4 @@
-// The platform's routes, for code that is not a <Link> (the error handler, redirects).
+// The core's routes, for code that is not a <Link> (the error handler, redirects).
 export const paths = {
   home: "/",
   login: "/login",

@@ -23,7 +23,7 @@ const (
 func tenancyCatalog(t *testing.T) *authz.Catalog {
 	t.Helper()
 	c, err := authz.NewCatalog(
-		authz.Role{Name: authz.RoleOwner, Permissions: append(authz.PlatformPermissions(), "cases:read"), RequiresMFA: true, MFAMaxAge: 12 * time.Hour},
+		authz.Role{Name: authz.RoleOwner, Permissions: append(authz.CorePermissions(), "cases:read"), RequiresMFA: true, MFAMaxAge: 12 * time.Hour},
 		authz.Role{Name: "member", Permissions: []authctx.Permission{authz.PermMembersRead, authctx.PermScopeTenant}},
 		authz.Role{Name: "client", Permissions: []authctx.Permission{"cases:read"}},
 	)

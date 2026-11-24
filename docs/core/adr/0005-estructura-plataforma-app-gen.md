@@ -43,9 +43,9 @@ Y, para que esa separación se sostenga:
   `AGENTS.md` en las carpetas con reglas internas (`identity`, `kit`, `kit/db`) y `APP.md`
   para lo propio de la app.
 
-Lo protegen reglas con identificador, que fallan en `mise run ci`: `[platform-imports-app]`,
+Lo protegen reglas con identificador, que fallan en `mise run ci`: `[core-imports-app]`,
 `[module-boundaries]`, `[feature-boundaries]`, `[tests-not-in-prod]`,
-`[platform-migrations-alone]`, `[contract-duplicate]`, `[contract-platform-owned]` y
+`[core-migrations-alone]`, `[contract-duplicate]`, `[contract-core-owned]` y
 `[contract-module-key]`, entre otras (lista completa en `estructura.md`).
 
 ## Alternativas descartadas

@@ -1,7 +1,7 @@
 package db
 
 // The rules of the design for SECURITY DEFINER functions (auth-y-tenancy §7.4), outside the
-// _test files so that schema_test.go (package db_test) can hold the platform's and the
+// _test files so that schema_test.go (package db_test) can hold the core's and the
 // app's functions to them.
 
 import (

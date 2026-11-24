@@ -188,20 +188,20 @@ Todas fallan en `mise run ci` con un mensaje que dice qué regla es y cómo arre
 | Regla | Qué impide | Dónde se comprueba |
 | --- | --- | --- |
 | `[domain-pure]` | que `domain/` importe algo distinto de la stdlib y `kit/apperr` | depguard (`api/.golangci.yml`); fixtures en `api/tests/arch/lintrules_test.go` |
-| `[platform-no-modules]` | que `core/kit` importe un módulo de plataforma | depguard; `lintrules_test.go` |
+| `[core-no-modules]` | que `core/kit` importe un módulo de plataforma | depguard; `lintrules_test.go` |
 | `[apperr-stdlib-only]` | que `kit/apperr` importe algo fuera de la stdlib | depguard; `lintrules_test.go` |
 | `[authctx-stdlib-only]` | que `kit/authctx` importe algo fuera de la stdlib | depguard; `lintrules_test.go` |
 | `[authz-in-use-cases]` | comprobar permisos en `adapters/http` | depguard; `lintrules_test.go` |
 | `[env-only-in-config]` | leer el entorno fuera de `kit/config` | forbidigo; `lintrules_test.go` |
 | `[module-boundaries]` | que un módulo importe el interior de otro (o su `gen/`) | `api/tests/arch/boundaries_test.go` |
-| `[platform-imports-app]` | que `core/` importe `app/`, también de forma indirecta | depguard; `api/tests/arch/appimports_test.go`; en el front, `web/src/core/__tests__/architecture.test.ts` |
+| `[core-imports-app]` | que `core/` importe `app/`, también de forma indirecta | depguard; `api/tests/arch/appimports_test.go`; en el front, `web/src/core/__tests__/architecture.test.ts` |
 | `[tests-not-in-prod]` | que código que no es de test importe `tests/…` | `api/tests/arch/testsimports_test.go` |
 | `[rls-vars-only-in-db]` | llamar a `set_config` o nombrar las variables de RLS fuera de `kit/db` | `api/tests/arch/rlsvars_test.go` |
 | `[feature-boundaries]` | que una funcionalidad del front importe otra | `web/src/core/__tests__/architecture.test.ts` |
 | `[contract-duplicate]` | que `app.yaml` repita una ruta, `operationId` o componente de `core.yaml` | `api/tools/specmerge` (`mise run generate`) |
-| `[contract-platform-owned]` | que `app.yaml` redefina tags, `securitySchemes`, seguridad raíz o cabecera de tenant | `api/tools/specmerge` |
+| `[contract-core-owned]` | que `app.yaml` redefina tags, `securitySchemes`, seguridad raíz o cabecera de tenant | `api/tools/specmerge` |
 | `[contract-module-key]` | una operación sin exactamente un tag de módulo | `api/tools/specmerge` |
-| `[platform-migrations-alone]` | que una migración de plataforma dependa de la app | `api/tests/integration/migrations` (`TestPlatformMigrationsApplyAlone`) |
+| `[core-migrations-alone]` | que una migración de plataforma dependa de la app | `api/tests/integration/migrations` (`TestCoreMigrationsApplyAlone`) |
 | `[runtime-privileges]` | que los permisos de `app_runtime` difieran de la foto `.golden` | `api/tests/db/schema_test.go` |
 | `[security-definer]` | una función `SECURITY DEFINER` que no sea de `app_security`, sin `search_path` fijo, ejecutable por otro que `app_runtime` o que reciba el usuario por parámetro | `api/tests/db/functions.go` |
 

@@ -1,5 +1,5 @@
 // Package db checks the database schema and its row-level security against a real
-// Postgres, bootstrapped and migrated like a deployment, with the platform's and the
+// Postgres, bootstrapped and migrated like a deployment, with the core's and the
 // app's migrations (testkit/migrationsets): it lives under api/tests, which may import
 // the app, unlike anything under core/.
 //

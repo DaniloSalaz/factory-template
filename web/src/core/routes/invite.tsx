@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useState } from "react";
 import { useAuthLogout } from "@/gen/api";
 import { registeredApp } from "@/core/app-registry";
-import { usePlatform } from "@/core/bootstrap";
+import { useCore } from "@/core/bootstrap";
 import { AcceptInvitation, type AcceptOutcome } from "@/core/components/AcceptInvitation";
 import { texts } from "@/core/texts";
 import { Button, buttonVariants } from "@/core/ui/button";
@@ -63,7 +63,7 @@ function Invite() {
 // The invitation is for another email: sign out, so the next login can pick the account
 // the invitation was sent to. The token is gone; the link opens it again.
 function SwitchAccount() {
-  const { queryClient } = usePlatform();
+  const { queryClient } = useCore();
   const navigate = useNavigate();
   const logout = useAuthLogout();
   return (

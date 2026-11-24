@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-// [platform-imports-app] src/core is template code: apps never edit it, so it must
+// [core-imports-app] src/core is template code: apps never edit it, so it must
 // not depend on them. It reads the app only through app-registry.ts.
 const src = resolve(import.meta.dirname, "../..");
 const allowed = "core/app-registry.ts";
@@ -41,8 +41,8 @@ function filesUnder(dir: string): string[] {
     .map((e) => relative(src, join(e.parentPath, e.name)));
 }
 
-describe("[platform-imports-app]", () => {
-  it("platform imports src/app only in app-registry.ts", () => {
+describe("[core-imports-app]", () => {
+  it("core imports src/app only in app-registry.ts", () => {
     const files = filesUnder("core").filter((f) => f !== self);
     // An empty list would pass without looking at anything (src resolved wrong).
     expect(files.length, "no file under src/core: is src right?").toBeGreaterThan(0);

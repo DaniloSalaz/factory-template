@@ -22,7 +22,7 @@ var testDB *testkit.DB
 func TestMain(m *testing.M) {
 	ctx := context.Background()
 	db, err := testkit.New(ctx,
-		testkit.PlatformFromSource(),
+		testkit.CoreFromSource(),
 		coredb.MigrationSet{Name: "testdata", FS: os.DirFS("testdata/migrations"), Table: "goose_testdata_1_version"},
 	)
 	if err != nil {

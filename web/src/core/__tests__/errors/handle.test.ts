@@ -56,7 +56,7 @@ describe("actionFor", () => {
     });
   });
 
-  it("maps the 403s the platform handles by their code", () => {
+  it("maps the 403s the core handles by their code", () => {
     expect(actionFor(problem(403, "auth.mfa_required"), at)).toEqual({
       kind: "mfa_verify",
       returnTo: at.href,

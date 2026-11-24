@@ -210,19 +210,19 @@ func TestMerge_Refuses(t *testing.T) {
 		{"securitySchemes", func(t *testing.T) string {
 			return app(t, "components:\n", "components:\n  securitySchemes:\n    tenant: {type: apiKey, in: header, name: X-Org}\n")
 		}, nil,
-			[]string{"[contract-platform-owned]", "components.securitySchemes is defined in core.yaml"}},
+			[]string{"[contract-core-owned]", "components.securitySchemes is defined in core.yaml"}},
 		{"tenant header parameter", func(t *testing.T) string {
 			return app(t, "Page: {name: page, in: query", "Page: {name: x-tenant-id, in: header")
 		}, nil,
-			[]string{"[contract-platform-owned]", "a parameter redefines the X-Tenant-ID header"}},
+			[]string{"[contract-core-owned]", "a parameter redefines the X-Tenant-ID header"}},
 		{"tenant header component", func(t *testing.T) string {
 			return app(t, "  parameters:", "  headers:\n    X-Tenant-ID: {schema: {type: string}}\n  parameters:")
 		}, nil,
-			[]string{"[contract-platform-owned]", "components.headers.X-Tenant-ID redefines the tenant header"}},
+			[]string{"[contract-core-owned]", "components.headers.X-Tenant-ID redefines the tenant header"}},
 		{"root security", func(t *testing.T) string { return app(t, "tags:\n", "security: []\ntags:\n") }, nil,
-			[]string{"[contract-platform-owned]", `root member "security" is not allowed`}},
+			[]string{"[contract-core-owned]", `root member "security" is not allowed`}},
 		{"openapi version", func(t *testing.T) string { return app(t, "openapi: 3.1.0", "openapi: 3.0.3") }, nil,
-			[]string{"[contract-platform-owned]", `openapi is "3.0.3", want "3.1.0"`}},
+			[]string{"[contract-core-owned]", `openapi is "3.0.3", want "3.1.0"`}},
 		{"operationId differing in case", func(t *testing.T) string { return app(t, "operationId: listAppointments", "operationId: GetMe") }, nil,
 			[]string{"[contract-duplicate]", `operationId "GetMe" is already used by core.yaml`, "ignoring case"}},
 		{"operationId differing in separators", func(t *testing.T) string {
@@ -240,23 +240,23 @@ func TestMerge_Refuses(t *testing.T) {
 		{"core path item reference", func(t *testing.T) string {
 			return app(t, "  /appointments:\n", "  /demo/me:\n    $ref: \"core.yaml#/paths/~1me\"\n  /appointments:\n")
 		}, nil,
-			[]string{"[contract-platform-owned]", `$ref "core.yaml#/paths/~1me": the app contract references only components`, "path /demo/me is a $ref"}},
+			[]string{"[contract-core-owned]", `$ref "core.yaml#/paths/~1me": the app contract references only components`, "path /demo/me is a $ref"}},
 		{"local path item reference", func(t *testing.T) string {
 			return app(t, "  /appointments:\n", "  /demo/x:\n    $ref: \"#/components/pathItems/X\"\n  /appointments:\n") + "  pathItems:\n    X: {get: {operationId: x}}\n"
-		}, nil, []string{"[contract-platform-owned]", "path /demo/x is a $ref"}},
+		}, nil, []string{"[contract-core-owned]", "path /demo/x is a $ref"}},
 		{"local reference outside components", func(t *testing.T) string { return app(t, "#/components/schemas/Appointment", "#/paths/~1appointments") }, nil,
-			[]string{"[contract-platform-owned]", "references only components"}},
+			[]string{"[contract-core-owned]", "references only components"}},
 		{"dangling core reference", func(t *testing.T) string {
 			return app(t, "core.yaml#/components/responses/InternalError", "core.yaml#/components/responses/Nope")
-		}, nil, []string{"[contract-platform-owned]", "core.yaml has no #/components/responses/Nope"}},
+		}, nil, []string{"[contract-core-owned]", "core.yaml has no #/components/responses/Nope"}},
 		{"dangling local reference", func(t *testing.T) string {
 			return app(t, "#/components/schemas/Appointment", "#/components/schemas/Problem")
 		}, nil,
-			[]string{"[contract-platform-owned]", "is referenced as core.yaml#/components/schemas/Problem"}},
+			[]string{"[contract-core-owned]", "is referenced as core.yaml#/components/schemas/Problem"}},
 		{"other external reference", func(t *testing.T) string {
 			return app(t, "#/components/schemas/Appointment", "other.yaml#/components/schemas/X")
 		}, nil,
-			[]string{"[contract-platform-owned]", `$ref "other.yaml#/components/schemas/X"`}},
+			[]string{"[contract-core-owned]", `$ref "other.yaml#/components/schemas/X"`}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

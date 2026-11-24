@@ -93,15 +93,15 @@ Una nueva:
 
 ```sh
 mise run migration:new <nombre>            # de la app, en api/app/migrations
-mise run migration:new:platform <nombre>   # de plataforma: solo en factory-template
+mise run migration:new:core <nombre>   # de plataforma: solo en factory-template
 ```
 
 Reglas:
 
 - Una migración de app puede usar tablas, funciones y tipos de plataforma; una de
   plataforma **nunca** referencia nada de la app. En una base de datos nueva las de
-  plataforma se aplican antes, sin las de app: `TestPlatformMigrationsApplyAlone`
-  (`api/core/migrations`) lo comprueba y falla con `[platform-migrations-alone]`.
+  plataforma se aplican antes, sin las de app: `TestCoreMigrationsApplyAlone`
+  (`api/core/migrations`) lo comprueba y falla con `[core-migrations-alone]`.
   No lo ve todo: Postgres no resuelve los nombres del cuerpo de una función `plpgsql`
   hasta que se ejecuta, así que una función de plataforma que nombra una tabla de app
   pasa el test. Eso se revisa en el PR.
@@ -160,9 +160,9 @@ Tests: `testkit.New`/`testkit.Start` (`api/tests/testkit`) reciben los conjuntos
 el orden de `api migrate`; con ellos corren los tests de `api/tests/db`: las reglas de RLS,
 las funciones `SECURITY DEFINER`, los miembros, las invitaciones y la foto de permisos. Los
 módulos de plataforma pasan `migrations.Set()` de `api/core/migrations`, y
-`TestPlatformMigrationsApplyAlone` (`api/tests/integration/migrations`) comprueba que se
-aplica sola. Los tests de `core/kit`, que no pueden importarlo (`[platform-no-modules]`),
-pasan `testkit.PlatformFromSource()`, el mismo conjunto leído del disco (un test comprueba
+`TestCoreMigrationsApplyAlone` (`api/tests/integration/migrations`) comprueba que se
+aplica sola. Los tests de `core/kit`, que no pueden importarlo (`[core-no-modules]`),
+pasan `testkit.CoreFromSource()`, el mismo conjunto leído del disco (un test comprueba
 que son idénticos). `migrationsets` va aparte de `testkit` para que esos tests no importen
-la app ni de forma indirecta; lo comprueba `[platform-imports-app]` (`mise run arch`), que
+la app ni de forma indirecta; lo comprueba `[core-imports-app]` (`mise run arch`), que
 sigue los imports de `core/` a través de los paquetes de fuera de él.

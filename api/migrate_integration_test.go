@@ -31,11 +31,11 @@ func TestMigrateCommand(t *testing.T) {
 
 	embedded, err := fs.Glob(coremigrations.Set().FS, "*.sql")
 	if err != nil || len(embedded) == 0 {
-		t.Fatalf("embedded platform migrations: %v %v", embedded, err)
+		t.Fatalf("embedded core migrations: %v %v", embedded, err)
 	}
 	sets := migrationSets()
-	if len(sets) != 2 || sets[0].Name != "platform" || sets[1].Name != "app" {
-		t.Fatalf("api migrate must apply the platform's set and then the app's, got %v", sets)
+	if len(sets) != 2 || sets[0].Name != "core" || sets[1].Name != "app" {
+		t.Fatalf("api migrate must apply the core's set and then the app's, got %v", sets)
 	}
 
 	for _, tc := range []struct {
@@ -58,7 +58,7 @@ func TestMigrateCommand(t *testing.T) {
 		})
 	}
 
-	// Both sets keep their own version table, the platform's with goose's default name
+	// Both sets keep their own version table, the core's with goose's default name
 	// so that databases migrated before the split see no change.
 	conn := connect(t, pg.OwnerURL)
 	for _, table := range []string{"goose_db_version", "goose_app_db_version"} {

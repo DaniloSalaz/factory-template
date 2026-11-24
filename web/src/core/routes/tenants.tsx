@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import { getGetMeQueryKey, type Membership, useCreateTenant, useGetMe } from "@/gen/api";
-import { usePlatform } from "@/core/bootstrap";
+import { useCore } from "@/core/bootstrap";
 import { ErrorText } from "@/core/components/ErrorText";
 import { Page } from "@/core/components/Page";
 import { errorCode, errorMessage } from "@/core/errors/message";
@@ -88,7 +88,7 @@ function CreateTenant() {
   const slugId = useId();
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
-  const { queryClient } = usePlatform();
+  const { queryClient } = useCore();
   const navigate = useNavigate();
   const create = useCreateTenant({
     mutation: {

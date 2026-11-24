@@ -209,7 +209,7 @@ var errRollback = errors.New("roll back on purpose")
 // ----------------------------------------------------------------------------------
 
 // The example tables are the pattern apps copy, so they must pass the same structure
-// test as the platform's own tables.
+// test as the core's own tables.
 func TestExampleTablesFollowTheRules(t *testing.T) {
 	t.Parallel()
 
@@ -691,7 +691,7 @@ func TestWithAnonTx(t *testing.T) {
 
 	for name, sql := range map[string]string{
 		"a business table":  `SELECT id FROM notes`,
-		"a platform table":  `SELECT id FROM memberships`,
+		"a core table":  `SELECT id FROM memberships`,
 		"a user's function": `SELECT tenant_id FROM auth_memberships_for_user()`,
 	} {
 		t.Run("cannot read "+name, func(t *testing.T) {

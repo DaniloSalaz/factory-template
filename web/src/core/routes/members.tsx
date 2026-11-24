@@ -13,7 +13,7 @@ import {
   useRemoveMember,
 } from "@/gen/api";
 import { useCursorPages } from "@/core/api/use-cursor-pages";
-import { usePlatform } from "@/core/bootstrap";
+import { useCore } from "@/core/bootstrap";
 import { ErrorText } from "@/core/components/ErrorText";
 import { Page } from "@/core/components/Page";
 import { RoleSelect } from "@/core/components/RoleSelect";
@@ -177,7 +177,7 @@ function ManageMember(props: { member: Member; who: string; assignable: string[]
 
 function LeaveTenant() {
   const tenantId = useRouteTenantId();
-  const { lastTenant } = usePlatform();
+  const { lastTenant } = useCore();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [confirming, setConfirming] = useState(false);

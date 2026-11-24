@@ -3,7 +3,7 @@ import { paths } from "@/core/paths";
 import type { LastTenantStore } from "@/core/tenant/last-tenant";
 import type { Notices } from "./notices";
 
-/** What the platform does with an error, whoever made the request. */
+/** What the core does with an error, whoever made the request. */
 export type ErrorAction =
   | { kind: "login"; returnTo: string }
   | { kind: "mfa_verify"; returnTo: string }
@@ -14,7 +14,7 @@ export type ErrorAction =
 export type Location = { pathname: string; href: string };
 
 /**
- * isHandledGlobally says whether the error is one the platform deals with by itself
+ * isHandledGlobally says whether the error is one the core deals with by itself
  * (sign in again, MFA, another tenant, wait): screens then show nothing of their own.
  */
 export function isHandledGlobally(error: unknown): boolean {
@@ -33,7 +33,7 @@ export function isHandledGlobally(error: unknown): boolean {
 }
 
 /**
- * actionFor maps an error to the platform's answer, or null when the screen that made the
+ * actionFor maps an error to the core's answer, or null when the screen that made the
  * request handles it (validation, conflicts…). It never sends to the screen the user is
  * already on, so a failing request there cannot loop.
  */

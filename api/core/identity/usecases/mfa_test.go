@@ -29,7 +29,7 @@ func newMFAFixture(t *testing.T, role string) *mfaFixture {
 		t.Fatal(err)
 	}
 	catalog, err := authz.NewCatalog(
-		authz.Role{Name: authz.RoleOwner, Permissions: authz.PlatformPermissions(), RequiresMFA: true, MFAMaxAge: 12 * time.Hour},
+		authz.Role{Name: authz.RoleOwner, Permissions: authz.CorePermissions(), RequiresMFA: true, MFAMaxAge: 12 * time.Hour},
 		authz.Role{Name: "member", Permissions: []authctx.Permission{authctx.PermScopeTenant}},
 	)
 	if err != nil {

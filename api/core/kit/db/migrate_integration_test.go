@@ -137,7 +137,7 @@ func TestMigrate_SetsKeepTheirOwnVersions(t *testing.T) {
 }
 
 // A failure stops the run: the sets after it never start, so the app's migrations never
-// run on top of a platform that did not finish.
+// run on top of a core that did not finish.
 func TestMigrate_StopsAtTheFirstFailure(t *testing.T) {
 	t.Parallel()
 

@@ -2,7 +2,7 @@ import { errorMessage, requestIdOf } from "@/core/errors/message";
 import { texts } from "@/core/texts";
 import { Alert, AlertDescription } from "@/core/ui/alert";
 
-/** ErrorText shows a failed request's message, unless the platform already handles it. */
+/** ErrorText shows a failed request's message, unless the core already handles it. */
 export function ErrorText(props: { error: unknown }) {
   const message = errorMessage(props.error);
   if (!message) {

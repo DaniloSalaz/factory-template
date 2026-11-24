@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	ruleOwned     = "contract-platform-owned"
+	ruleOwned     = "contract-core-owned"
 	ruleDuplicate = "contract-duplicate"
 	ruleModuleKey = "contract-module-key"
 )

@@ -4,7 +4,7 @@ import { errorMessage } from "@/core/errors/message";
 import { texts } from "@/core/texts";
 
 describe("errorMessage", () => {
-  it("shows nothing for errors the platform handles", () => {
+  it("shows nothing for errors the core handles", () => {
     for (const e of [
       new ApiError(401, {}),
       new ApiError(403, { code: "auth.mfa_required" }),

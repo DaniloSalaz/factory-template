@@ -1,5 +1,5 @@
 import { createRouter } from "@tanstack/react-router";
-import { createPlatform } from "@/core/bootstrap";
+import { createCore } from "@/core/bootstrap";
 import { RouteErrorScreen } from "@/core/components/ErrorScreen";
 import { captureInviteToken } from "@/core/invite/invite-token";
 import { initSentry } from "@/core/telemetry/sentry";
@@ -16,19 +16,19 @@ initSentry({
   environment: import.meta.env.MODE,
 });
 
-// Composition root of the front end: the platform's services, the route tree (platform
+// Composition root of the front end: the core's services, the route tree (core
 // and app routes, src/core/routes.ts) and the router that connects them.
-export const platform = createPlatform();
+export const core = createCore();
 
 export const router = createRouter({
   routeTree,
-  context: platform.context,
+  context: core.context,
   defaultPreload: "intent",
   defaultErrorComponent: RouteErrorScreen,
   scrollRestoration: true,
 });
 
-platform.attach(router);
+core.attach(router);
 
 declare module "@tanstack/react-router" {
   interface Register {

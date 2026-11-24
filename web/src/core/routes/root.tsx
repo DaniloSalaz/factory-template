@@ -1,6 +1,6 @@
 import { createRootRouteWithContext, Outlet } from "@tanstack/react-router";
-import type { PlatformContext } from "@/core/bootstrap";
+import type { CoreContext } from "@/core/bootstrap";
 
-export const Route = createRootRouteWithContext<PlatformContext>()({
+export const Route = createRootRouteWithContext<CoreContext>()({
   component: () => <Outlet />,
 });

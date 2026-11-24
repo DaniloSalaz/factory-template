@@ -24,7 +24,7 @@ npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.y
 - **Registro**: `src/app/registry.ts` exporta el nombre de la app, su logo y las entradas
   de la navegación del tenant (con el permiso que las muestra, si lo hay). La plataforma lo
   lee solo en `src/core/app-registry.ts`: es el único fichero de `platform` que importa
-  `app`, y `src/core/__tests__/architecture.test.ts` lo comprueba (`[platform-imports-app]`).
+  `app`, y `src/core/__tests__/architecture.test.ts` lo comprueba (`[core-imports-app]`).
 - **Rutas**: las de la plataforma están listadas en `src/core/routes.ts` (rutas
   virtuales de TanStack Router, cada una en su fichero). Las de la app son rutas por
   fichero bajo `src/app/routes/` y se montan dentro de `/t/$tenantId`: `example.tsx` es
@@ -94,7 +94,7 @@ npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.y
   `VITE_SENTRY_DSN`, iniciado en `src/router.ts` después de capturar el token de
   `/invite`. Sin Session Replay, sin tracing ni `traceparent` hacia la API, y `beforeSend`
   quita usuario, cabeceras, cookies, cuerpo, query string, fragmento y migas. Un error de
-  render o de ruta muestra la pantalla genérica (`PlatformErrorBoundary`,
+  render o de ruta muestra la pantalla genérica (`CoreErrorBoundary`,
   `RouteErrorScreen`), nunca el error.
 - **Listas por cursor** (miembros, invitaciones): `useCursorPages` con la clave generada de
   la operación, para que la caché siga separada por tenant y se invalide con ella.
@@ -118,7 +118,7 @@ npm run generate   # orval + la seguridad por ruta, desde api-spec/openapi.gen.y
   por código (incluidos todos los de miembros e invitaciones), `X-Tenant-ID` según el
   contrato, último tenant, caché por tenant, verificación de MFA, el flujo de `/invite`
   (fragmento quitado antes de crear el router, token nunca en `return_to` ni en la URL,
-  `sessionStorage` vacío tras aceptar o fallar) y las reglas de arquitectura (`[platform-imports-app]` y `[feature-boundaries]`). Usan `tsconfig.test.json`, que añade los tipos de Node
+  `sessionStorage` vacío tras aceptar o fallar) y las reglas de arquitectura (`[core-imports-app]` y `[feature-boundaries]`). Usan `tsconfig.test.json`, que añade los tipos de Node
   sin dárselos al código del navegador.
 - **Playwright**: los recorridos de la plataforma en `e2e/` y los de la app en `e2e/app/`
   (con los mismos `e2e/db.ts` y `e2e/fixtures.ts`), contra la API real local: Postgres arrancado y migrado

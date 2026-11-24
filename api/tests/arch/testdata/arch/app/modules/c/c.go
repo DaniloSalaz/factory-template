@@ -1,5 +1,5 @@
-// Package c is an app module: it may use a platform module's root and its own interior,
-// never a platform module's interior.
+// Package c is an app module: it may use a core module's root and its own interior,
+// never a core module's interior.
 package c
 
 import (

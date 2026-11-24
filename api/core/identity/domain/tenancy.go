@@ -40,7 +40,7 @@ func ValidateSlug(slug string) error {
 	return nil
 }
 
-// reservedSlug reports the slugs kept for the platform: hostnames it may serve (api,
+// reservedSlug reports the slugs kept for the core: hostnames it may serve (api,
 // www, app…), paths of its own and names that would mislead users.
 func reservedSlug(slug string) bool {
 	switch slug {
@@ -65,7 +65,7 @@ func NormalizeTenantName(name string) (string, error) {
 }
 
 // Role is a role as the hierarchy sees it: its permissions in the catalog (none if
-// unknown) and whether it is the platform's owner.
+// unknown) and whether it is the core's owner.
 type Role struct {
 	Name  string
 	Known bool
@@ -162,7 +162,7 @@ func ErrSlugInvalid() error {
 		apperr.FieldError{Field: "slug", Code: "invalid", Message: "3 to 40 of a-z, 0-9 and -, not at either end"})
 }
 
-// ErrSlugReserved is returned for a slug the platform keeps for itself.
+// ErrSlugReserved is returned for a slug the core keeps for itself.
 func ErrSlugReserved() error {
 	return apperr.Validation("tenant.slug_reserved", "This slug is reserved; choose another one.",
 		apperr.FieldError{Field: "slug", Code: "reserved", Message: "reserved"})

@@ -6,6 +6,8 @@ import { paths } from "@/core/paths";
 // tab only, gone when it closes) before the router or any request starts, and leaves it
 // once, when it is sent to POST /invitations/accept.
 
+// The key keeps the zone's former name (ADR 0006): a tab that already holds a token
+// under it must still find it after a deploy.
 export const inviteTokenKey = "platform.inviteToken";
 
 type Win = Pick<Window, "location" | "history" | "sessionStorage">;

@@ -1,4 +1,4 @@
-// Package authz holds the permissions of the platform, the app's role catalog and the
+// Package authz holds the permissions of the core, the app's role catalog and the
 // check that use cases make before acting (auth-y-tenancy §8). Only Go code decides
 // permissions: the database stores roles as text and never evaluates them.
 package authz
@@ -14,7 +14,7 @@ import (
 	"chaskicode.dev/saas/core/kit/authctx"
 )
 
-// Platform permissions. Apps add their own, with the same "resource:action" form.
+// Core permissions. Apps add their own, with the same "resource:action" form.
 const (
 	PermMembersRead   authctx.Permission = "members:read"
 	PermMembersInvite authctx.Permission = "members:invite"
@@ -27,15 +27,15 @@ const (
 	PermTenantOwn authctx.Permission = "tenant:own"
 )
 
-// PlatformPermissions returns every permission of the platform, the scope included.
-func PlatformPermissions() []authctx.Permission {
+// CorePermissions returns every permission of the core, the scope included.
+func CorePermissions() []authctx.Permission {
 	return []authctx.Permission{
 		PermMembersRead, PermMembersInvite, PermMembersManage, PermAuditRead, PermTenantUpdate, PermTenantOwn,
 		authctx.PermScopeTenant,
 	}
 }
 
-// RoleOwner is the platform's reserved role: every app has it, under this name.
+// RoleOwner is the core's reserved role: every app has it, under this name.
 const RoleOwner = "owner"
 
 // Role is a role of the app's catalog.
@@ -70,7 +70,7 @@ type catalogRole struct {
 }
 
 // NewCatalog validates roles and builds the catalog. The app does not start with an
-// invalid one: owner must exist under its name and hold every platform permission and
+// invalid one: owner must exist under its name and hold every core permission and
 // every permission of the other roles, and no other role may hold tenant:own.
 func NewCatalog(roles ...Role) (*Catalog, error) {
 	c := &Catalog{roles: make(map[string]catalogRole, len(roles))}
@@ -125,12 +125,12 @@ func validateRole(r Role) error {
 func (c *Catalog) validateOwner() []error {
 	owner, ok := c.roles[RoleOwner]
 	if !ok {
-		return []error{fmt.Errorf("role %q is missing: it is reserved by the platform and cannot be renamed or removed", RoleOwner)}
+		return []error{fmt.Errorf("role %q is missing: it is reserved by the core and cannot be renamed or removed", RoleOwner)}
 	}
 	var errs []error
-	for _, p := range PlatformPermissions() {
+	for _, p := range CorePermissions() {
 		if _, has := owner.perms[p]; !has {
-			errs = append(errs, fmt.Errorf("role %q lacks platform permission %s", RoleOwner, p))
+			errs = append(errs, fmt.Errorf("role %q lacks core permission %s", RoleOwner, p))
 		}
 	}
 	// Owner can act on every member and grant every role, so it includes them all.

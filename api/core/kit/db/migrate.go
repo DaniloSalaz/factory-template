@@ -14,9 +14,9 @@ import (
 
 // MigrationSet is one sequence of goose migrations (NNNNN_name.sql at the root of FS)
 // with its own version table, so its numbering is independent of the other sets: the
-// platform's and the app's never collide.
+// core's and the app's never collide.
 type MigrationSet struct {
-	Name  string // "platform", "app": in logs and errors
+	Name  string // "core", "app": in logs and errors
 	FS    fs.FS
 	Table string // goose version table, e.g. goose_db_version
 	// AllowEmpty accepts a set without migrations: Migrate then only creates its version

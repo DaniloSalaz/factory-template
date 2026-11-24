@@ -3,7 +3,7 @@
 Reglas de las piezas transversales de la plantilla. Se suman a las del `AGENTS.md` de la raíz; las de `db/`, en `db/AGENTS.md`.
 
 ## Dependencias
-- `core/kit` no importa ningún módulo de plataforma (`core/<m>`, depguard `[platform-no-modules]`).
+- `core/kit` no importa ningún módulo de plataforma (`core/<m>`, depguard `[core-no-modules]`).
 - `core/kit/apperr` y `core/kit/authctx` solo importan la stdlib (`[apperr-stdlib-only]`, `[authctx-stdlib-only]`).
 
 ## Configuración (`config/`)

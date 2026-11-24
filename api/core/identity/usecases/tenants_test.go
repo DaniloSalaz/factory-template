@@ -138,7 +138,7 @@ const (
 func membersCatalog(t *testing.T) *authz.Catalog {
 	t.Helper()
 	c, err := authz.NewCatalog(
-		authz.Role{Name: authz.RoleOwner, Permissions: authz.PlatformPermissions()},
+		authz.Role{Name: authz.RoleOwner, Permissions: authz.CorePermissions()},
 		authz.Role{Name: "admin", Permissions: []authctx.Permission{
 			authz.PermMembersRead, authz.PermMembersManage, authz.PermTenantUpdate, authctx.PermScopeTenant,
 		}},
@@ -302,7 +302,7 @@ func TestMembers_List(t *testing.T) {
 		}
 	}
 
-	noRead, err := authz.NewCatalog(authz.Role{Name: authz.RoleOwner, Permissions: authz.PlatformPermissions()},
+	noRead, err := authz.NewCatalog(authz.Role{Name: authz.RoleOwner, Permissions: authz.CorePermissions()},
 		authz.Role{Name: "client"})
 	if err != nil {
 		t.Fatal(err)
@@ -384,7 +384,7 @@ func TestMembers_ChangeRoleNamesTheOfferableRoles(t *testing.T) {
 	t.Parallel()
 
 	c, err := authz.NewCatalog(
-		authz.Role{Name: authz.RoleOwner, Permissions: authz.PlatformPermissions()},
+		authz.Role{Name: authz.RoleOwner, Permissions: authz.CorePermissions()},
 		authz.Role{Name: "admin", Permissions: []authctx.Permission{
 			authz.PermMembersRead, authz.PermMembersInvite, authz.PermMembersManage, authctx.PermScopeTenant,
 		}},
@@ -425,7 +425,7 @@ func TestMembers_Roles(t *testing.T) {
 
 	members := []authctx.Permission{authz.PermMembersRead, authz.PermMembersInvite, authz.PermMembersManage}
 	c, err := authz.NewCatalog(
-		authz.Role{Name: authz.RoleOwner, Permissions: authz.PlatformPermissions(), RequiresMFA: true, MFAMaxAge: time.Hour},
+		authz.Role{Name: authz.RoleOwner, Permissions: authz.CorePermissions(), RequiresMFA: true, MFAMaxAge: time.Hour},
 		authz.Role{Name: "admin", Permissions: append(members, authz.PermAuditRead, authz.PermTenantUpdate, authctx.PermScopeTenant)},
 		authz.Role{Name: "member", Permissions: []authctx.Permission{authz.PermMembersRead, authctx.PermScopeTenant}},
 	)
@@ -464,7 +464,7 @@ func TestMembers_Roles(t *testing.T) {
 	t.Run("without members:read", func(t *testing.T) {
 		t.Parallel()
 		noRead, err := authz.NewCatalog(
-			authz.Role{Name: authz.RoleOwner, Permissions: authz.PlatformPermissions()},
+			authz.Role{Name: authz.RoleOwner, Permissions: authz.CorePermissions()},
 			authz.Role{Name: "client"},
 		)
 		if err != nil {

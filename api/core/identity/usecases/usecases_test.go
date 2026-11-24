@@ -798,7 +798,7 @@ func TestUnknownRolesInUse(t *testing.T) {
 	store := newMemStore()
 	store.st.rolesInUse = []string{"admin", "ghost", "owner"}
 	catalog, err := authz.NewCatalog(
-		authz.Role{Name: authz.RoleOwner, Permissions: authz.PlatformPermissions()},
+		authz.Role{Name: authz.RoleOwner, Permissions: authz.CorePermissions()},
 		authz.Role{Name: "admin"},
 	)
 	if err != nil {

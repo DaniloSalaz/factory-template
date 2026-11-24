@@ -10,21 +10,21 @@ import (
 	"chaskicode.dev/saas/tests/testkit"
 )
 
-// The tests of core/kit migrate with testkit.PlatformFromSource, which reads this
+// The tests of core/kit migrate with testkit.CoreFromSource, which reads this
 // directory from disk because kit cannot import this package. It must be the very set
 // the binary embeds: same name, same version table, same files.
-func TestSet_MatchesPlatformFromSource(t *testing.T) {
+func TestSet_MatchesCoreFromSource(t *testing.T) {
 	t.Parallel()
 
-	embedded, source := migrations.Set(), testkit.PlatformFromSource()
+	embedded, source := migrations.Set(), testkit.CoreFromSource()
 	if embedded.Name != source.Name || embedded.Table != source.Table {
 		t.Fatalf("embedded set %s/%s, testkit set %s/%s", embedded.Name, embedded.Table, source.Name, source.Table)
 	}
 	if embedded.AllowEmpty || source.AllowEmpty {
-		t.Fatal("the platform's set must not allow being empty: finding no migration means a wrong path")
+		t.Fatal("the core's set must not allow being empty: finding no migration means a wrong path")
 	}
 	if embedded.Table != "goose_db_version" {
-		t.Fatalf("the platform's version table is %s: it must stay goose_db_version, the one existing databases have", embedded.Table)
+		t.Fatalf("the core's version table is %s: it must stay goose_db_version, the one existing databases have", embedded.Table)
 	}
 
 	want, err := fs.Glob(embedded.FS, "*.sql")

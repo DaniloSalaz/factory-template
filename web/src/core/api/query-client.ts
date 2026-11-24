@@ -10,7 +10,7 @@ import { ApiError } from "./problem";
 import { requiresTenant } from "./route-security";
 
 export type QueryClientDeps = {
-  /** The platform's error handler (core/errors/handle.ts). */
+  /** The core's error handler (core/errors/handle.ts). */
   onError: (error: unknown) => void;
   /** The tenant of the active route, the same one apiFetch sends as X-Tenant-ID. */
   routeTenant: () => string | undefined;
@@ -37,7 +37,7 @@ function retryable(error: unknown): boolean {
 }
 
 /**
- * createQueryClient wires every query and mutation to the platform's error handler, the
+ * createQueryClient wires every query and mutation to the core's error handler, the
  * one place that decides what 401, the MFA answers, a forbidden tenant and 429 do.
  */
 export function createQueryClient(deps: QueryClientDeps): QueryClient {

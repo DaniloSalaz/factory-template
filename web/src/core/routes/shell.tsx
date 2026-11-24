@@ -2,7 +2,7 @@ import { createFileRoute, Link, Outlet, useNavigate } from "@tanstack/react-rout
 import { useState } from "react";
 import { type Logout, useAuthLogout, useAuthLogoutAll, useGetMe } from "@/gen/api";
 import { registeredApp } from "@/core/app-registry";
-import { usePlatform } from "@/core/bootstrap";
+import { useCore } from "@/core/bootstrap";
 import { ErrorText } from "@/core/components/ErrorText";
 import { NoticeBar } from "@/core/components/NoticeBar";
 import { errorMessage } from "@/core/errors/message";
@@ -53,7 +53,7 @@ function Shell() {
 }
 
 function LogoutButtons() {
-  const { queryClient } = usePlatform();
+  const { queryClient } = useCore();
   const navigate = useNavigate();
   const logout = useAuthLogout();
   const logoutAll = useAuthLogoutAll();

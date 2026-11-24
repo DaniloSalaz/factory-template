@@ -6,7 +6,7 @@ import { texts } from "@/core/texts";
 import { Button } from "@/core/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/core/ui/card";
 
-/** ErrorScreen is the platform's generic screen for an error the UI did not expect. */
+/** ErrorScreen is the core's generic screen for an error the UI did not expect. */
 export function ErrorScreen() {
   return (
     <main className="flex min-h-svh items-center justify-center p-4">
@@ -27,10 +27,10 @@ export function ErrorScreen() {
 }
 
 /**
- * PlatformErrorBoundary catches render errors anywhere below it, reports them (if
+ * CoreErrorBoundary catches render errors anywhere below it, reports them (if
  * Sentry is on) and shows ErrorScreen; it never shows the error itself.
  */
-export function PlatformErrorBoundary(props: { children: ReactNode }) {
+export function CoreErrorBoundary(props: { children: ReactNode }) {
   return <Sentry.ErrorBoundary fallback={<ErrorScreen />}>{props.children}</Sentry.ErrorBoundary>;
 }
 

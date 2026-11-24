@@ -142,7 +142,7 @@ type options struct {
 func testCatalog(t *testing.T, ownerMFA time.Duration) *authz.Catalog {
 	t.Helper()
 	c, err := authz.NewCatalog(
-		authz.Role{Name: authz.RoleOwner, Permissions: authz.PlatformPermissions(), RequiresMFA: ownerMFA > 0, MFAMaxAge: ownerMFA},
+		authz.Role{Name: authz.RoleOwner, Permissions: authz.CorePermissions(), RequiresMFA: ownerMFA > 0, MFAMaxAge: ownerMFA},
 		authz.Role{Name: "admin", Permissions: []authctx.Permission{
 			authz.PermMembersRead, authz.PermMembersInvite, authz.PermMembersManage, authz.PermAuditRead,
 			authz.PermTenantUpdate, authctx.PermScopeTenant,

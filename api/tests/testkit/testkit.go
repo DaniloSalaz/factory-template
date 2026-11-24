@@ -2,7 +2,7 @@
 // migrated exactly like a real environment: infra/db/initdb.sh and bootstrap.sql run as
 // init scripts, then the migration sets the caller passes run as app_owner, through the
 // same db.Migrate as `api migrate`. It imports no migrations itself, so the tests of
-// core/kit can use it: they pass PlatformFromSource; the platform's and the app's
+// core/kit can use it: they pass CoreFromSource; the core's and the app's
 // together come from testkit/migrationsets. Only tests import it ([tests-not-in-prod]).
 package testkit
 
@@ -63,7 +63,7 @@ func Start(t testing.TB, sets ...coredb.MigrationSet) *DB {
 // sharing their numbering.
 func New(ctx context.Context, sets ...coredb.MigrationSet) (*DB, error) {
 	if len(sets) == 0 {
-		return nil, errors.New("testkit: no migration set; pass at least the platform's")
+		return nil, errors.New("testkit: no migration set; pass at least the core's")
 	}
 	root, err := repoRoot()
 	if err != nil {
@@ -113,11 +113,11 @@ func New(ctx context.Context, sets ...coredb.MigrationSet) (*DB, error) {
 	return db, nil
 }
 
-// PlatformFromSource is the platform's migration set read from api/core/migrations
+// CoreFromSource is the core's migration set read from api/core/migrations
 // on disk: the same name, version table and files as migrations.Set(), which tests in
-// core/kit cannot import ([platform-no-modules]). A test in core/migrations
+// core/kit cannot import ([core-no-modules]). A test in core/migrations
 // keeps the two identical.
-func PlatformFromSource() coredb.MigrationSet {
+func CoreFromSource() coredb.MigrationSet {
 	root, err := repoRoot()
 	if err != nil {
 		// Only when the runtime cannot locate this file. The directory is then wrong and
@@ -125,7 +125,7 @@ func PlatformFromSource() coredb.MigrationSet {
 		root = "."
 	}
 	return coredb.MigrationSet{
-		Name:  "platform",
+		Name:  "core",
 		FS:    os.DirFS(filepath.Join(root, "api", "core", "migrations")),
 		Table: "goose_db_version",
 	}

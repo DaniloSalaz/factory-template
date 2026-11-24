@@ -135,7 +135,7 @@ func (s *memSender) token(t *testing.T, i int) string {
 func invitationsCatalog(t *testing.T) *authz.Catalog {
 	t.Helper()
 	c, err := authz.NewCatalog(
-		authz.Role{Name: authz.RoleOwner, Permissions: authz.PlatformPermissions()},
+		authz.Role{Name: authz.RoleOwner, Permissions: authz.CorePermissions()},
 		authz.Role{Name: "admin", Permissions: []authctx.Permission{
 			authz.PermMembersRead, authz.PermMembersInvite, authz.PermMembersManage, authctx.PermScopeTenant,
 		}},

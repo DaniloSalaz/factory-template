@@ -1,4 +1,4 @@
-// Package httpx violates the rule: kit imports a platform module.
+// Package httpx violates the rule: kit imports a core module.
 package httpx
 
 import "chaskicode.dev/saas/core/foo"

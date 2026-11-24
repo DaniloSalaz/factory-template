@@ -14,7 +14,7 @@ export type TenantNavItem = {
   permission?: string;
 };
 
-/** What an app registers in the platform: its name, its logo and its navigation. */
+/** What an app registers in the core: its name, its logo and its navigation. */
 export type AppRegistration = {
   name: string;
   Logo: ComponentType<{ className?: string }>;

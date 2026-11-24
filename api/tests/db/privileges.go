@@ -2,7 +2,7 @@ package db
 
 // The snapshot of app_runtime's privileges, outside the _test files so that
 // schema_test.go (package db_test) compares it with RuntimePrivilegesGolden on a
-// database with the platform's and the app's migrations.
+// database with the core's and the app's migrations.
 
 import (
 	"bufio"
@@ -15,7 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// RuntimePrivilegesGolden lists every privilege app_runtime holds, the platform's and the
+// RuntimePrivilegesGolden lists every privilege app_runtime holds, the core's and the
 // app's. Its path is relative to api/tests/db, where schema_test.go compares it with a
 // database migrated with both sets. Changing it is a security decision that the PR justifies
 // (AGENTS.md); there is deliberately no flag to rewrite it, so every change is a hand

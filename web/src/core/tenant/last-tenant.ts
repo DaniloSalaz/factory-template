@@ -1,7 +1,8 @@
 import type { Me } from "@/gen/api";
 
 // The tenant lives in the URL (/t/$tenantId). The only copy kept elsewhere is the last
-// one used, and only to redirect from / (auth-y-tenancy §10.1).
+// one used, and only to redirect from / (auth-y-tenancy §10.1). The key keeps the
+// zone's former name (ADR 0006): browsers already store it under that name.
 const KEY = "platform.lastTenantId";
 
 export type LastTenantStore = {

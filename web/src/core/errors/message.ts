@@ -4,7 +4,7 @@ import { isHandledGlobally } from "./handle";
 
 /**
  * errorMessage is the text a screen shows for a failed request, or null when there is
- * nothing to show there: no error, or one the platform already handles (it navigates or
+ * nothing to show there: no error, or one the core already handles (it navigates or
  * shows a notice). Screens never decide by status themselves.
  */
 export function errorMessage(error: unknown): string | null {

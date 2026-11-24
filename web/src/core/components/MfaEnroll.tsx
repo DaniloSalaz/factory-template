@@ -27,7 +27,7 @@ export function MfaEnroll(props: { onEnrolled: () => void }) {
       first.current = { id: e.challenge_id, expiresAt: Date.parse(e.expires_at) };
       setShown({ factorId: e.factor_id, qrCode: e.qr_code, secret: e.secret });
     } catch {
-      // enroll.error has it; ErrorText shows it unless the platform handles it.
+      // enroll.error has it; ErrorText shows it unless the core handles it.
     }
   }
 

@@ -1,4 +1,4 @@
-// Notices are the platform's messages that belong to no screen (today, only "wait before
+// Notices are the core's messages that belong to no screen (today, only "wait before
 // trying again"). The shell shows them; the error handler is the only one that adds them.
 
 export type Notice = { kind: "rate_limited"; retryAfterSeconds: number | undefined };

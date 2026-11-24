@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { getGetMeQueryKey, type MFAFactor, useGetMe, useRemoveTOTP } from "@/gen/api";
-import { usePlatform } from "@/core/bootstrap";
+import { useCore } from "@/core/bootstrap";
 import { ErrorText } from "@/core/components/ErrorText";
 import { Page } from "@/core/components/Page";
 import { paths } from "@/core/paths";
@@ -65,7 +65,7 @@ function Mfa() {
 }
 
 function FactorRow(props: { factor: MFAFactor }) {
-  const { queryClient } = usePlatform();
+  const { queryClient } = useCore();
   const [confirming, setConfirming] = useState(false);
   const remove = useRemoveTOTP({
     mutation: {

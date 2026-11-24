@@ -9,14 +9,14 @@ import (
 	"testing"
 )
 
-// appImportViolations lists every import that breaks the one-way hook between platform
+// appImportViolations lists every import that breaks the one-way hook between core
 // and app: nothing under core/ imports app or anything below it, directly or through
 // a package outside core/ (a test helper in tests/, generated code), and only
 // package main (the module root) imports app itself.
 func appImportViolations(modPath string, pkgs []goPackage) []string {
 	appRoot := modPath + "/app"
 	intoApp := func(path string) bool { return path == appRoot || strings.HasPrefix(path, appRoot+"/") }
-	inPlatform := func(path string) bool { return strings.HasPrefix(path, modPath+"/core/") }
+	inCore := func(path string) bool { return strings.HasPrefix(path, modPath+"/core/") }
 	imports := make(map[string][]string, len(pkgs))
 	for _, p := range pkgs {
 		imports[p.ImportPath] = p.Imports
@@ -25,24 +25,24 @@ func appImportViolations(modPath string, pkgs []goPackage) []string {
 	for _, p := range pkgs {
 		for _, imp := range p.allImports() {
 			switch {
-			case inPlatform(p.ImportPath) && intoApp(imp):
+			case inCore(p.ImportPath) && intoApp(imp):
 				out = append(out, fmt.Sprintf(
-					"[platform-imports-app] %s imports %s: the platform never depends on the app; "+
+					"[core-imports-app] %s imports %s: the core never depends on the app; "+
 						"the app hooks in only through api/app (app.Roles, app.Modules), which main "+
-						"wires. Move the code into the platform, or have the app pass it in through "+
+						"wires. Move the code into the core, or have the app pass it in through "+
 						"a module's Deps", p.ImportPath, imp))
 			case imp == appRoot && p.ImportPath != modPath:
 				out = append(out, fmt.Sprintf(
-					"[platform-imports-app] %s imports %s: only package main in api/ imports app, "+
-						"the single place where the app hooks into the platform. Take what you need "+
+					"[core-imports-app] %s imports %s: only package main in api/ imports app, "+
+						"the single place where the app hooks into the core. Take what you need "+
 						"through Deps from main instead", p.ImportPath, imp))
-			case inPlatform(p.ImportPath) && !inPlatform(imp):
+			case inCore(p.ImportPath) && !inCore(imp):
 				// An import inside core/ is checked where it is made; outside it, nothing
 				// else would see the app it drags in.
 				if chain := pathToApp(imp, imports, intoApp); chain != nil {
 					out = append(out, fmt.Sprintf(
-						"[platform-imports-app] %s imports %s, which reaches the app through %s: "+
-							"the platform never depends on the app, not even through a helper or "+
+						"[core-imports-app] %s imports %s, which reaches the app through %s: "+
+							"the core never depends on the app, not even through a helper or "+
 							"generated code. Import a package that does not depend on the app (in "+
 							"tests, testkit instead of testkit/migrationsets)",
 						p.ImportPath, imp, strings.Join(chain, " -> ")))
@@ -81,7 +81,7 @@ func pathToApp(start string, imports map[string][]string, intoApp func(string) b
 	return nil
 }
 
-func TestPlatformImportsApp(t *testing.T) {
+func TestCoreImportsApp(t *testing.T) {
 	t.Parallel()
 
 	modPath, pkgs := listPackages(t, "../..")
@@ -94,7 +94,7 @@ func TestPlatformImportsApp(t *testing.T) {
 }
 
 // The fixture proves the rule catches each kind of violation and allows the legal cases.
-func TestPlatformImportsApp_DetectsViolations(t *testing.T) {
+func TestCoreImportsApp_DetectsViolations(t *testing.T) {
 	t.Parallel()
 
 	modPath, pkgs := listPackages(t, "testdata/arch")
@@ -107,14 +107,14 @@ func TestPlatformImportsApp_DetectsViolations(t *testing.T) {
 		want     bool
 	}{
 		{"kit imports the app hook", "core/kit/httpx", "app", true},
-		{"platform module imports an app module's root", "core/b", "app/modules/c", true},
-		{"platform module imports an app module's interior", "core/a/usecases", "app/modules/c/adapters/x", true},
-		{"platform test file imports the app hook", "core/b_test", "app", true},
+		{"core module imports an app module's root", "core/b", "app/modules/c", true},
+		{"core module imports an app module's interior", "core/a/usecases", "app/modules/c/adapters/x", true},
+		{"core test file imports the app hook", "core/b_test", "app", true},
 		{"non-main package imports the app hook", "gen/sqlc/a", "app", true},
-		{"platform test reaches an app module through a test helper", "core/b_test", "tests/sets", true},
-		{"platform adapter reaches the app through generated code", "core/a/adapters/postgres", "gen/sqlc/a", true},
-		{"platform use cases reach the app through generated code", "core/b/usecases", "gen/sqlc/a", true},
-		{"platform test uses a helper without the app", "core/b_test", "tests/testkit", false},
+		{"core test reaches an app module through a test helper", "core/b_test", "tests/sets", true},
+		{"core adapter reaches the app through generated code", "core/a/adapters/postgres", "gen/sqlc/a", true},
+		{"core use cases reach the app through generated code", "core/b/usecases", "gen/sqlc/a", true},
+		{"core test uses a helper without the app", "core/b_test", "tests/testkit", false},
 		{"main imports the app hook", "", "app", false},
 		{"app hook imports an app module", "app", "app/modules/c", false},
 	}

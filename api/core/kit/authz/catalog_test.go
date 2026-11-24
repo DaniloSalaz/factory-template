@@ -12,7 +12,7 @@ import (
 
 func owner() authz.Role {
 	return authz.Role{
-		Name: authz.RoleOwner, Permissions: append(authz.PlatformPermissions(), "cases:read"),
+		Name: authz.RoleOwner, Permissions: append(authz.CorePermissions(), "cases:read"),
 		RequiresMFA: true, MFAMaxAge: 12 * time.Hour,
 	}
 }
@@ -66,7 +66,7 @@ func TestNewCatalog_Refuses(t *testing.T) {
 		{"another role has tenant:own", []authz.Role{owner(), adminWithTenantOwn}, `role "admin" has tenant:own`},
 		{"owner renamed", []authz.Role{renamedOwner, admin()}, `role "owner" is missing`},
 		{"owner removed", []authz.Role{admin(), member()}, `role "owner" is missing`},
-		{"owner lacks a platform permission", []authz.Role{ownerWithoutAudit}, "lacks platform permission audit:read"},
+		{"owner lacks a core permission", []authz.Role{ownerWithoutAudit}, "lacks core permission audit:read"},
 		{"a role broader than owner", []authz.Role{owner(), broaderThanOwner}, `role "admin" has permissions that "owner" lacks`},
 		{"duplicate role", []authz.Role{owner(), member(), member()}, `"member" is declared twice`},
 		{"system role", []authz.Role{owner(), {Name: authctx.SystemRole}}, "reserved for system jobs"},

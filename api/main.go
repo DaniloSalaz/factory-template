@@ -154,7 +154,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	mux := http.NewServeMux()
 	health.New(health.Deps{DB: pool, Logger: logger, Version: version()}).Register(mux)
 	idm.Register(mux)
-	// The platform's routes first: an app module that tried to take one of them makes
+	// The core's routes first: an app module that tried to take one of them makes
 	// ServeMux panic at start-up instead of silently replacing it.
 	for _, m := range appModules {
 		m.Register(mux)

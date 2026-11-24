@@ -39,9 +39,9 @@ func TestLintRules(t *testing.T) {
 			allowed: []string{"core/kit/config/"},
 		},
 		{
-			fixture: "platform-no-modules",
+			fixture: "core-no-modules",
 			want: []string{
-				"core/kit/httpx/httpx.go", "[platform-no-modules]", "move the code into",
+				"core/kit/httpx/httpx.go", "[core-no-modules]", "move the code into",
 			},
 			allowed: []string{"core/kit/httpx/kit.go"},
 		},
@@ -65,7 +65,7 @@ func TestLintRules(t *testing.T) {
 			fixture: "domain-pure",
 			want: []string{
 				"domain/transport.go", "'net/http'", "transport belongs in adapters/http",
-				"core/foo/domain/platform.go", "app/modules/bar/domain/platform.go",
+				"core/foo/domain/core.go", "app/modules/bar/domain/core.go",
 				"core/kit/logx", "[domain-pure]", "behind a port",
 			},
 			allowed: []string{"domain/allowed.go"},

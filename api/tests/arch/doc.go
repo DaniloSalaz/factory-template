@@ -5,9 +5,9 @@
 //     outside it, only its root package may be imported (never its domain, usecases or
 //     adapters), and the generated code under gen/openapi/<x> and gen/sqlc/<x> is private
 //     to module x;
-//   - platform imports app: nothing under core/ imports app or anything below it, and
+//   - core imports app: nothing under core/ imports app or anything below it, and
 //     only package main imports app itself, the single place where an app hooks into the
-//     platform (app.Roles, app.Modules);
+//     core (app.Roles, app.Modules);
 //   - RLS variables only in core/kit/db: no Go file outside core/kit/db (and the
 //     schema tests in tests/db), tests and generated code included, calls the function
 //     that sets them or names one of them, so tenant data is reachable only through

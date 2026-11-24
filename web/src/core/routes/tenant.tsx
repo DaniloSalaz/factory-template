@@ -2,7 +2,7 @@ import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { registeredApp } from "@/core/app-registry";
 import type { TenantNavItem } from "@/core/app-types";
-import { usePlatform } from "@/core/bootstrap";
+import { useCore } from "@/core/bootstrap";
 import { ErrorText } from "@/core/components/ErrorText";
 import { can, useCurrentTenant } from "@/core/tenant/use-tenant";
 import { texts } from "@/core/texts";
@@ -16,8 +16,8 @@ export const Route = createFileRoute("/_shell/t/$tenantId")({
   component: TenantLayout,
 });
 
-// The platform's own screens of a tenant, before the app's.
-const platformNav: readonly TenantNavItem[] = [
+// The core's own screens of a tenant, before the app's.
+const coreNav: readonly TenantNavItem[] = [
   { label: texts.shell.members, to: "/t/$tenantId/members", permission: "members:read" },
   {
     label: texts.shell.invitations,
@@ -29,7 +29,7 @@ const platformNav: readonly TenantNavItem[] = [
 function TenantLayout() {
   const { tenantId } = Route.useParams();
   const tenant = useCurrentTenant();
-  const { lastTenant } = usePlatform();
+  const { lastTenant } = useCore();
 
   useEffect(() => {
     if (tenant.isSuccess && tenant.data.id === tenantId) {
@@ -43,7 +43,7 @@ function TenantLayout() {
   if (tenant.isError) {
     return <ErrorText error={tenant.error} />;
   }
-  const items = [...platformNav, ...registeredApp.tenantNav].filter((i) =>
+  const items = [...coreNav, ...registeredApp.tenantNav].filter((i) =>
     can(tenant.data, i.permission),
   );
   const link = buttonVariants({ variant: "ghost", size: "sm" });

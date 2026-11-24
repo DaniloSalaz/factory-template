@@ -1,6 +1,6 @@
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useGetMe } from "@/gen/api";
-import { usePlatform } from "@/core/bootstrap";
+import { useCore } from "@/core/bootstrap";
 import { ErrorText } from "@/core/components/ErrorText";
 import { homeDestination } from "@/core/tenant/last-tenant";
 import { texts } from "@/core/texts";
@@ -12,7 +12,7 @@ export const Route = createFileRoute("/_shell/")({
 // / goes to the last tenant used if GET /me still lists it as active, else to the picker.
 function Home() {
   const me = useGetMe();
-  const { lastTenant } = usePlatform();
+  const { lastTenant } = useCore();
   if (me.isPending) {
     return <p>{texts.common.loading}</p>;
   }

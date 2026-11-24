@@ -1,4 +1,4 @@
-// Every text of the platform's UI, in Spanish. There is no i18n yet: when it comes, this
+// Every text of the core's UI, in Spanish. There is no i18n yet: when it comes, this
 // module is what it replaces.
 
 export const texts = {

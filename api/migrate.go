@@ -13,7 +13,7 @@ import (
 )
 
 // migrationSets are the migrations embedded in this binary, in the order they run: the
-// platform's first, because the app's may use its tables.
+// core's first, because the app's may use its tables.
 func migrationSets() []db.MigrationSet {
 	return []db.MigrationSet{coremigrations.Set(), appmigrations.Set()}
 }
@@ -22,7 +22,7 @@ func migrationSets() []db.MigrationSet {
 // MIGRATIONS_DATABASE_URL (app_owner), so a deployment runs the ones of the version it
 // is about to start, before starting it. It never starts the HTTP server and returns the
 // process's exit code: non-zero on any failure, and the app's set never runs if the
-// platform's failed.
+// core's failed.
 func migrateCommand(ctx context.Context) int {
 	cfg, err := config.LoadMigrate()
 	if err != nil {
